@@ -43,6 +43,16 @@
 - Shape-to-text conversion added
 - Right properties panel added
 - Stroke color, fill color, text color, and stroke width controls added
+- Canvas pan and zoom added
+- Hand/Pan tool fixed for board-level left-click drag on empty canvas space
+- Document block and canvas objects pan/zoom together
+- Bottom toolbar and right properties panel stay fixed while the board moves
+- New pages and Reset View use the left-document default board view
+- Tool switching after Pan fixed
+- Board surface expanded to a large virtual canvas
+- Object clipping from the old narrow right-side canvas area fixed
+- Object creation hit area covers the full virtual board after pan/zoom
+- Number-key shortcuts added for canvas tools
 
 ## Sidebar Management
 
@@ -66,4 +76,4 @@
 
 ## Current Recommended Next Feature
 
-Canvas pan/zoom.
+Canvas interaction QA and polish.

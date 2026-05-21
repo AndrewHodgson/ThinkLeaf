@@ -1,16 +1,35 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CanvasObject, CanvasObjectType, CanvasTool } from "@/types/workspace";
-import { defaultCanvasStyle, defaultObjectSizes, minObjectSize, snapToGrid } from "@/lib/canvasStyle";
+import type {
+  CanvasObject,
+  CanvasObjectType,
+  CanvasTool,
+  CanvasViewState,
+} from "@/types/workspace";
+import {
+  defaultCanvasStyle,
+  defaultObjectSizes,
+  maxZoom,
+  minObjectSize,
+  minZoom,
+  objectCanvasOriginX,
+  objectCanvasOriginY,
+  snapToGrid,
+  virtualBoardHeight,
+  virtualBoardWidth,
+  zoomStep,
+} from "@/lib/canvasStyle";
 import { createId } from "@/lib/workspaceUtils";
 
 type CanvasLayerProps = {
   activeTool: CanvasTool;
   objects: CanvasObject[];
   selectedObjectId: string | null;
+  viewState: CanvasViewState;
   onChange: (objects: CanvasObject[]) => void;
   onSelectionChange: (objectId: string | null) => void;
+  onViewStateChange: (viewState: CanvasViewState) => void;
 };
 
 type MoveInteraction = {
@@ -58,7 +77,15 @@ type CreateInteraction = {
   moved: boolean;
 };
 
-type Interaction = MoveInteraction | ResizeInteraction | LineMoveInteraction | EndpointInteraction | CreateInteraction;
+type PanInteraction = {
+  kind: "pan";
+  pointerX: number;
+  pointerY: number;
+  startPanX: number;
+  startPanY: number;
+};
+
+type Interaction = MoveInteraction | ResizeInteraction | LineMoveInteraction | EndpointInteraction | CreateInteraction | PanInteraction;
 type ResizeHandle = "nw" | "ne" | "sw" | "se";
 
 const toolToObjectType: Partial<Record<CanvasTool, CanvasObjectType>> = {
@@ -73,13 +100,43 @@ export function CanvasLayer({
   activeTool,
   objects,
   selectedObjectId,
+  viewState,
   onChange,
   onSelectionChange,
+  onViewStateChange,
 }: CanvasLayerProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [interaction, setInteraction] = useState<Interaction | null>(null);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
   const selectedObject = objects.find((object) => object.id === selectedObjectId) ?? null;
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      if (event.code === "Space") {
+        event.preventDefault();
+        setIsSpacePressed(true);
+      }
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.code === "Space") {
+        setIsSpacePressed(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
 
   useEffect(() => {
     if (activeTool !== "Text Box" || !selectedObject) {
@@ -97,6 +154,11 @@ export function CanvasLayer({
     setEditingTextId(selectedObject.id);
   }, [activeTool, selectedObject?.id, selectedObject?.type]);
 
+  useEffect(() => {
+    setInteraction(null);
+    setEditingTextId(null);
+  }, [selectedObjectId]);
+
   function updateObject(objectId: string, updates: Partial<CanvasObject>) {
     const now = new Date().toISOString();
     onChange(
@@ -110,6 +172,14 @@ export function CanvasLayer({
           : object,
       ),
     );
+  }
+
+  function updateViewState(nextViewState: CanvasViewState) {
+    onViewStateChange({
+      panX: nextViewState.panX,
+      panY: nextViewState.panY,
+      zoom: Math.min(maxZoom, Math.max(minZoom, nextViewState.zoom)),
+    });
   }
 
   function deleteObject(objectId: string) {
@@ -150,14 +220,45 @@ export function CanvasLayer({
     return object;
   }
 
-  function startCreation(event: React.PointerEvent<HTMLDivElement>) {
+  function screenToWorld(clientX: number, clientY: number) {
     const bounds = canvasRef.current?.getBoundingClientRect();
     if (!bounds) {
+      return null;
+    }
+
+    const screenX = clientX - bounds.left;
+    const screenY = clientY - bounds.top;
+    return {
+      x: screenX / viewState.zoom - objectCanvasOriginX,
+      y: screenY / viewState.zoom - objectCanvasOriginY,
+      screenX,
+      screenY,
+    };
+  }
+
+  function startPan(clientX: number, clientY: number) {
+    const point = screenToWorld(clientX, clientY);
+    if (!point) {
       return;
     }
 
-    const startX = snapToGrid(event.clientX - bounds.left);
-    const startY = snapToGrid(event.clientY - bounds.top);
+    setInteraction({
+      kind: "pan",
+      pointerX: point.screenX,
+      pointerY: point.screenY,
+      startPanX: viewState.panX,
+      startPanY: viewState.panY,
+    });
+  }
+
+  function startCreation(event: React.PointerEvent<HTMLDivElement>) {
+    const point = screenToWorld(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+
+    const startX = snapToGrid(point.x);
+    const startY = snapToGrid(point.y);
     const object = createObject(activeTool, startX, startY);
     if (!object) {
       return;
@@ -177,14 +278,24 @@ export function CanvasLayer({
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
+  function shouldPan(event: React.PointerEvent<HTMLElement>) {
+    return isSpacePressed || event.button === 1;
+  }
+
   function handleCanvasPointerDown(event: React.PointerEvent<HTMLDivElement>) {
     canvasRef.current?.focus();
 
-    if (event.target !== event.currentTarget) {
+    setEditingTextId(null);
+
+    if (shouldPan(event)) {
+      startPan(event.clientX, event.clientY);
+      event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
 
-    setEditingTextId(null);
+    if (event.button !== 0) {
+      return;
+    }
 
     if (toolToObjectType[activeTool]) {
       startCreation(event);
@@ -194,10 +305,7 @@ export function CanvasLayer({
     if (activeTool === "Select") {
       onSelectionChange(null);
       setInteraction(null);
-      return;
     }
-
-    onSelectionChange(null);
   }
 
   function handleCanvasPointerMove(event: React.PointerEvent<HTMLDivElement>) {
@@ -205,15 +313,28 @@ export function CanvasLayer({
       return;
     }
 
-    const bounds = canvasRef.current?.getBoundingClientRect();
-    const object = objects.find((item) => item.id === interaction.id);
+    const point = screenToWorld(event.clientX, event.clientY);
 
-    if (!bounds || !object) {
+    if (interaction.kind === "pan") {
+      if (!point) {
+        return;
+      }
+
+      updateViewState({
+        panX: interaction.startPanX + (point.screenX - interaction.pointerX),
+        panY: interaction.startPanY + (point.screenY - interaction.pointerY),
+        zoom: viewState.zoom,
+      });
       return;
     }
 
-    const pointerX = snapToGrid(event.clientX - bounds.left);
-    const pointerY = snapToGrid(event.clientY - bounds.top);
+    const object = objects.find((item) => item.id === interaction.id);
+    if (!point || !object) {
+      return;
+    }
+
+    const pointerX = snapToGrid(point.x);
+    const pointerY = snapToGrid(point.y);
 
     if (interaction.kind === "move") {
       updateObject(object.id, {
@@ -291,19 +412,90 @@ export function CanvasLayer({
       height: snapToGrid(height),
     });
 
-    setInteraction((current) =>
-      current?.kind === "create" ? { ...current, moved: true } : current,
-    );
+    setInteraction((current) => (current?.kind === "create" ? { ...current, moved: true } : current));
+  }
+
+  function handleCanvasPointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    if (interaction?.kind === "create") {
+      const object = objects.find((item) => item.id === interaction.id);
+      if (object && (object.type === "line" || object.type === "arrow")) {
+        const points = getLinePoints(object);
+        if (points.x1 === points.x2 && points.y1 === points.y2) {
+          updateObject(
+            object.id,
+            normalizeLineBounds({
+              ...object,
+              x1: interaction.startX,
+              y1: interaction.startY,
+              x2: snapToGrid(interaction.startX + defaultObjectSizes[object.type].width),
+              y2: interaction.startY,
+            }),
+          );
+        }
+      }
+
+      if (object?.type === "textBox") {
+        setEditingTextId(object.id);
+      }
+    }
+
+    if (interaction?.kind === "pan") {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    setInteraction(null);
+  }
+
+  function handleCanvasPointerCancel(event: React.PointerEvent<HTMLDivElement>) {
+    if (interaction?.kind === "pan") {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    setInteraction(null);
+  }
+
+  function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
+    if (!event.ctrlKey && !event.metaKey) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const point = screenToWorld(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+
+    const direction = event.deltaY > 0 ? -1 : 1;
+    const nextZoom = Math.min(maxZoom, Math.max(minZoom, viewState.zoom + direction * zoomStep));
+    updateViewState({
+      panX: viewState.panX,
+      panY: viewState.panY,
+      zoom: nextZoom,
+    });
   }
 
   function handleObjectPointerDown(event: React.PointerEvent<HTMLDivElement>, object: CanvasObject) {
     event.stopPropagation();
     canvasRef.current?.focus();
-    onSelectionChange(object.id);
 
     if (event.target instanceof HTMLTextAreaElement) {
       return;
     }
+
+    if (activeTool === "Pan") {
+      setEditingTextId(null);
+      return;
+    }
+
+    if (shouldPan(event)) {
+      setEditingTextId(null);
+      startPan(event.clientX, event.clientY);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    onSelectionChange(object.id);
 
     if (activeTool === "Text Box" && (object.type === "rectangle" || object.type === "circle")) {
       setEditingTextId(null);
@@ -314,8 +506,8 @@ export function CanvasLayer({
       return;
     }
 
-    const bounds = canvasRef.current?.getBoundingClientRect();
-    if (!bounds) {
+    const point = screenToWorld(event.clientX, event.clientY);
+    if (!point) {
       return;
     }
 
@@ -323,8 +515,8 @@ export function CanvasLayer({
     setInteraction({
       kind: "move",
       id: object.id,
-      offsetX: event.clientX - bounds.left - object.x,
-      offsetY: event.clientY - bounds.top - object.y,
+      offsetX: point.x - object.x,
+      offsetY: point.y - object.y,
     });
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -333,12 +525,17 @@ export function CanvasLayer({
     event.stopPropagation();
     onSelectionChange(object.id);
     setEditingTextId(null);
+    const point = screenToWorld(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+
     setInteraction({
       kind: "resize",
       handle,
       id: object.id,
-      pointerX: event.clientX - (canvasRef.current?.getBoundingClientRect().left ?? 0),
-      pointerY: event.clientY - (canvasRef.current?.getBoundingClientRect().top ?? 0),
+      pointerX: point.x,
+      pointerY: point.y,
       startHeight: object.height,
       startWidth: object.width,
       startX: object.x,
@@ -352,18 +549,18 @@ export function CanvasLayer({
     canvasRef.current?.focus();
     onSelectionChange(object.id);
     setEditingTextId(null);
-    const bounds = canvasRef.current?.getBoundingClientRect();
+    const point = screenToWorld(event.clientX, event.clientY);
     const points = getLinePoints(object);
 
-    if (!bounds) {
+    if (!point) {
       return;
     }
 
     setInteraction({
       kind: "lineMove",
       id: object.id,
-      pointerX: event.clientX - bounds.left,
-      pointerY: event.clientY - bounds.top,
+      pointerX: point.x,
+      pointerY: point.y,
       startX1: points.x1,
       startX2: points.x2,
       startY1: points.y1,
@@ -381,30 +578,6 @@ export function CanvasLayer({
     setEditingTextId(null);
     setInteraction({ endpoint, id: object.id, kind: "endpoint" });
     event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function handlePointerUp() {
-    if (interaction?.kind === "create") {
-      const object = objects.find((item) => item.id === interaction.id);
-      if (object && (object.type === "line" || object.type === "arrow")) {
-        const points = getLinePoints(object);
-        if (points.x1 === points.x2 && points.y1 === points.y2) {
-          updateObject(object.id, normalizeLineBounds({
-            ...object,
-            x1: interaction.startX,
-            y1: interaction.startY,
-            x2: snapToGrid(interaction.startX + defaultObjectSizes[object.type].width),
-            y2: interaction.startY,
-          }));
-        }
-      }
-
-      if (object?.type === "textBox") {
-        setEditingTextId(object.id);
-      }
-    }
-
-    setInteraction(null);
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
@@ -431,130 +604,157 @@ export function CanvasLayer({
   return (
     <div
       ref={canvasRef}
-      className="relative h-[840px] min-w-0 flex-1 outline-none"
+      className={[
+        "absolute inset-0 z-0 touch-none overflow-visible outline-none",
+        activeTool === "Pan" ? "cursor-grab" : "",
+        interaction?.kind === "pan" ? "cursor-grabbing" : "",
+      ].join(" ")}
+      style={{ height: virtualBoardHeight, width: virtualBoardWidth }}
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onPointerDown={handleCanvasPointerDown}
       onPointerMove={handleCanvasPointerMove}
-      onPointerUp={handlePointerUp}
+      onPointerUp={handleCanvasPointerUp}
+      onPointerCancel={handleCanvasPointerCancel}
+      onWheel={handleWheel}
     >
-      <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
+      <div
+        className="absolute origin-top-left"
+        style={{
+          height: virtualBoardHeight - objectCanvasOriginY,
+          left: objectCanvasOriginX,
+          top: objectCanvasOriginY,
+          width: virtualBoardWidth - objectCanvasOriginX,
+        }}
+      >
+        <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
+          {lineObjects.map((object) => {
+            const points = getLinePoints(object);
+            const isSelected = selectedObjectId === object.id;
+
+            return (
+              <g key={object.id}>
+                <defs>
+                  {object.type === "arrow" ? (
+                    <marker
+                      id={`arrow-${object.id}`}
+                      markerHeight="8"
+                      markerWidth="8"
+                      orient="auto"
+                      refX="7"
+                      refY="4"
+                    >
+                      <path d="M0,0 L8,4 L0,8 Z" fill={object.strokeColor} />
+                    </marker>
+                  ) : null}
+                </defs>
+                <line
+                  className="pointer-events-auto cursor-move"
+                  markerEnd={object.type === "arrow" ? `url(#arrow-${object.id})` : undefined}
+                  stroke={isSelected ? "#238157" : object.strokeColor}
+                  strokeLinecap="round"
+                  strokeWidth={Math.max(8, object.strokeWidth + 6)}
+                  x1={points.x1}
+                  x2={points.x2}
+                  y1={points.y1}
+                  y2={points.y2}
+                  opacity="0"
+                  onPointerDown={(event) => startLineMove(event, object)}
+                />
+                <line
+                  markerEnd={object.type === "arrow" ? `url(#arrow-${object.id})` : undefined}
+                  stroke={isSelected ? "#238157" : object.strokeColor}
+                  strokeLinecap="round"
+                  strokeWidth={object.strokeWidth}
+                  x1={points.x1}
+                  x2={points.x2}
+                  y1={points.y1}
+                  y2={points.y2}
+                />
+              </g>
+            );
+          })}
+        </svg>
+
         {lineObjects.map((object) => {
-          const points = getLinePoints(object);
           const isSelected = selectedObjectId === object.id;
+          const points = getLinePoints(object);
+          const box = getLineSelectionBox(points);
+
+          if (!isSelected) {
+            return null;
+          }
 
           return (
-            <g key={object.id}>
-              <defs>
-                {object.type === "arrow" ? (
-                  <marker
-                    id={`arrow-${object.id}`}
-                    markerHeight="8"
-                    markerWidth="8"
-                    orient="auto"
-                    refX="7"
-                    refY="4"
-                  >
-                    <path d="M0,0 L8,4 L0,8 Z" fill={object.strokeColor} />
-                  </marker>
-                ) : null}
-              </defs>
-              <line
-                className="pointer-events-auto cursor-move"
-                markerEnd={object.type === "arrow" ? `url(#arrow-${object.id})` : undefined}
-                stroke={isSelected ? "#238157" : object.strokeColor}
-                strokeLinecap="round"
-                strokeWidth={Math.max(8, object.strokeWidth + 6)}
-                x1={points.x1}
-                x2={points.x2}
-                y1={points.y1}
-                y2={points.y2}
-                opacity="0"
-                onPointerDown={(event) => startLineMove(event, object)}
+            <div key={`${object.id}-selection`}>
+              <div
+                className="pointer-events-none absolute border border-dashed border-leaf-500"
+                style={{ height: box.height, left: box.x, top: box.y, width: box.width }}
               />
-              <line
-                markerEnd={object.type === "arrow" ? `url(#arrow-${object.id})` : undefined}
-                stroke={isSelected ? "#238157" : object.strokeColor}
-                strokeLinecap="round"
-                strokeWidth={object.strokeWidth}
-                x1={points.x1}
-                x2={points.x2}
-                y1={points.y1}
-                y2={points.y2}
+              <EndpointHandle
+                object={object}
+                point={{ x: points.x1, y: points.y1 }}
+                onStart={startEndpointDrag}
+                endpoint="start"
               />
-            </g>
+              <EndpointHandle
+                object={object}
+                point={{ x: points.x2, y: points.y2 }}
+                onStart={startEndpointDrag}
+                endpoint="end"
+              />
+            </div>
           );
         })}
-      </svg>
 
-      {lineObjects.map((object) => {
-        const isSelected = selectedObjectId === object.id;
-        const points = getLinePoints(object);
-        const box = getLineSelectionBox(points);
+        {boxObjects.map((object) => {
+          const isSelected = selectedObjectId === object.id;
+          const isEditing = editingTextId === object.id;
 
-        if (!isSelected) {
-          return null;
-        }
-
-        return (
-          <div key={`${object.id}-selection`}>
+          return (
             <div
-              className="pointer-events-none absolute border border-dashed border-leaf-500"
-              style={{ height: box.height, left: box.x, top: box.y, width: box.width }}
-            />
-            <EndpointHandle object={object} point={{ x: points.x1, y: points.y1 }} onStart={startEndpointDrag} endpoint="start" />
-            <EndpointHandle object={object} point={{ x: points.x2, y: points.y2 }} onStart={startEndpointDrag} endpoint="end" />
-          </div>
-        );
-      })}
-
-      {boxObjects.map((object) => {
-        const isSelected = selectedObjectId === object.id;
-        const isEditing = editingTextId === object.id;
-
-        return (
-          <div
-            key={object.id}
-            className={[
-              "absolute touch-none",
-              isEditing ? "cursor-text" : "cursor-move",
-              isSelected ? "outline outline-2 outline-leaf-500 outline-offset-2" : "",
-            ].join(" ")}
-            style={{
-              height: object.height,
-              left: object.x,
-              top: object.y,
-              width: object.width,
-            }}
-            onDoubleClick={() => {
-              if (object.type === "textBox") {
-                onSelectionChange(object.id);
-                setEditingTextId(object.id);
-              }
-            }}
-            onPointerDown={(event) => handleObjectPointerDown(event, object)}
-          >
-            <CanvasObjectView
-              isEditing={isEditing}
-              object={object}
-              onFinishEditing={() => setEditingTextId(null)}
-              onTextChange={(text) => updateObject(object.id, { text })}
-            />
-            {isSelected ? (
-              <>
-                {object.type === "rectangle" || object.type === "circle" || object.type === "textBox" ? (
-                  <>
-                    <ResizeHandleButton handle="nw" onPointerDown={(event) => startResize(event, object, "nw")} />
-                    <ResizeHandleButton handle="ne" onPointerDown={(event) => startResize(event, object, "ne")} />
-                    <ResizeHandleButton handle="sw" onPointerDown={(event) => startResize(event, object, "sw")} />
-                    <ResizeHandleButton handle="se" onPointerDown={(event) => startResize(event, object, "se")} />
-                  </>
-                ) : null}
-              </>
-            ) : null}
-          </div>
-        );
-      })}
+              key={object.id}
+              className={[
+                "absolute touch-none",
+                isEditing ? "cursor-text" : "cursor-move",
+                isSelected ? "outline outline-2 outline-leaf-500 outline-offset-2" : "",
+              ].join(" ")}
+              style={{
+                height: object.height,
+                left: object.x,
+                top: object.y,
+                width: object.width,
+              }}
+              onDoubleClick={() => {
+                if (object.type === "textBox") {
+                  onSelectionChange(object.id);
+                  setEditingTextId(object.id);
+                }
+              }}
+              onPointerDown={(event) => handleObjectPointerDown(event, object)}
+            >
+              <CanvasObjectView
+                isEditing={isEditing}
+                object={object}
+                onFinishEditing={() => setEditingTextId(null)}
+                onTextChange={(text) => updateObject(object.id, { text })}
+              />
+              {isSelected ? (
+                <>
+                  {object.type === "rectangle" || object.type === "circle" || object.type === "textBox" ? (
+                    <>
+                      <ResizeHandleButton handle="nw" onPointerDown={(event) => startResize(event, object, "nw")} />
+                      <ResizeHandleButton handle="ne" onPointerDown={(event) => startResize(event, object, "ne")} />
+                      <ResizeHandleButton handle="sw" onPointerDown={(event) => startResize(event, object, "sw")} />
+                      <ResizeHandleButton handle="se" onPointerDown={(event) => startResize(event, object, "se")} />
+                    </>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -685,7 +885,7 @@ function getResizeUpdates(interaction: ResizeInteraction, pointerX: number, poin
     y = snapToGrid(interaction.startY + interaction.startHeight - height);
   }
 
-  return { height, width, x: snapToGrid(Math.max(0, x)), y: snapToGrid(Math.max(0, y)) };
+  return { height, width, x: snapToGrid(x), y: snapToGrid(y) };
 }
 
 function getLinePoints(object: CanvasObject) {
@@ -709,10 +909,10 @@ function normalizeLineBounds(object: CanvasObject): Partial<CanvasObject> {
     y: snapToGrid(minY),
     width: snapToGrid(width),
     height: snapToGrid(height),
-    x1: snapToGrid(Math.max(0, points.x1)),
-    y1: snapToGrid(Math.max(0, points.y1)),
-    x2: snapToGrid(Math.max(0, points.x2)),
-    y2: snapToGrid(Math.max(0, points.y2)),
+    x1: snapToGrid(points.x1),
+    y1: snapToGrid(points.y1),
+    x2: snapToGrid(points.x2),
+    y2: snapToGrid(points.y2),
   };
 }
 
@@ -726,4 +926,12 @@ function getLineSelectionBox(points: { x1: number; x2: number; y1: number; y2: n
     x,
     y,
   };
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }

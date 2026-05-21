@@ -20,6 +20,7 @@ export type Page = {
   title: string;
   body: string;
   noteDate: string;
+  canvasViewState: CanvasViewState;
   canvasObjects: CanvasObject[];
   tags: string[];
   isFavorite: boolean;
@@ -61,6 +62,12 @@ export type CanvasObject = {
   updatedAt: string;
   // Future connector objects may add sourceObjectId, targetObjectId, sourceAnchor, and targetAnchor.
   // For now, line and arrow objects remain independent and do not stick to moved objects.
+};
+
+export type CanvasViewState = {
+  panX: number;
+  panY: number;
+  zoom: number;
 };
 
 export type WorkspaceData = {

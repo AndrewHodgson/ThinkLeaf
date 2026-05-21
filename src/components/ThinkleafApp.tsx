@@ -4,9 +4,20 @@ import { useEffect, useMemo, useState } from "react";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { TopToolbar } from "@/components/toolbar/TopToolbar";
 import { Workspace } from "@/components/workspace/Workspace";
+import { createDefaultCanvasViewState, defaultCanvasViewState, maxZoom, minZoom, zoomStep } from "@/lib/canvasStyle";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { searchPages, sortPagesByUpdatedAt } from "@/lib/workspaceUtils";
 import type { CanvasTool } from "@/types/workspace";
+
+const toolShortcuts: Record<string, CanvasTool> = {
+  "1": "Select",
+  "2": "Pan",
+  "3": "Rectangle",
+  "4": "Circle",
+  "5": "Text Box",
+  "6": "Line",
+  "7": "Arrow",
+};
 
 export function ThinkleafApp() {
   const workspace = useWorkspace();
@@ -38,6 +49,28 @@ export function ThinkleafApp() {
     }
   }, [isSidebarCollapsed]);
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      const nextTool = toolShortcuts[event.key];
+      if (!nextTool) {
+        return;
+      }
+
+      event.preventDefault();
+      setActiveTool(nextTool);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   const searchResults = useMemo(
     () => searchPages(workspace.data.pages, searchQuery),
     [searchQuery, workspace.data.pages],
@@ -47,6 +80,33 @@ export function ThinkleafApp() {
     () => sortPagesByUpdatedAt(workspace.data.pages.filter((page) => page.isFavorite)),
     [workspace.data.pages],
   );
+  const canvasViewState = workspace.activePage?.canvasViewState ?? defaultCanvasViewState;
+
+  function updateZoom(nextZoom: number) {
+    const page = workspace.activePage;
+    if (!page) {
+      return;
+    }
+
+    const boundedZoom = Math.min(maxZoom, Math.max(minZoom, nextZoom));
+    workspace.updatePage(page.id, {
+      canvasViewState: {
+        ...canvasViewState,
+        zoom: boundedZoom,
+      },
+    });
+  }
+
+  function resetView() {
+    const page = workspace.activePage;
+    if (!page) {
+      return;
+    }
+
+    workspace.updatePage(page.id, {
+      canvasViewState: createDefaultCanvasViewState(),
+    });
+  }
 
   return (
     <main className="flex h-screen min-h-0 bg-slate-50 text-slate-900">
@@ -81,6 +141,10 @@ export function ThinkleafApp() {
       <section className="flex min-w-0 flex-1 flex-col">
         <TopToolbar
           activeTool={activeTool}
+          zoomPercent={Math.round(canvasViewState.zoom * 100)}
+          onResetView={resetView}
+          onZoomIn={() => updateZoom(canvasViewState.zoom + zoomStep)}
+          onZoomOut={() => updateZoom(canvasViewState.zoom - zoomStep)}
         />
         <Workspace
           activeTool={activeTool}
@@ -98,5 +162,17 @@ export function ThinkleafApp() {
         />
       </section>
     </main>
+  );
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target.isContentEditable ||
+    Boolean(target.closest("[contenteditable='true']")) ||
+    ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
   );
 }

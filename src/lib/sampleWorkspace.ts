@@ -1,4 +1,5 @@
 import type { WorkspaceData } from "@/types/workspace";
+import { createDefaultCanvasViewState } from "@/lib/canvasStyle";
 
 const now = "2026-05-21T12:00:00.000Z";
 
@@ -27,6 +28,7 @@ export const sampleWorkspace: WorkspaceData = {
       folderId: "folder-pcma-2027",
       title: "CL27 Planning Meeting - 2026-05-21",
       noteDate: "2026-05-21",
+      canvasViewState: createDefaultCanvasViewState(),
       canvasObjects: [],
       tags: ["Show", "Meeting Notes", "Custom Booth"],
       isFavorite: true,

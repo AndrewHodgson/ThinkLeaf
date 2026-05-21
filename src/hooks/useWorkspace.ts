@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { sampleWorkspace } from "@/lib/sampleWorkspace";
-import { defaultCanvasStyle } from "@/lib/canvasStyle";
+import { createDefaultCanvasViewState, defaultCanvasStyle } from "@/lib/canvasStyle";
 import { createId, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
 import type { CanvasObject, Folder, Page, Project, WorkspaceData } from "@/types/workspace";
 
@@ -42,6 +42,7 @@ function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
     pages: data.pages.map((page) => ({
       ...page,
       noteDate: page.noteDate ?? toDateInputValue(page.createdAt),
+      canvasViewState: page.canvasViewState ?? createDefaultCanvasViewState(),
       canvasObjects: Array.isArray(page.canvasObjects)
         ? page.canvasObjects.map((object) => normalizeCanvasObject(object))
         : [],
@@ -198,6 +199,7 @@ export function useWorkspace() {
             title: `${page.title || "Untitled meeting note"} Copy`,
             body: page.body,
             noteDate: page.noteDate,
+            canvasViewState: page.canvasViewState,
             canvasObjects: cloneCanvasObjects(page.canvasObjects),
             tags: [...page.tags],
             isFavorite: false,
@@ -310,6 +312,7 @@ export function useWorkspace() {
             title: `${page.title || "Untitled meeting note"} Copy`,
             body: page.body,
             noteDate: page.noteDate,
+            canvasViewState: page.canvasViewState,
             canvasObjects: cloneCanvasObjects(page.canvasObjects),
             tags: [...page.tags],
             isFavorite: false,
@@ -388,6 +391,7 @@ export function useWorkspace() {
       title,
       body: "",
       noteDate: toDateInputValue(now),
+      canvasViewState: createDefaultCanvasViewState(),
       canvasObjects: [],
       tags: [],
       isFavorite: false,
@@ -423,6 +427,7 @@ export function useWorkspace() {
         title: `${sourcePage.title || "Untitled meeting note"} Copy`,
         body: sourcePage.body,
         noteDate: sourcePage.noteDate,
+        canvasViewState: sourcePage.canvasViewState,
         canvasObjects: cloneCanvasObjects(sourcePage.canvasObjects),
         tags: [...sourcePage.tags],
         isFavorite: false,
@@ -442,7 +447,9 @@ export function useWorkspace() {
 
   function updatePage(
     pageId: string,
-    updates: Partial<Pick<Page, "title" | "body" | "noteDate" | "canvasObjects" | "tags" | "isFavorite">>,
+    updates: Partial<
+      Pick<Page, "title" | "body" | "noteDate" | "canvasViewState" | "canvasObjects" | "tags" | "isFavorite">
+    >,
   ) {
     const now = timestamp();
 
@@ -472,6 +479,23 @@ export function useWorkspace() {
       ...current,
       pages: current.pages.map((page) =>
         page.id === pageId ? { ...page, title: cleanTitle, updatedAt: now } : page,
+      ),
+    }));
+  }
+
+  function updateCanvasViewState(pageId: string, canvasViewState: Page["canvasViewState"]) {
+    const now = timestamp();
+
+    setData((current) => ({
+      ...current,
+      pages: current.pages.map((page) =>
+        page.id === pageId
+          ? {
+              ...page,
+              canvasViewState,
+              updatedAt: now,
+            }
+          : page,
       ),
     }));
   }
@@ -508,6 +532,7 @@ export function useWorkspace() {
     renamePage,
     duplicatePage,
     updatePage,
+    updateCanvasViewState,
     deletePage,
   };
 }

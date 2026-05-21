@@ -1,42 +1,38 @@
-# Next Codex Task: Canvas Pan and Zoom
+# Next Codex Task: Canvas Interaction QA and Polish
 
 ## Goal
 
-Add basic canvas pan and zoom behavior to the Thinkleaf workspace.
+Do a focused browser QA and small polish pass on the current Thinkleaf canvas workspace.
 
-Thinkleaf should feel more like a canvas workspace while keeping the document block and note-taking experience as the primary focus.
+Thinkleaf should remain note-first. The document block stays primary, while the canvas behavior should feel stable and predictable.
 
 ## Requirements
 
-1. Add canvas pan support.
-   - User should be able to pan the workspace.
-   - Prefer holding Space and dragging, middle-mouse dragging, or using the existing Pan tool.
-   - Do not interfere with typing in the Tiptap editor.
+1. Verify pan behavior.
+   - Hand/Pan tool should left-click and drag on empty canvas space.
+   - Document block and canvas objects should move together.
+   - Bottom toolbar and right properties panel should stay fixed.
+   - Switching from Pan to Select or object tools should work without refresh.
+   - New pages and Reset View should return to the left-document default board view.
+   - The large virtual board should feel spacious and objects should not clip at the old right-side panel boundary.
+   - Pan should not interfere with Tiptap typing.
+   - Pan should not create or select objects.
 
-2. Add zoom support.
-   - Support zoom in and zoom out.
-   - Mouse wheel + modifier key is acceptable.
-   - Add simple zoom controls if practical.
-   - Use reasonable zoom limits, such as 50% to 200%.
+2. Verify existing canvas interactions.
+   - Select, move, resize, endpoint edit, and text edit should still work.
+   - Object creation tools should still work.
+   - Object creation should work after panning far from the default view.
+   - Number-key shortcuts 1-7 should switch canvas tools outside editable text fields.
+   - Grid toggle, zoom controls, and reset view should still work.
 
-3. Save canvas view state per page.
-   - Store pan x/y and zoom level per page.
-   - Persist to localStorage.
-   - Switching pages should restore that page’s view state.
+3. Verify persistence.
+   - Canvas view state should persist per page.
+   - Canvas objects should still persist per page.
+   - Switching pages and refreshing should restore the right state.
 
-4. Add reset view.
-   - Add a reset view button or toolbar control.
-   - Reset should return the document block to a useful default left-positioned view.
-
-5. Keep canvas objects aligned with the view.
-   - Objects should pan and zoom with the canvas.
-   - Object selection, movement, resizing, endpoint editing, and text editing should still work.
-
-6. Keep the bottom floating toolbar usable.
-   - The toolbar should stay fixed to the screen/workspace, not zoom with the canvas.
-
-7. Keep the right properties panel usable.
-   - The properties panel should remain fixed and should not zoom with the canvas.
+4. Fix any obvious canvas regressions.
+   - Only fix issues found during the QA pass.
+   - Do not add new major features.
 
 ## Must Preserve
 
@@ -62,13 +58,15 @@ Do not add:
 
 Test:
 
-- Pan works
+- Hand/Pan tool left-drag works
 - Zoom works
 - Reset view works
 - Page view state persists after switching pages
 - Page view state persists after refresh
 - Editor typing still works
 - Canvas objects still create, move, resize, style, and persist
+- Number-key shortcuts do not trigger while typing in notes, text boxes, or fields
+- Objects do not clip when placed beyond the initial right-side viewport
 - Sidebar still works
 - `npm.cmd run build` passes
 
@@ -77,10 +75,8 @@ Test:
 After completing this, summarize:
 
 1. Files changed
-2. How pan works
-3. How zoom works
-4. How view state is stored
-5. How reset view works
-6. Any interaction limitations
-7. Build status
-8. Recommended next feature
+2. What was tested
+3. Bugs found
+4. Bugs fixed
+5. Build status
+6. Recommended next feature

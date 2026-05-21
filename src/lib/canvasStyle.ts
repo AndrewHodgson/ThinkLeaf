@@ -1,7 +1,28 @@
-import type { CanvasObjectType } from "@/types/workspace";
+import type { CanvasObjectType, CanvasViewState } from "@/types/workspace";
 
 export const gridSize = 8;
 export const minObjectSize = 48;
+export const minZoom = 0.5;
+export const maxZoom = 2;
+export const zoomStep = 0.1;
+export const virtualBoardWidth = 5000;
+export const virtualBoardHeight = 3000;
+export const documentBlockX = 48;
+export const documentBlockY = 40;
+export const documentBlockWidth = 780;
+export const documentCanvasGap = 40;
+export const objectCanvasOriginX = documentBlockX + documentBlockWidth + documentCanvasGap;
+export const objectCanvasOriginY = 0;
+
+export const defaultCanvasViewState: CanvasViewState = {
+  panX: 0,
+  panY: 0,
+  zoom: 1,
+};
+
+export function createDefaultCanvasViewState(): CanvasViewState {
+  return { ...defaultCanvasViewState };
+}
 
 export const defaultCanvasStyle = {
   strokeColor: "#64748b",

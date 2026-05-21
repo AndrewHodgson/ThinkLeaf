@@ -1,14 +1,29 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CanvasTool, Page, WorkspaceData } from "@/types/workspace";
 import { findFolder, findProject, toDateInputValue } from "@/lib/workspaceUtils";
+import {
+  defaultCanvasViewState,
+  documentBlockX,
+  documentBlockWidth,
+  documentBlockY,
+  virtualBoardHeight,
+  virtualBoardWidth,
+} from "@/lib/canvasStyle";
 import { TagEditor } from "@/components/workspace/TagEditor";
 import { RichTextEditor } from "@/components/workspace/RichTextEditor";
 import { Calendar, Clock3, Star, Trash2 } from "lucide-react";
 import { CanvasLayer } from "@/components/workspace/CanvasLayer";
 import { CanvasCreationToolbar } from "@/components/workspace/CanvasCreationToolbar";
 import { ObjectPropertiesPanel } from "@/components/workspace/ObjectPropertiesPanel";
+
+type BoardPanInteraction = {
+  pointerX: number;
+  pointerY: number;
+  startPanX: number;
+  startPanY: number;
+};
 
 type WorkspaceProps = {
   activeTool: CanvasTool;
@@ -24,7 +39,9 @@ type WorkspaceProps = {
   onToolChange: (tool: CanvasTool) => void;
   onUpdatePage: (
     pageId: string,
-    updates: Partial<Pick<Page, "title" | "body" | "noteDate" | "canvasObjects" | "tags" | "isFavorite">>,
+    updates: Partial<
+      Pick<Page, "title" | "body" | "noteDate" | "canvasViewState" | "canvasObjects" | "tags" | "isFavorite">
+    >,
   ) => void;
 };
 
@@ -42,9 +59,18 @@ export function Workspace({
   onToolChange,
   onUpdatePage,
 }: WorkspaceProps) {
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const panInteractionRef = useRef<BoardPanInteraction | null>(null);
+  const capturedPanPointerIdRef = useRef<number | null>(null);
+  const [boardPanInteraction, setBoardPanInteraction] = useState<BoardPanInteraction | null>(null);
+
   useEffect(() => {
     onSelectionChange(null);
   }, [activePage?.id, onSelectionChange]);
+
+  useEffect(() => {
+    releaseWorkspacePan();
+  }, [activeTool, activePage?.id]);
 
   if (!activePage) {
     return (
@@ -59,6 +85,8 @@ export function Workspace({
   const folder = findFolder(data, page.folderId);
   const selectedObject = page.canvasObjects.find((object) => object.id === selectedObjectId) ?? null;
   const propertiesPanelWidth = selectedObject ? 300 : 0;
+  const canvasViewState = page.canvasViewState ?? defaultCanvasViewState;
+  const isPanning = boardPanInteraction !== null;
 
   function confirmDelete() {
     const shouldDelete = window.confirm(`Delete "${page.title || "Untitled"}"?`);
@@ -84,10 +112,120 @@ export function Workspace({
     });
   }
 
+  function isPanBlockedTarget(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    return Boolean(
+      target.closest(
+        "button, input, textarea, select, [contenteditable='true'], [data-pan-block='true']",
+      ),
+    );
+  }
+
+  function handleWorkspacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (activeTool !== "Pan" || event.button !== 0 || isPanBlockedTarget(event.target)) {
+      return;
+    }
+
+    event.preventDefault();
+    releaseWorkspacePan();
+    onSelectionChange(null);
+    const interaction = {
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      startPanX: canvasViewState.panX,
+      startPanY: canvasViewState.panY,
+    };
+
+    panInteractionRef.current = interaction;
+    capturedPanPointerIdRef.current = event.pointerId;
+    setBoardPanInteraction({
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      startPanX: canvasViewState.panX,
+      startPanY: canvasViewState.panY,
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleWorkspacePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const interaction = panInteractionRef.current;
+    if (!interaction) {
+      return;
+    }
+
+    onUpdatePage(page.id, {
+      canvasViewState: {
+        ...canvasViewState,
+        panX: interaction.startPanX + event.clientX - interaction.pointerX,
+        panY: interaction.startPanY + event.clientY - interaction.pointerY,
+      },
+    });
+  }
+
+  function releaseWorkspacePan(pointerId = capturedPanPointerIdRef.current) {
+    const workspace = workspaceRef.current;
+    if (workspace && pointerId !== null && workspace.hasPointerCapture(pointerId)) {
+      workspace.releasePointerCapture(pointerId);
+    }
+
+    panInteractionRef.current = null;
+    capturedPanPointerIdRef.current = null;
+    setBoardPanInteraction(null);
+  }
+
+  function stopWorkspacePan(event: React.PointerEvent<HTMLDivElement>) {
+    releaseWorkspacePan(event.pointerId);
+  }
+
   return (
-    <div className={["min-h-0 flex-1 overflow-auto bg-white", isGridVisible ? "dotted-grid" : ""].join(" ")}>
-      <div className="flex min-h-full min-w-[1500px] items-start gap-10 px-12 py-10">
-        <article className="min-h-[760px] w-[780px] shrink-0 rounded-md border border-slate-200 bg-white shadow-soft">
+    <div
+      ref={workspaceRef}
+      className={[
+        "relative min-h-0 flex-1 overflow-hidden bg-white",
+        isGridVisible ? "dotted-grid" : "",
+        activeTool === "Pan" ? "cursor-grab" : "",
+        isPanning ? "cursor-grabbing" : "",
+      ].join(" ")}
+      onPointerCancel={stopWorkspacePan}
+      onPointerDown={handleWorkspacePointerDown}
+      onLostPointerCapture={() => releaseWorkspacePan()}
+      onPointerMove={handleWorkspacePointerMove}
+      onPointerUp={stopWorkspacePan}
+      style={
+        isGridVisible
+          ? {
+              backgroundPosition: `${canvasViewState.panX}px ${canvasViewState.panY}px`,
+              backgroundSize: `${22 * canvasViewState.zoom}px ${22 * canvasViewState.zoom}px`,
+            }
+          : undefined
+      }
+    >
+      <div
+        className="relative origin-top-left"
+        style={{
+          height: virtualBoardHeight,
+          transform: `translate3d(${canvasViewState.panX}px, ${canvasViewState.panY}px, 0) scale(${canvasViewState.zoom})`,
+          width: virtualBoardWidth,
+        }}
+      >
+        <CanvasLayer
+          key={page.id}
+          activeTool={activeTool}
+          objects={page.canvasObjects}
+          viewState={canvasViewState}
+          selectedObjectId={selectedObjectId}
+          onChange={(canvasObjects) => onUpdatePage(page.id, { canvasObjects })}
+          onViewStateChange={(viewState) => onUpdatePage(page.id, { canvasViewState: viewState })}
+          onSelectionChange={onSelectionChange}
+        />
+        <article
+          className="absolute z-10 min-h-[760px] w-[780px] cursor-auto rounded-md border border-slate-200 bg-white shadow-soft"
+          data-pan-block="true"
+          style={{ left: documentBlockX, top: documentBlockY, width: documentBlockWidth }}
+        >
           <div className="border-b border-slate-100 px-9 py-6">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 text-sm text-slate-500">
@@ -169,26 +307,10 @@ export function Workspace({
             />
           </div>
         </article>
+      </div>
 
-        <div className="relative min-w-0 flex-1">
-          <CanvasLayer
-            key={page.id}
-            activeTool={activeTool}
-            objects={page.canvasObjects}
-            selectedObjectId={selectedObjectId}
-            onChange={(canvasObjects) => onUpdatePage(page.id, { canvasObjects })}
-            onSelectionChange={onSelectionChange}
-          />
-          <CanvasCreationToolbar
-            activeTool={activeTool}
-            centerOffsetPx={Math.round((sidebarWidth - propertiesPanelWidth) / 2)}
-            isGridVisible={isGridVisible}
-            onToggleGrid={onToggleGrid}
-            onToolChange={onToolChange}
-          />
-        </div>
-
-        {selectedObject ? (
+      {selectedObject ? (
+        <div className="absolute right-6 top-6 z-10" data-pan-block="true">
           <ObjectPropertiesPanel
             key={selectedObject.id}
             object={selectedObject}
@@ -200,8 +322,16 @@ export function Workspace({
             }}
             onUpdate={(updates) => updateSelectedObject(updates)}
           />
-        ) : null}
-      </div>
+        </div>
+      ) : null}
+
+      <CanvasCreationToolbar
+        activeTool={activeTool}
+        centerOffsetPx={Math.round((sidebarWidth - propertiesPanelWidth) / 2)}
+        isGridVisible={isGridVisible}
+        onToggleGrid={onToggleGrid}
+        onToolChange={onToolChange}
+      />
     </div>
   );
 }
