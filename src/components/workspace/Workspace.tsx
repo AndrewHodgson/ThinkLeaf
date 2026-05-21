@@ -15,6 +15,7 @@ type WorkspaceProps = {
   activePage?: Page;
   data: WorkspaceData;
   isGridVisible: boolean;
+  sidebarWidth: number;
   selectedObjectId: string | null;
   onDeletePage: (pageId: string) => void;
   onSearchByTag: (tag: string) => void;
@@ -32,6 +33,7 @@ export function Workspace({
   activePage,
   data,
   isGridVisible,
+  sidebarWidth,
   selectedObjectId,
   onDeletePage,
   onSearchByTag,
@@ -56,6 +58,7 @@ export function Workspace({
   const project = findProject(data, page.projectId);
   const folder = findFolder(data, page.folderId);
   const selectedObject = page.canvasObjects.find((object) => object.id === selectedObjectId) ?? null;
+  const propertiesPanelWidth = selectedObject ? 300 : 0;
 
   function confirmDelete() {
     const shouldDelete = window.confirm(`Delete "${page.title || "Untitled"}"?`);
@@ -140,7 +143,7 @@ export function Workspace({
                   onChange={(event) => onUpdatePage(page.id, { noteDate: event.target.value })}
                 />
               </label>
-              <span className="text-slate-300">·</span>
+              <span className="text-slate-300">-</span>
               <div className="inline-flex items-center gap-1.5">
                 <Clock3 aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
                 <span>Updated:</span>
@@ -178,6 +181,7 @@ export function Workspace({
           />
           <CanvasCreationToolbar
             activeTool={activeTool}
+            centerOffsetPx={Math.round((sidebarWidth - propertiesPanelWidth) / 2)}
             isGridVisible={isGridVisible}
             onToggleGrid={onToggleGrid}
             onToolChange={onToolChange}

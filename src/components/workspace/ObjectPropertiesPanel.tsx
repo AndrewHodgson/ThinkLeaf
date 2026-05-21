@@ -75,7 +75,7 @@ export function ObjectPropertiesPanel({ object, onDelete, onUpdate }: ObjectProp
             <div className="mt-1 flex items-center justify-between gap-2">
               <span>Size</span>
               <span>
-                {Math.round(object.width)} × {Math.round(object.height)}
+                {Math.round(object.width)} x {Math.round(object.height)}
               </span>
             </div>
           </div>

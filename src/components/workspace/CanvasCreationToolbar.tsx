@@ -23,6 +23,7 @@ const tools: Array<{ icon: typeof MousePointer2; label: CanvasTool }> = [
 type CanvasCreationToolbarProps = {
   activeTool: CanvasTool;
   isGridVisible: boolean;
+  centerOffsetPx: number;
   onToggleGrid: () => void;
   onToolChange: (tool: CanvasTool) => void;
 };
@@ -30,11 +31,15 @@ type CanvasCreationToolbarProps = {
 export function CanvasCreationToolbar({
   activeTool,
   isGridVisible,
+  centerOffsetPx,
   onToggleGrid,
   onToolChange,
 }: CanvasCreationToolbarProps) {
   return (
-    <div className="pointer-events-auto absolute bottom-5 left-1/2 z-20 -translate-x-1/2 rounded-full border border-slate-200 bg-white/95 px-2 py-2 shadow-soft backdrop-blur">
+    <div
+      className="pointer-events-auto fixed bottom-5 z-20 -translate-x-1/2 rounded-full border border-slate-200 bg-white/95 px-2 py-2 shadow-soft backdrop-blur"
+      style={{ left: `calc(50vw + ${centerOffsetPx}px)` }}
+    >
       <div className="flex items-center gap-1.5">
         {tools.map((tool) => {
           const Icon = tool.icon;

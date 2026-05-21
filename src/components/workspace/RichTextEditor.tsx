@@ -34,6 +34,7 @@ export function RichTextEditor({ content, pageId, onChange }: RichTextEditorProp
     immediatelyRender: false,
     extensions: [
       StarterKit.configure({
+        link: false,
         heading: {
           levels: [1, 2, 3],
         },

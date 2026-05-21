@@ -49,6 +49,32 @@ function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
   };
 }
 
+function pickFallbackPageId(pages: Page[], preferredPageId: string) {
+  if (pages.some((page) => page.id === preferredPageId)) {
+    return preferredPageId;
+  }
+
+  return pages[0]?.id ?? "";
+}
+
+function cloneCanvasObjects(objects: CanvasObject[]) {
+  const objectIdMap = new Map<string, string>();
+
+  for (const object of objects) {
+    objectIdMap.set(object.id, createId("object"));
+  }
+
+  return objects.map((object) => {
+    const nextId = objectIdMap.get(object.id) ?? createId("object");
+    return {
+      ...object,
+      id: nextId,
+      createdAt: timestamp(),
+      updatedAt: timestamp(),
+    };
+  });
+}
+
 function loadWorkspace(): WorkspaceData {
   if (typeof window === "undefined") {
     return sampleWorkspace;
@@ -131,6 +157,114 @@ export function useWorkspace() {
     }));
   }
 
+  function duplicateProject(projectId: string) {
+    setData((current) => {
+      const sourceProject = current.projects.find((project) => project.id === projectId);
+      if (!sourceProject) {
+        return current;
+      }
+
+      const now = timestamp();
+      const projectCopyId = createId("project");
+      const folderIdMap = new Map<string, string>();
+      const pageIdMap = new Map<string, string>();
+
+      const copiedFolders = current.folders
+        .filter((folder) => folder.projectId === projectId)
+        .map((folder) => {
+          const nextFolderId = createId("folder");
+          folderIdMap.set(folder.id, nextFolderId);
+          return {
+            ...folder,
+            id: nextFolderId,
+            projectId: projectCopyId,
+            name: `${folder.name} Copy`,
+            createdAt: now,
+            updatedAt: now,
+          };
+        });
+
+      const copiedPages = current.pages
+        .filter((page) => page.projectId === projectId)
+        .map((page) => {
+          const nextPageId = createId("page");
+          pageIdMap.set(page.id, nextPageId);
+          const nextFolderId = folderIdMap.get(page.folderId);
+          return {
+            ...page,
+            id: nextPageId,
+            projectId: projectCopyId,
+            folderId: nextFolderId ?? copiedFolders[0]?.id ?? page.folderId,
+            title: `${page.title || "Untitled meeting note"} Copy`,
+            body: page.body,
+            noteDate: page.noteDate,
+            canvasObjects: cloneCanvasObjects(page.canvasObjects),
+            tags: [...page.tags],
+            isFavorite: false,
+            createdAt: now,
+            updatedAt: now,
+          };
+        });
+
+      const copiedProject: Project = {
+        ...sourceProject,
+        id: projectCopyId,
+        name: `${sourceProject.name} Copy`,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const nextPages = [...current.pages, ...copiedPages];
+      const nextActivePageId = copiedPages[0]?.id ?? pickFallbackPageId(nextPages, activePageId);
+
+      setActivePageId(nextActivePageId);
+
+      return {
+        ...current,
+        projects: [...current.projects, copiedProject],
+        folders: [...current.folders, ...copiedFolders],
+        pages: nextPages,
+        recentPageIds: [...copiedPages.map((page) => page.id), ...current.recentPageIds]
+          .filter((id, index, list) => list.indexOf(id) === index)
+          .slice(0, 8),
+      };
+    });
+  }
+
+  function renameProject(projectId: string, name: string) {
+    const cleanName = name.trim();
+    if (!cleanName) {
+      return;
+    }
+
+    const now = timestamp();
+
+    setData((current) => ({
+      ...current,
+      projects: current.projects.map((project) =>
+        project.id === projectId ? { ...project, name: cleanName, updatedAt: now } : project,
+      ),
+    }));
+  }
+
+  function deleteProject(projectId: string) {
+    setData((current) => {
+      const deletedPageIds = new Set(current.pages.filter((page) => page.projectId === projectId).map((page) => page.id));
+      const nextPages = current.pages.filter((page) => page.projectId !== projectId);
+      const nextActivePageId = pickFallbackPageId(nextPages, activePageId);
+
+      setActivePageId(nextActivePageId);
+
+      return {
+        ...current,
+        projects: current.projects.filter((project) => project.id !== projectId),
+        folders: current.folders.filter((folder) => folder.projectId !== projectId),
+        pages: nextPages,
+        recentPageIds: current.recentPageIds.filter((pageId) => !deletedPageIds.has(pageId)),
+      };
+    });
+  }
+
   function createFolder(projectId: string, name: string) {
     const cleanName = name.trim();
     if (!projectId || !cleanName) {
@@ -153,6 +287,92 @@ export function useWorkspace() {
         project.id === projectId ? { ...project, updatedAt: now } : project,
       ),
     }));
+  }
+
+  function duplicateFolder(folderId: string) {
+    setData((current) => {
+      const sourceFolder = current.folders.find((folder) => folder.id === folderId);
+      if (!sourceFolder) {
+        return current;
+      }
+
+      const now = timestamp();
+      const nextFolderId = createId("folder");
+      const copiedPages = current.pages
+        .filter((page) => page.folderId === folderId)
+        .map((page) => {
+          const nextPageId = createId("page");
+          return {
+            ...page,
+            id: nextPageId,
+            projectId: sourceFolder.projectId,
+            folderId: nextFolderId,
+            title: `${page.title || "Untitled meeting note"} Copy`,
+            body: page.body,
+            noteDate: page.noteDate,
+            canvasObjects: cloneCanvasObjects(page.canvasObjects),
+            tags: [...page.tags],
+            isFavorite: false,
+            createdAt: now,
+            updatedAt: now,
+          };
+        });
+
+      const copiedFolder: Folder = {
+        ...sourceFolder,
+        id: nextFolderId,
+        name: `${sourceFolder.name} Copy`,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const nextPages = [...current.pages, ...copiedPages];
+      const nextActivePageId = copiedPages[0]?.id ?? pickFallbackPageId(nextPages, activePageId);
+
+      setActivePageId(nextActivePageId);
+
+      return {
+        ...current,
+        folders: [...current.folders, copiedFolder],
+        pages: nextPages,
+        recentPageIds: [...copiedPages.map((page) => page.id), ...current.recentPageIds]
+          .filter((id, index, list) => list.indexOf(id) === index)
+          .slice(0, 8),
+      };
+    });
+  }
+
+  function renameFolder(folderId: string, name: string) {
+    const cleanName = name.trim();
+    if (!cleanName) {
+      return;
+    }
+
+    const now = timestamp();
+
+    setData((current) => ({
+      ...current,
+      folders: current.folders.map((folder) =>
+        folder.id === folderId ? { ...folder, name: cleanName, updatedAt: now } : folder,
+      ),
+    }));
+  }
+
+  function deleteFolder(folderId: string) {
+    setData((current) => {
+      const deletedPageIds = new Set(current.pages.filter((page) => page.folderId === folderId).map((page) => page.id));
+      const nextPages = current.pages.filter((page) => page.folderId !== folderId);
+      const nextActivePageId = pickFallbackPageId(nextPages, activePageId);
+
+      setActivePageId(nextActivePageId);
+
+      return {
+        ...current,
+        folders: current.folders.filter((folder) => folder.id !== folderId),
+        pages: nextPages,
+        recentPageIds: current.recentPageIds.filter((pageId) => !deletedPageIds.has(pageId)),
+      };
+    });
   }
 
   function createPage(projectId: string, folderId: string, title = "Untitled meeting note") {
@@ -189,6 +409,37 @@ export function useWorkspace() {
     setActivePageId(page.id);
   }
 
+  function duplicatePage(pageId: string) {
+    setData((current) => {
+      const sourcePage = current.pages.find((page) => page.id === pageId);
+      if (!sourcePage) {
+        return current;
+      }
+
+      const now = timestamp();
+      const copiedPage: Page = {
+        ...sourcePage,
+        id: createId("page"),
+        title: `${sourcePage.title || "Untitled meeting note"} Copy`,
+        body: sourcePage.body,
+        noteDate: sourcePage.noteDate,
+        canvasObjects: cloneCanvasObjects(sourcePage.canvasObjects),
+        tags: [...sourcePage.tags],
+        isFavorite: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      setActivePageId(copiedPage.id);
+
+      return {
+        ...current,
+        pages: [...current.pages, copiedPage],
+        recentPageIds: [copiedPage.id, ...current.recentPageIds.filter((id) => id !== copiedPage.id)].slice(0, 8),
+      };
+    });
+  }
+
   function updatePage(
     pageId: string,
     updates: Partial<Pick<Page, "title" | "body" | "noteDate" | "canvasObjects" | "tags" | "isFavorite">>,
@@ -209,11 +460,26 @@ export function useWorkspace() {
     }));
   }
 
+  function renamePage(pageId: string, title: string) {
+    const cleanTitle = title.trim();
+    if (!cleanTitle) {
+      return;
+    }
+
+    const now = timestamp();
+
+    setData((current) => ({
+      ...current,
+      pages: current.pages.map((page) =>
+        page.id === pageId ? { ...page, title: cleanTitle, updatedAt: now } : page,
+      ),
+    }));
+  }
+
   function deletePage(pageId: string) {
     setData((current) => {
       const nextPages = current.pages.filter((page) => page.id !== pageId);
-      const nextActivePageId =
-        activePageId === pageId ? nextPages[0]?.id ?? "" : activePageId;
+      const nextActivePageId = pickFallbackPageId(nextPages, activePageId);
 
       setActivePageId(nextActivePageId);
 
@@ -231,8 +497,16 @@ export function useWorkspace() {
     activePageId,
     selectPage,
     createProject,
+    renameProject,
+    deleteProject,
+    duplicateProject,
     createFolder,
+    renameFolder,
+    deleteFolder,
+    duplicateFolder,
     createPage,
+    renamePage,
+    duplicatePage,
     updatePage,
     deletePage,
   };

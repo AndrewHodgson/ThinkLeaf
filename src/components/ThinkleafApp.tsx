@@ -25,6 +25,7 @@ export function ThinkleafApp() {
     }
   });
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
+  const sidebarWidth = isSidebarCollapsed ? 72 : 320;
 
   useEffect(() => {
     try {
@@ -59,6 +60,20 @@ export function ThinkleafApp() {
         onCreateFolder={workspace.createFolder}
         onCreatePage={workspace.createPage}
         onCreateProject={workspace.createProject}
+        onDeletePage={workspace.deletePage}
+        onDeleteFolder={workspace.deleteFolder}
+        onDeleteProject={workspace.deleteProject}
+        onDuplicateFolder={workspace.duplicateFolder}
+        onDuplicatePage={workspace.duplicatePage}
+        onDuplicateProject={workspace.duplicateProject}
+        onRenameFolder={workspace.renameFolder}
+        onRenameProject={workspace.renameProject}
+        onRenamePage={workspace.renamePage}
+        onToggleFavoritePage={(pageId) =>
+          workspace.updatePage(pageId, {
+            isFavorite: !workspace.data.pages.find((page) => page.id === pageId)?.isFavorite,
+          })
+        }
         onToggleCollapsed={() => setIsSidebarCollapsed((value) => !value)}
         onSearchChange={setSearchQuery}
         onSelectPage={workspace.selectPage}
@@ -72,6 +87,7 @@ export function ThinkleafApp() {
           activePage={workspace.activePage}
           data={workspace.data}
           isGridVisible={isGridVisible}
+          sidebarWidth={sidebarWidth}
           onDeletePage={workspace.deletePage}
           onSearchByTag={(tag) => setSearchQuery(tag)}
           onUpdatePage={workspace.updatePage}

@@ -2,8 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Page, WorkspaceData } from "@/types/workspace";
+import type { MouseEvent, ReactNode } from "react";
 import { PageButton } from "@/components/sidebar/PageButton";
-import { FileText, Folder, PanelLeftClose, PanelLeftOpen, Plus, Search, ChevronDown, ChevronRight, Star } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  FilePlus,
+  Folder,
+  FolderPlus,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Pencil,
+  Plus,
+  Search,
+  Star,
+  Trash2,
+} from "lucide-react";
 
 type SidebarProps = {
   activePageId: string;
@@ -15,6 +30,16 @@ type SidebarProps = {
   onCreateFolder: (projectId: string, name: string) => void;
   onCreatePage: (projectId: string, folderId: string, title?: string) => void;
   onCreateProject: (name: string) => void;
+  onDuplicateFolder: (folderId: string) => void;
+  onDuplicatePage: (pageId: string) => void;
+  onDuplicateProject: (projectId: string) => void;
+  onDeleteFolder: (folderId: string) => void;
+  onDeleteProject: (projectId: string) => void;
+  onDeletePage: (pageId: string) => void;
+  onRenameFolder: (folderId: string, name: string) => void;
+  onRenameProject: (projectId: string, name: string) => void;
+  onRenamePage: (pageId: string, name: string) => void;
+  onToggleFavoritePage: (pageId: string) => void;
   onSearchChange: (value: string) => void;
   onSelectPage: (pageId: string) => void;
   onToggleCollapsed: () => void;
@@ -38,7 +63,7 @@ function loadSidebarState(): SidebarState {
       return { expandedFolderIds: [], expandedProjectIds: [] };
     }
 
-    const parsed = JSON.parse(stored) as Partial<SidebarState> & { collapsed?: boolean };
+    const parsed = JSON.parse(stored) as Partial<SidebarState>;
     return {
       expandedFolderIds: Array.isArray(parsed.expandedFolderIds) ? parsed.expandedFolderIds : [],
       expandedProjectIds: Array.isArray(parsed.expandedProjectIds) ? parsed.expandedProjectIds : [],
@@ -58,6 +83,16 @@ export function Sidebar({
   onCreateFolder,
   onCreatePage,
   onCreateProject,
+  onDuplicateFolder,
+  onDuplicatePage,
+  onDuplicateProject,
+  onDeleteFolder,
+  onDeleteProject,
+  onDeletePage,
+  onRenameFolder,
+  onRenameProject,
+  onRenamePage,
+  onToggleFavoritePage,
   onSearchChange,
   onSelectPage,
   onToggleCollapsed,
@@ -89,8 +124,9 @@ export function Sidebar({
 
   useEffect(() => {
     setExpandedProjectIds((current) => {
-      const next = [...current];
-      let changed = false;
+      const existingIds = new Set(data.projects.map((project) => project.id));
+      const next = current.filter((id) => existingIds.has(id));
+      let changed = next.length !== current.length;
 
       for (const project of data.projects) {
         if (!next.includes(project.id)) {
@@ -103,8 +139,9 @@ export function Sidebar({
     });
 
     setExpandedFolderIds((current) => {
-      const next = [...current];
-      let changed = false;
+      const existingIds = new Set(data.folders.map((folder) => folder.id));
+      const next = current.filter((id) => existingIds.has(id));
+      let changed = next.length !== current.length;
 
       for (const folder of data.folders) {
         if (!next.includes(folder.id)) {
@@ -147,6 +184,33 @@ export function Sidebar({
     onCreatePage(projectId, folderId, title || "Untitled meeting note");
   }
 
+  function promptProjectRename(projectId: string, currentName: string) {
+    const nextName = window.prompt("Rename project", currentName);
+    if (nextName === null) {
+      return;
+    }
+
+    onRenameProject(projectId, nextName);
+  }
+
+  function promptFolderRename(folderId: string, currentName: string) {
+    const nextName = window.prompt("Rename folder", currentName);
+    if (nextName === null) {
+      return;
+    }
+
+    onRenameFolder(folderId, nextName);
+  }
+
+  function promptPageRename(pageId: string, currentName: string) {
+    const nextName = window.prompt("Rename page", currentName);
+    if (nextName === null) {
+      return;
+    }
+
+    onRenamePage(pageId, nextName);
+  }
+
   function toggleProject(projectId: string) {
     setExpandedProjectIds((current) =>
       current.includes(projectId) ? current.filter((id) => id !== projectId) : [...current, projectId],
@@ -156,6 +220,62 @@ export function Sidebar({
   function toggleFolder(folderId: string) {
     setExpandedFolderIds((current) =>
       current.includes(folderId) ? current.filter((id) => id !== folderId) : [...current, folderId],
+    );
+  }
+
+  function actionButton(
+    label: string,
+    icon: ReactNode,
+    onClick: (event: MouseEvent<HTMLButtonElement>) => void,
+    tone: "default" | "danger" = "default",
+  ) {
+    return (
+      <button
+        aria-label={label}
+        className={[
+          "inline-flex h-7 w-7 items-center justify-center rounded transition",
+          tone === "danger"
+            ? "text-rose-500 hover:bg-rose-50"
+            : "text-slate-500 hover:bg-slate-100",
+        ].join(" ")}
+        title={label}
+        type="button"
+        onClick={onClick}
+      >
+        {icon}
+      </button>
+    );
+  }
+
+  function pageActions(page: Page) {
+    return (
+      <>
+        {actionButton(
+          page.isFavorite ? "Remove favorite" : "Mark favorite",
+          <Star aria-hidden="true" className={["h-3.5 w-3.5", page.isFavorite ? "fill-leaf-500 text-leaf-600" : ""].join(" ")} />,
+          (event) => {
+            event.stopPropagation();
+            onToggleFavoritePage(page.id);
+          },
+        )}
+        {actionButton("Duplicate page", <Copy aria-hidden="true" className="h-3.5 w-3.5" />, (event) => {
+          event.stopPropagation();
+          onDuplicatePage(page.id);
+        })}
+        {actionButton("Rename page", <Pencil aria-hidden="true" className="h-3.5 w-3.5" />, (event) => {
+          event.stopPropagation();
+          promptPageRename(page.id, page.title || "Untitled");
+        })}
+        {actionButton("Delete page", <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />, (event) => {
+          event.stopPropagation();
+          const shouldDelete = window.confirm(
+            `Delete page "${page.title || "Untitled"}"? This will remove the page and its canvas objects.`,
+          );
+          if (shouldDelete) {
+            onDeletePage(page.id);
+          }
+        }, "danger")}
+      </>
     );
   }
 
@@ -174,15 +294,6 @@ export function Sidebar({
           </button>
         </div>
         <div className="flex flex-1 flex-col items-center gap-3 py-4">
-          <button
-            aria-label="Create project"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-slate-950 text-white hover:bg-slate-800"
-            title="Create project"
-            type="button"
-            onClick={promptProject}
-          >
-            <Plus aria-hidden="true" className="h-4 w-4" />
-          </button>
           <div className="rounded-md border border-dashed border-slate-200 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-400">
             TL
           </div>
@@ -199,26 +310,15 @@ export function Sidebar({
             <div className="text-lg font-semibold tracking-tight text-slate-950">Thinkleaf</div>
             <div className="text-xs text-slate-500">Notes with room to think.</div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              aria-label="Collapse sidebar"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              title="Collapse sidebar"
-              type="button"
-              onClick={onToggleCollapsed}
-            >
-              <PanelLeftClose aria-hidden="true" className="h-4 w-4" />
-            </button>
-            <button
-              aria-label="Create project"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-slate-950 text-white hover:bg-slate-800"
-              title="Create project"
-              type="button"
-              onClick={promptProject}
-            >
-              <Plus aria-hidden="true" className="h-4 w-4" />
-            </button>
-          </div>
+          <button
+            aria-label="Collapse sidebar"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            title="Collapse sidebar"
+            type="button"
+            onClick={onToggleCollapsed}
+          >
+            <PanelLeftClose aria-hidden="true" className="h-4 w-4" />
+          </button>
         </div>
         <label className="relative mt-4 block">
           <span className="sr-only">Search pages</span>
@@ -248,6 +348,7 @@ export function Sidebar({
                   <PageButton
                     key={page.id}
                     isActive={page.id === activePageId}
+                    actions={pageActions(page)}
                     page={page}
                     onClick={() => onSelectPage(page.id)}
                   />
@@ -263,9 +364,9 @@ export function Sidebar({
           <div className="mb-2 flex items-center justify-between px-1">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Projects</h2>
             <button
-              aria-label="Add project"
+              aria-label="Create project"
               className="inline-flex h-7 w-7 items-center justify-center rounded text-leaf-700 hover:bg-leaf-50"
-              title="Add project"
+              title="Create project"
               type="button"
               onClick={promptProject}
             >
@@ -279,7 +380,7 @@ export function Sidebar({
 
               return (
                 <div key={project.id} className="rounded-md border border-slate-200 bg-white p-2">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="group flex items-center justify-between gap-2">
                     <button
                       className="flex min-w-0 items-center gap-2 text-left"
                       type="button"
@@ -292,15 +393,46 @@ export function Sidebar({
                       )}
                       <div className="min-w-0 truncate text-sm font-semibold text-slate-800">{project.name}</div>
                     </button>
-                    <button
-                      aria-label={`Add folder to ${project.name}`}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded text-slate-500 hover:bg-slate-100"
-                      title="Add folder"
-                      type="button"
-                      onClick={() => promptFolder(project.id)}
-                    >
-                      <Plus aria-hidden="true" className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1 opacity-100 transition md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+                      {actionButton(
+                        `Create folder in ${project.name}`,
+                        <FolderPlus aria-hidden="true" className="h-3.5 w-3.5" />,
+                        (event) => {
+                          event.stopPropagation();
+                          promptFolder(project.id);
+                        },
+                      )}
+                      {actionButton(
+                        `Duplicate project ${project.name}`,
+                        <Copy aria-hidden="true" className="h-3.5 w-3.5" />,
+                        (event) => {
+                          event.stopPropagation();
+                          onDuplicateProject(project.id);
+                        },
+                      )}
+                      {actionButton(
+                        `Rename project ${project.name}`,
+                        <Pencil aria-hidden="true" className="h-3.5 w-3.5" />,
+                        (event) => {
+                          event.stopPropagation();
+                          promptProjectRename(project.id, project.name);
+                        },
+                      )}
+                      {actionButton(
+                        `Delete project ${project.name}`,
+                        <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />,
+                        (event) => {
+                          event.stopPropagation();
+                          const shouldDelete = window.confirm(
+                            `Delete project "${project.name}"? This will remove all folders and pages inside the project.`,
+                          );
+                          if (shouldDelete) {
+                            onDeleteProject(project.id);
+                          }
+                        },
+                        "danger",
+                      )}
+                    </div>
                   </div>
 
                   {isExpanded ? (
@@ -311,7 +443,7 @@ export function Sidebar({
 
                         return (
                           <div key={folder.id} className="border-l border-slate-200 pl-3">
-                            <div className="flex items-center justify-between gap-2">
+                            <div className="group flex items-center justify-between gap-2">
                               <button
                                 className="flex min-w-0 items-center gap-1.5 text-left"
                                 type="button"
@@ -327,15 +459,46 @@ export function Sidebar({
                                   {folder.name}
                                 </div>
                               </button>
-                              <button
-                                aria-label={`Add page to ${folder.name}`}
-                                className="inline-flex h-7 w-7 items-center justify-center rounded text-slate-500 hover:bg-slate-100"
-                                title="Add page"
-                                type="button"
-                                onClick={() => promptPage(project.id, folder.id)}
-                              >
-                                <FileText aria-hidden="true" className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="flex items-center gap-1 opacity-100 transition md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+                                {actionButton(
+                                  `Create page in ${folder.name}`,
+                                  <FilePlus aria-hidden="true" className="h-3.5 w-3.5" />,
+                                  (event) => {
+                                    event.stopPropagation();
+                                    promptPage(project.id, folder.id);
+                                  },
+                                )}
+                                {actionButton(
+                                  `Duplicate folder ${folder.name}`,
+                                  <Copy aria-hidden="true" className="h-3.5 w-3.5" />,
+                                  (event) => {
+                                    event.stopPropagation();
+                                    onDuplicateFolder(folder.id);
+                                  },
+                                )}
+                                {actionButton(
+                                  `Rename folder ${folder.name}`,
+                                  <Pencil aria-hidden="true" className="h-3.5 w-3.5" />,
+                                  (event) => {
+                                    event.stopPropagation();
+                                    promptFolderRename(folder.id, folder.name);
+                                  },
+                                )}
+                                {actionButton(
+                                  `Delete folder ${folder.name}`,
+                                  <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />,
+                                  (event) => {
+                                    event.stopPropagation();
+                                    const shouldDelete = window.confirm(
+                                      `Delete folder "${folder.name}"? This will remove all pages inside the folder.`,
+                                    );
+                                    if (shouldDelete) {
+                                      onDeleteFolder(folder.id);
+                                    }
+                                  },
+                                  "danger",
+                                )}
+                              </div>
                             </div>
 
                             {folderExpanded ? (
@@ -344,6 +507,7 @@ export function Sidebar({
                                   <PageButton
                                     key={page.id}
                                     isActive={page.id === activePageId}
+                                    actions={pageActions(page)}
                                     page={page}
                                     compact
                                     onClick={() => onSelectPage(page.id)}
@@ -377,14 +541,15 @@ export function Sidebar({
           </div>
           {favoritePages.length ? (
             <div className="space-y-1">
-              {favoritePages.map((page) => (
-                <PageButton
-                  key={page.id}
-                  isActive={page.id === activePageId}
-                  page={page}
-                  onClick={() => onSelectPage(page.id)}
-                />
-              ))}
+                {favoritePages.map((page) => (
+                  <PageButton
+                    key={page.id}
+                    isActive={page.id === activePageId}
+                    actions={pageActions(page)}
+                    page={page}
+                    onClick={() => onSelectPage(page.id)}
+                  />
+                ))}
             </div>
           ) : (
             <p className="px-2 text-sm text-slate-500">No favorites yet.</p>
