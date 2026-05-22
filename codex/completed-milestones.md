@@ -44,6 +44,7 @@
 - Document color and highlight controls now use the shared HEX-capable color picker
 - H1/H2/H3 controls consolidated into a compact text-style dropdown
 - Document formatting toolbar active states refresh from current selection/cursor where practical
+- Main document toolbar initial disabled state no longer causes a hydration mismatch warning
 
 ## Canvas Foundation
 
@@ -52,6 +53,16 @@
 - Bottom floating canvas toolbar added
 - Top canvas bar removed
 - Zoom controls moved into the bottom floating canvas toolbar
+- Bottom toolbar shortcut badges added for numbered tools, image import, and zoom controls
+- Bottom toolbar Undo and Redo buttons added for canvas/page actions
+- Undo and Redo buttons positioned between Reset View and Settings in the bottom toolbar
+- Undo and Redo buttons verified with muted disabled states and canvas-scoped shortcuts
+- Image import shortcut added on 8
+- Zoom shortcuts added with + for Zoom In and - for Zoom Out
+- Canvas Undo shortcut added on Cmd/Ctrl+Z
+- Canvas Redo shortcuts added on Cmd/Ctrl+Shift+Z and Cmd/Ctrl+Y
+- Zoom In shortcut now also supports = while keeping the toolbar badge as +
+- Transient zoom percentage indicator added near the bottom toolbar for zoom changes and Reset View
 - Canvas object model added
 - Rectangle, circle, text box, line, and arrow tools added
 - Canvas image objects added
@@ -65,6 +76,7 @@
 - Line/arrow endpoint editing added
 - Text box editing added
 - Canvas objects persist per page
+- Per-page lightweight canvas undo/redo history added for create, delete, move, resize, style changes, whiteboard text edits, and inserted image objects
 - Grid snapping added
 - Shape-to-text conversion added
 - Right properties panel added
@@ -129,6 +141,6 @@
 - Delete actions moved to far-right action position
 - Hover actions added to reduce visual clutter
 
-## Current Recommended Next Feature
+## Current Recommended Next Task
 
-Manual browser QA for profiles, image import/paste, and polished canvas/editor interactions, then document block lock/unlock.
+Short manual QA/polish pass for profiles, image insert, color pickers, toolbar shortcuts, pan/zoom/reset, snap/grid, canvas object editing, document formatting, whiteboard text formatting, and localStorage persistence.

@@ -178,8 +178,14 @@ type RichTextEditorProps = {
 
 export function RichTextEditor({ content, pageId, onChange }: RichTextEditorProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const [hasMounted, setHasMounted] = useState(false);
   const [verticalAlign, setVerticalAlign] = useState<DocumentVerticalAlign>("top");
   const [hasLoadedVerticalAlign, setHasLoadedVerticalAlign] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(DOCUMENT_VERTICAL_ALIGN_STORAGE_KEY);
@@ -270,7 +276,7 @@ export function RichTextEditor({ content, pageId, onChange }: RichTextEditorProp
   return (
     <div>
       <EditorToolbar
-        editor={editor}
+        editor={hasMounted ? editor : null}
         verticalAlign={verticalAlign}
         onImageUploadClick={() => imageInputRef.current?.click()}
         onVerticalAlignChange={setVerticalAlign}

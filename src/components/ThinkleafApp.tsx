@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Workspace } from "@/components/workspace/Workspace";
 import { createDefaultCanvasViewState, defaultCanvasViewState, maxZoom, minZoom, zoomStep } from "@/lib/canvasStyle";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { searchPages, sortPagesByUpdatedAt } from "@/lib/workspaceUtils";
-import type { CanvasTool } from "@/types/workspace";
+import type { CanvasHistoryOptions, CanvasObject, CanvasTool } from "@/types/workspace";
 
 const toolShortcuts: Record<string, CanvasTool> = {
   "1": "Select",
@@ -19,6 +19,12 @@ const toolShortcuts: Record<string, CanvasTool> = {
 };
 
 const SNAP_TO_GRID_STORAGE_KEY = "thinkleaf.snapToGrid.v1";
+const CANVAS_HISTORY_LIMIT = 25;
+
+type CanvasPageHistory = {
+  redoStack: CanvasObject[][];
+  undoStack: CanvasObject[][];
+};
 
 export function ThinkleafApp() {
   const workspace = useWorkspace();
@@ -26,9 +32,13 @@ export function ThinkleafApp() {
   const [isGridVisible, setIsGridVisible] = useState(true);
   const [isSnapToGridEnabled, setIsSnapToGridEnabled] = useState(true);
   const [activeTool, setActiveTool] = useState<CanvasTool>("Select");
+  const [imageImportRequestId, setImageImportRequestId] = useState(0);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [hasLoadedUiPreferences, setHasLoadedUiPreferences] = useState(false);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
+  const [zoomIndicatorTick, setZoomIndicatorTick] = useState(0);
+  const [canvasHistoryByPage, setCanvasHistoryByPage] = useState<Record<string, CanvasPageHistory>>({});
+  const recordedCanvasHistoryKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     try {
@@ -68,19 +78,60 @@ export function ThinkleafApp() {
     }
   }, [hasLoadedUiPreferences, isSnapToGridEnabled]);
 
+  const canvasViewState = workspace.activePage?.canvasViewState ?? defaultCanvasViewState;
+  const activeCanvasHistory = workspace.activePage ? canvasHistoryByPage[workspace.activePage.id] : undefined;
+  const canUndoCanvas = Boolean(activeCanvasHistory?.undoStack.length);
+  const canRedoCanvas = Boolean(activeCanvasHistory?.redoStack.length);
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      const isUndoRedoShortcut = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      const isCanvasTextEditor = isCanvasTextEditorTarget(event.target);
+
+      if (isUndoRedoShortcut && (key === "z" || key === "y")) {
+        if (isEditableTarget(event.target) && !isCanvasTextEditor) {
+          return;
+        }
+
+        event.preventDefault();
+
+        if (key === "y" || event.shiftKey) {
+          redoCanvas();
+        } else {
+          undoCanvas();
+        }
+
+        return;
+      }
+
       if (isEditableTarget(event.target)) {
         return;
       }
 
       const nextTool = toolShortcuts[event.key];
-      if (!nextTool) {
+      if (nextTool) {
+        event.preventDefault();
+        setActiveTool(nextTool);
         return;
       }
 
-      event.preventDefault();
-      setActiveTool(nextTool);
+      if (event.key === "8") {
+        event.preventDefault();
+        setImageImportRequestId((requestId) => requestId + 1);
+        return;
+      }
+
+      if (event.key === "+" || event.key === "=") {
+        event.preventDefault();
+        updateZoom(canvasViewState.zoom + zoomStep);
+        return;
+      }
+
+      if (event.key === "-") {
+        event.preventDefault();
+        updateZoom(canvasViewState.zoom - zoomStep);
+      }
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -88,7 +139,7 @@ export function ThinkleafApp() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
+  }, [canvasHistoryByPage, canvasViewState.zoom, workspace.activePage]);
 
   const searchResults = useMemo(
     () => searchPages(workspace.activeProfileData.pages, searchQuery),
@@ -99,7 +150,6 @@ export function ThinkleafApp() {
     () => sortPagesByUpdatedAt(workspace.activeProfileData.pages.filter((page) => page.isFavorite)),
     [workspace.activeProfileData.pages],
   );
-  const canvasViewState = workspace.activePage?.canvasViewState ?? defaultCanvasViewState;
 
   function updateZoom(nextZoom: number) {
     const page = workspace.activePage;
@@ -113,6 +163,104 @@ export function ThinkleafApp() {
         ...canvasViewState,
         zoom: boundedZoom,
       },
+    });
+    setZoomIndicatorTick((tick) => tick + 1);
+  }
+
+  function cloneCanvasObjects(objects: CanvasObject[]) {
+    return objects.map((object) => ({ ...object }));
+  }
+
+  function updateCanvasObjects(pageId: string, canvasObjects: CanvasObject[], options: CanvasHistoryOptions = {}) {
+    const page = workspace.data.pages.find((item) => item.id === pageId);
+    if (!page) {
+      return;
+    }
+
+    if (options.recordHistory !== false) {
+      const historyKey = options.historyKey;
+      const hasRecordedHistoryKey = historyKey ? recordedCanvasHistoryKeysRef.current.has(historyKey) : false;
+
+      if (!hasRecordedHistoryKey) {
+        if (historyKey) {
+          recordedCanvasHistoryKeysRef.current.add(historyKey);
+        }
+
+        const previousObjects = cloneCanvasObjects(page.canvasObjects);
+        setCanvasHistoryByPage((current) => {
+          const pageHistory = current[pageId] ?? { redoStack: [], undoStack: [] };
+
+          return {
+            ...current,
+            [pageId]: {
+              undoStack: [...pageHistory.undoStack, previousObjects].slice(-CANVAS_HISTORY_LIMIT),
+              redoStack: [],
+            },
+          };
+        });
+      }
+    }
+
+    workspace.updatePage(pageId, {
+      canvasObjects: cloneCanvasObjects(canvasObjects),
+    });
+  }
+
+  function undoCanvas() {
+    const page = workspace.activePage;
+    if (!page) {
+      return;
+    }
+
+    const pageHistory = canvasHistoryByPage[page.id];
+    const previousObjects = pageHistory?.undoStack.at(-1);
+    if (!pageHistory || !previousObjects) {
+      return;
+    }
+
+    setSelectedObjectId(null);
+    setCanvasHistoryByPage((current) => {
+      const currentHistory = current[page.id] ?? { redoStack: [], undoStack: [] };
+
+      return {
+        ...current,
+        [page.id]: {
+          undoStack: currentHistory.undoStack.slice(0, -1),
+          redoStack: [cloneCanvasObjects(page.canvasObjects), ...currentHistory.redoStack].slice(0, CANVAS_HISTORY_LIMIT),
+        },
+      };
+    });
+    workspace.updatePage(page.id, {
+      canvasObjects: cloneCanvasObjects(previousObjects),
+    });
+  }
+
+  function redoCanvas() {
+    const page = workspace.activePage;
+    if (!page) {
+      return;
+    }
+
+    const pageHistory = canvasHistoryByPage[page.id];
+    const nextObjects = pageHistory?.redoStack[0];
+    if (!pageHistory || !nextObjects) {
+      return;
+    }
+
+    setSelectedObjectId(null);
+    setCanvasHistoryByPage((current) => {
+      const currentHistory = current[page.id] ?? { redoStack: [], undoStack: [] };
+
+      return {
+        ...current,
+        [page.id]: {
+          undoStack: [...currentHistory.undoStack, cloneCanvasObjects(page.canvasObjects)].slice(-CANVAS_HISTORY_LIMIT),
+          redoStack: currentHistory.redoStack.slice(1),
+        },
+      };
+    });
+    workspace.updatePage(page.id, {
+      canvasObjects: cloneCanvasObjects(nextObjects),
     });
   }
 
@@ -128,6 +276,7 @@ export function ThinkleafApp() {
         zoom: canvasViewState.zoom,
       },
     });
+    setZoomIndicatorTick((tick) => tick + 1);
   }
 
   return (
@@ -171,11 +320,17 @@ export function ThinkleafApp() {
           activeTool={activeTool}
           activePage={workspace.activePage}
           data={workspace.activeProfileData}
+          canRedoCanvas={canRedoCanvas}
+          canUndoCanvas={canUndoCanvas}
+          imageImportRequestId={imageImportRequestId}
           isGridVisible={isGridVisible}
           isSnapToGridEnabled={isSnapToGridEnabled}
           onDeletePage={workspace.deletePage}
           onResetView={resetView}
+          onRedoCanvas={redoCanvas}
           onSearchByTag={(tag) => setSearchQuery(tag)}
+          onUndoCanvas={undoCanvas}
+          onUpdateCanvasObjects={updateCanvasObjects}
           onUpdatePage={workspace.updatePage}
           onSelectionChange={setSelectedObjectId}
           onToggleSnapToGrid={() => setIsSnapToGridEnabled((value) => !value)}
@@ -184,6 +339,8 @@ export function ThinkleafApp() {
           onToolChange={setActiveTool}
           onZoomIn={() => updateZoom(canvasViewState.zoom + zoomStep)}
           onZoomOut={() => updateZoom(canvasViewState.zoom - zoomStep)}
+          zoomIndicatorTick={zoomIndicatorTick}
+          zoomPercent={Math.round(canvasViewState.zoom * 100)}
         />
       </section>
     </main>
@@ -200,4 +357,12 @@ function isEditableTarget(target: EventTarget | null) {
     Boolean(target.closest("[contenteditable='true']")) ||
     ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
   );
+}
+
+function isCanvasTextEditorTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return Boolean(target.closest("[data-canvas-text-editor='true']"));
 }

@@ -1,94 +1,62 @@
-# Next Codex Task: Manual Browser QA for Profiles, Canvas, and Editor
+# Next Codex Task: Manual QA and Polish Pass
 
 ## Goal
 
-Do a hands-on browser QA pass for the Profiles layer, image import/paste, shared color picker, canvas interactions, and main document editor.
+Run a short manual QA/polish pass before starting new feature work.
 
-The latest code-path/build stability pass found and fixed a hydration mismatch around saved UI preferences. A full click-through pass is still recommended before adding another feature.
+Keep this pass focused on confirming current behavior, fixing small regressions, and tightening obvious rough edges. Do not add new major features.
 
-## Requirements
+## QA Focus
 
-1. Verify profile behavior.
-   - Existing localStorage data appears under the default Work profile.
-   - Users can create, rename, delete, and switch profiles.
-   - Deleting a profile removes only that profile's projects, folders, pages, and canvas objects.
-   - The last remaining profile is not removed.
-   - Each profile has its own projects, folders, and pages.
-   - Search only returns pages from the active profile.
-   - Favorite Pages only shows favorites from the active profile.
-   - Active profile persists after refresh.
-   - Project/folder/page create, rename, duplicate, and delete still work inside each profile.
+1. Profiles
+   - Create, rename, delete, and switch profiles.
+   - Confirm existing migrated data appears in the default Work profile.
+   - Confirm search and favorites only show active-profile pages.
 
-2. Verify color and formatting behavior.
-   - Shared color picker popovers have a solid surface and do not visually float or overlap awkwardly.
-   - Color picker popovers close on outside click and when another color picker opens.
-   - Custom HEX colors apply from text, highlight, stroke, and fill pickers.
-   - Recent colors only show custom HEX colors the user added.
-   - Document text color and highlight work.
-   - Whiteboard text color and highlight work.
-   - Stroke and fill colors work.
-   - Solid, dashed, and dotted stroke styles work for rectangles, lines, and arrows.
-   - H1/H2/H3 work from the compact text-style dropdown.
+2. Image Insert
+   - Insert and paste images into the main document.
+   - Import and paste images onto the whiteboard.
+   - Confirm resized/compressed images persist after refresh.
 
-3. Verify canvas behavior.
-   - There is no top canvas bar showing "CANVAS".
-   - Zoom In, Zoom Out, and Reset View work from the bottom floating toolbar.
-   - The bottom toolbar stays fixed while panning, zooming, selecting objects, and showing the right properties panel.
-   - Pan, zoom, and Reset View still work.
-   - Select, move, resize, endpoint edit, and text edit still work.
-   - Rectangle/circle click-drag creation defines width and height.
-   - Line/arrow click-drag creation defines start and end points.
-   - Single-click object creation still creates default-sized objects.
-   - Object creation works after panning and zooming.
-   - Snap to Grid persists separately from Show Grid.
-   - Snap to Grid affects creation, movement, resizing, and line/arrow endpoints.
-   - Turning Snap to Grid off allows free movement.
-   - Number-key shortcuts 1-7 switch tools outside editable fields.
-   - Whiteboard image import creates a movable canvas image object.
-   - Whiteboard image paste creates a movable canvas image object when focus is on the canvas.
-   - Canvas image objects resize, delete, and persist per page.
+3. Color Pickers
+   - Check text color, highlight, stroke, and fill pickers.
+   - Confirm popovers close cleanly.
+   - Confirm custom HEX colors apply and recent colors only contain custom colors.
 
-4. Verify editor behavior.
-   - Tiptap typing, rich text formatting, links, checklists, and tables still work.
-   - Document left, center, and right alignment work.
-   - Table header left, center, and right alignment work.
-   - Document text size and vertical content alignment work.
-   - Document image import inserts an image into the Tiptap document.
-   - Pasted screenshots/images insert into the document when focus is in the editor.
-   - Canvas text object formatting works for standalone text boxes and rectangles/circles with text.
+4. Toolbar Shortcuts
+   - Confirm 1-8 tool/image shortcuts work outside editable fields.
+   - Confirm + and = zoom in, - zooms out, and shortcut badges remain accurate.
+   - Confirm shortcuts do not trigger inside editors, inputs, textareas, selects, or contenteditable areas.
+   - Confirm Cmd/Ctrl+Z undoes canvas actions outside the main document editor.
+   - Confirm Cmd/Ctrl+Shift+Z and Cmd/Ctrl+Y redo canvas actions outside the main document editor.
+   - Confirm Undo and Redo buttons sit between Reset View and Settings and are muted when unavailable.
+   - Confirm Tiptap keeps its own undo/redo while typing in the main document.
+   - Confirm the main document toolbar does not log a hydration mismatch on initial load.
 
-5. Verify persistence.
-   - Profiles persist in localStorage.
-   - Active profile persists in localStorage.
-   - Sidebar collapsed state persists without hydration errors.
-   - Snap to Grid persists without hydration errors.
-   - Canvas view state persists per page.
-   - Canvas objects persist per page.
-   - Document and canvas images persist after refresh.
-   - Switching pages and refreshing restores the expected profile/page/canvas state.
+5. Canvas Navigation
+   - Confirm pan, zoom, Reset View, and the zoom percentage indicator work.
+   - Confirm the bottom toolbar stays fixed while panning, zooming, selecting, and opening the properties panel.
 
-## Recommended Next Feature After QA
+6. Snap and Grid
+   - Confirm Show Grid and Snap to Grid are separate.
+   - Confirm Snap to Grid persists and affects creation, movement, resizing, and line/arrow endpoints when enabled.
+   - Confirm free movement works when Snap to Grid is disabled.
 
-Document block lock/unlock.
+7. Object Editing
+   - Confirm rectangles, circles, text boxes, lines, arrows, and images can be created, selected, moved, resized, styled, and deleted.
+   - Confirm line and arrow creation previews naturally and endpoint editing still works.
+   - Confirm canvas undo/redo works per page for create, delete, move, resize, style changes, whiteboard text edits, and inserted image objects.
 
-## Must Preserve
+8. Formatting
+   - Confirm main document formatting, tables, alignment, text color, highlight, and text size work.
+   - Confirm whiteboard text boxes and text-bearing shapes support bold, italic, alignment, vertical alignment, text color, highlight, and size.
 
-Follow `codex/guardrails.md`.
+9. Persistence
+   - Refresh and switch profiles/pages to confirm localStorage restores page content, canvas objects, images, preferences, profile selection, and canvas view state.
 
-## Do Not Add
+## Future Ideas
 
-Do not add:
-
-- Connectors
-- Freehand pen
-- Grouping
-- Layers
-- Rotation
-- AI
-- Authentication
-- Database
-- Cloud sync
-- Collaboration
+Keep future feature ideas in `notes/feature-ideas.md`. Page Types, document block lock/unlock, connectors, pen, eraser, layers, expanded document/cross-page history, and laser pointer are not part of this QA pass.
 
 ## Verification
 
@@ -96,11 +64,9 @@ Run:
 
 - `npm run build`
 
-Also check the running dev server logs for fresh browser runtime errors after loading and interacting with the app.
-
 ## Response Format
 
-After completing this, summarize:
+After completing the pass, summarize:
 
 1. Files changed
 2. What was tested
@@ -108,4 +74,4 @@ After completing this, summarize:
 4. Bugs fixed
 5. Build status
 6. Remaining issues
-7. Recommended next feature
+7. Recommended next step

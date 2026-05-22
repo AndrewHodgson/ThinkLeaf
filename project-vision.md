@@ -124,15 +124,15 @@ The strongest version of Thinkleaf is:
 
 A clean visual notebook where typed notes and sketches live together on the same page.
 
-## Main Interface Layout
+## Current Interface Layout
 
 Thinkleaf should have three primary interface areas:
 
-### 1. Top Toolbar
+### 1. Editor Formatting and Bottom Canvas Toolbar
 
-The top toolbar should contain formatting tools and object tools in a single simplified menu area.
+The document editor should expose practical formatting controls near the note content, while canvas tools should live in a fixed bottom floating toolbar.
 
-It should avoid the clutter of multiple tabs like:
+Thinkleaf should avoid the clutter of multiple tabs like:
 
 - Home
 - Insert
@@ -140,23 +140,23 @@ It should avoid the clutter of multiple tabs like:
 - View
 - Help
 
-Instead, Thinkleaf should use one clean toolbar that includes:
+The current prototype uses:
 
-- Text formatting
-- Select tool
-- Pan tool
-- Shape tools
-- Line tool
-- Arrow tool
+- Document formatting controls for headings, text size, color, highlight, alignment, lists, links, tables, and images
+- A bottom floating canvas toolbar for Undo, Redo, Select, Pan, Rectangle, Circle, Text, Line, Arrow, Image Import, Zoom In, Zoom Out, Reset View, and canvas settings
+- A compact settings menu for Grid and Snap to Grid
+- Shortcut badges on bottom toolbar tools
+
+Future tools can be added carefully, but the toolbar should stay calm and compact.
+
+Future toolbar ideas include:
+
 - Pen/pencil tool
-- Text box
-- Image insert
 - Eraser
 - Page settings
-- Grid toggle
 - Presenter view toggle later
 
-The interface can adapt based on selected content later, but for the MVP, tools can remain visible.
+The interface can adapt based on selected content later, but the current direction is to keep the main note editor primary and the canvas controls visually secondary.
 
 ### 2. Left Sidebar
 
@@ -164,35 +164,37 @@ The left sidebar should handle organization and navigation.
 
 It should include:
 
+- Profiles
 - Search bar
 - Projects
 - Folders
 - Pages
-- Recent pages
 - Favorite pages
 
 The structure should be:
 
 ```text
-Project
-  Folder
-    Page
+Profile
+  Project
+    Folder
+      Page
 ```
 
 Example:
 
 ```text
-Shows
-  PCMA Convening Leaders 2027
-    CL27 Planning Meeting - 2026-05-21
-    Custom Booth Ideas - 2026-05-24
-    Sponsor Activation Notes - 2026-05-30
+Work
+  Shows
+    PCMA Convening Leaders 2027
+      CL27 Planning Meeting - 2026-05-21
+      Custom Booth Ideas - 2026-05-24
+      Sponsor Activation Notes - 2026-05-30
 ```
 
-For the MVP, Thinkleaf should support only three levels:
+For the MVP, Thinkleaf supports one profile layer above the project structure:
 
 ```text
-Project → Folder → Page
+Profile → Project → Folder → Page
 ```
 
 This keeps the app organized without recreating OneNote’s confusing notebook/section/page model.
@@ -207,7 +209,7 @@ The document block should support structured note-taking. Users should be able t
 
 ## Page Model
 
-Thinkleaf should be page-based.
+Thinkleaf should be profile- and page-based.
 
 For the MVP, each meeting should be its own page.
 
@@ -225,7 +227,7 @@ Later, Thinkleaf can add links between pages, so one project overview page can c
 
 Thinkleaf can eventually support multiple page types, but the MVP should focus on the primary page type.
 
-### Primary MVP Page Type: Document + Canvas
+### Current Page Type: Document + Canvas
 
 A fixed-width document block appears in an open canvas workspace.
 
@@ -239,7 +241,7 @@ Users can:
 - Zoom in and out
 - Add additional document blocks later
 
-### Future Page Type: Canvas Board
+### Future Page Type: Whiteboard
 
 A full open whiteboard with no default document block.
 
@@ -251,7 +253,7 @@ Useful for:
 - Mind mapping
 - Inspiration boards
 
-### Future Page Type: Text Note
+### Future Page Type: Note
 
 A simple writing-first page with minimal canvas tools.
 
@@ -322,18 +324,23 @@ Version history can be planned for later but is not required for the first versi
 
 ## Whiteboard Tool Requirements
 
-MVP whiteboard tools should include:
+Current whiteboard tools include:
 
 - Select
 - Pan
-- Square/rectangle
+- Rectangle
 - Circle
-- Pen/pencil
 - Text box
 - Line
 - Arrow
 - Image insert
-- Eraser
+- Undo
+- Redo
+- Zoom In
+- Zoom Out
+- Reset View
+- Grid toggle
+- Snap to Grid
 
 The visual style should be clean and modern, closer to Figma/FigJam than a hand-drawn sketch style.
 
@@ -341,13 +348,13 @@ The canvas should support:
 
 - Light gray dotted grid
 - Optional grid toggle
-- Grouping objects
-- Moving grouped objects
-- Locking document blocks
+- Snap to Grid as a separate preference
 - Basic object resizing
 - Basic object deletion
+- Image objects
+- Text formatting for whiteboard text objects and text-bearing shapes
 
-Layers are not needed for the MVP.
+Pen, eraser, grouping, layers, rotation, connectors, and document block locking are future ideas, not active MVP requirements.
 
 ## Tags
 
@@ -411,12 +418,9 @@ A backlink is an automatic list of pages that link back to the current page. For
 
 ## Favorites and Recents
 
-Thinkleaf should include:
+Thinkleaf should include Favorite pages in the left sidebar.
 
-- Recent pages
-- Favorite pages
-
-These should appear in the left sidebar because the app is meant to help users quickly switch between notes.
+Recent pages can be considered later if it still fits the calm sidebar direction.
 
 The ability to quickly switch between notes is part of the core experience.
 
@@ -481,14 +485,14 @@ A user can create a project, create a folder, create a meeting note page, type s
 
 ## MVP Features
 
-The MVP should include:
+The current MVP/prototype includes:
 
+- Profile creation and switching
 - Project creation
 - Folder creation inside projects
 - Page creation inside folders
 - Page rename
 - Page delete
-- Recent pages
 - Favorite pages
 - Custom tags
 - Tag filtering
@@ -503,6 +507,7 @@ The MVP should include:
 - Canvas zooming
 - Light dotted grid
 - Grid toggle
+- Snap to Grid
 - Basic whiteboard tools
 - Floating canvas objects
 - Save/load page content
@@ -619,17 +624,17 @@ For the prototype, this can be stored in localStorage.
 
 ## Technical Direction
 
-Suggested prototype stack:
+Current prototype stack:
 
 - Next.js
 - React
 - TypeScript
 - Tailwind CSS
 - localStorage
-- Tiptap or Lexical for text editing
-- tldraw, Excalidraw, or custom lightweight canvas tools for the canvas area
+- Tiptap for text editing
+- Custom lightweight canvas tools for the canvas area
 
-Because Thinkleaf should look cleaner and more Figma-like at the beginning, tldraw may be worth considering for the canvas foundation. Excalidraw is still a good reference for simplicity, but the final look should not feel overly hand-drawn unless intentionally chosen later.
+Excalidraw is still a useful reference for interaction simplicity, but Thinkleaf should keep a cleaner note-first visual style.
 
 ## First Prototype Goal
 

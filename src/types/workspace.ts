@@ -91,6 +91,11 @@ export type CanvasViewState = {
   zoom: number;
 };
 
+export type CanvasHistoryOptions = {
+  historyKey?: string;
+  recordHistory?: boolean;
+};
+
 export type WorkspaceData = {
   profiles: Profile[];
   activeProfileId: string;

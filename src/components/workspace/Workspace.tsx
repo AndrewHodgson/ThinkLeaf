@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CanvasObject, CanvasTool, Page, WorkspaceData } from "@/types/workspace";
+import type { CanvasHistoryOptions, CanvasObject, CanvasTool, Page, WorkspaceData } from "@/types/workspace";
 import { createId, findFolder, findProject, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
 import {
   defaultCanvasViewState,
@@ -33,17 +33,23 @@ type BoardPanInteraction = {
 type WorkspaceProps = {
   activeTool: CanvasTool;
   activePage?: Page;
+  canRedoCanvas: boolean;
+  canUndoCanvas: boolean;
   data: WorkspaceData;
+  imageImportRequestId: number;
   isGridVisible: boolean;
   isSnapToGridEnabled: boolean;
   selectedObjectId: string | null;
   onDeletePage: (pageId: string) => void;
+  onRedoCanvas: () => void;
   onResetView: () => void;
   onSearchByTag: (tag: string) => void;
   onSelectionChange: (objectId: string | null) => void;
   onToggleGrid: () => void;
   onToggleSnapToGrid: () => void;
   onToolChange: (tool: CanvasTool) => void;
+  onUndoCanvas: () => void;
+  onUpdateCanvasObjects: (pageId: string, canvasObjects: CanvasObject[], options?: CanvasHistoryOptions) => void;
   onUpdatePage: (
     pageId: string,
     updates: Partial<
@@ -52,31 +58,42 @@ type WorkspaceProps = {
   ) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
+  zoomIndicatorTick: number;
+  zoomPercent: number;
 };
 
 export function Workspace({
   activeTool,
   activePage,
+  canRedoCanvas,
+  canUndoCanvas,
   data,
+  imageImportRequestId,
   isGridVisible,
   isSnapToGridEnabled,
   selectedObjectId,
   onDeletePage,
+  onRedoCanvas,
   onResetView,
   onSearchByTag,
   onSelectionChange,
   onToggleGrid,
   onToggleSnapToGrid,
   onToolChange,
+  onUndoCanvas,
+  onUpdateCanvasObjects,
   onUpdatePage,
   onZoomIn,
   onZoomOut,
+  zoomIndicatorTick,
+  zoomPercent,
 }: WorkspaceProps) {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const canvasImageInputRef = useRef<HTMLInputElement>(null);
   const panInteractionRef = useRef<BoardPanInteraction | null>(null);
   const capturedPanPointerIdRef = useRef<number | null>(null);
   const [boardPanInteraction, setBoardPanInteraction] = useState<BoardPanInteraction | null>(null);
+  const [isZoomIndicatorVisible, setIsZoomIndicatorVisible] = useState(false);
 
   useEffect(() => {
     onSelectionChange(null);
@@ -85,6 +102,27 @@ export function Workspace({
   useEffect(() => {
     releaseWorkspacePan();
   }, [activeTool, activePage?.id]);
+
+  useEffect(() => {
+    if (imageImportRequestId > 0) {
+      canvasImageInputRef.current?.click();
+    }
+  }, [imageImportRequestId]);
+
+  useEffect(() => {
+    if (zoomIndicatorTick <= 0) {
+      return;
+    }
+
+    setIsZoomIndicatorVisible(true);
+    const timeout = window.setTimeout(() => {
+      setIsZoomIndicatorVisible(false);
+    }, 1200);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [zoomIndicatorTick]);
 
   if (!activePage) {
     return (
@@ -113,8 +151,9 @@ export function Workspace({
       return;
     }
 
-    onUpdatePage(page.id, {
-      canvasObjects: page.canvasObjects.map((object) =>
+    onUpdateCanvasObjects(
+      page.id,
+      page.canvasObjects.map((object) =>
         object.id === selectedObject.id
           ? {
               ...object,
@@ -122,7 +161,7 @@ export function Workspace({
             }
           : object,
       ),
-    });
+    );
   }
 
   function alignCanvasValue(value: number) {
@@ -184,9 +223,7 @@ export function Workspace({
         return;
       }
 
-      onUpdatePage(page.id, {
-        canvasObjects: [...page.canvasObjects, ...importedObjects],
-      });
+      onUpdateCanvasObjects(page.id, [...page.canvasObjects, ...importedObjects]);
       onSelectionChange(importedObjects[importedObjects.length - 1].id);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Could not import that image.");
@@ -324,7 +361,7 @@ export function Workspace({
           objects={page.canvasObjects}
           viewState={canvasViewState}
           selectedObjectId={selectedObjectId}
-          onChange={(canvasObjects) => onUpdatePage(page.id, { canvasObjects })}
+          onChange={(canvasObjects, options) => onUpdateCanvasObjects(page.id, canvasObjects, options)}
           onViewStateChange={(viewState) => onUpdatePage(page.id, { canvasViewState: viewState })}
           onSelectionChange={onSelectionChange}
         />
@@ -422,9 +459,10 @@ export function Workspace({
             key={selectedObject.id}
             object={selectedObject}
             onDelete={() => {
-              onUpdatePage(page.id, {
-                canvasObjects: page.canvasObjects.filter((object) => object.id !== selectedObject.id),
-              });
+              onUpdateCanvasObjects(
+                page.id,
+                page.canvasObjects.filter((object) => object.id !== selectedObject.id),
+              );
               onSelectionChange(null);
             }}
             onUpdate={(updates) => updateSelectedObject(updates)}
@@ -434,16 +472,29 @@ export function Workspace({
 
       <CanvasCreationToolbar
         activeTool={activeTool}
+        canRedoCanvas={canRedoCanvas}
+        canUndoCanvas={canUndoCanvas}
         isGridVisible={isGridVisible}
         isSnapToGridEnabled={isSnapToGridEnabled}
         onImageUploadClick={() => canvasImageInputRef.current?.click()}
+        onRedoCanvas={onRedoCanvas}
         onResetView={onResetView}
         onToggleGrid={onToggleGrid}
         onToggleSnapToGrid={onToggleSnapToGrid}
         onToolChange={onToolChange}
+        onUndoCanvas={onUndoCanvas}
         onZoomIn={onZoomIn}
         onZoomOut={onZoomOut}
       />
+      <div
+        aria-live="polite"
+        className={[
+          "pointer-events-none absolute bottom-20 left-1/2 z-20 -translate-x-1/2 rounded-full border border-slate-200 bg-white/95 px-3 py-1 text-xs font-semibold text-slate-600 shadow-soft transition duration-300",
+          isZoomIndicatorVisible ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
+        ].join(" ")}
+      >
+        {zoomPercent}%
+      </div>
       <input
         ref={canvasImageInputRef}
         accept="image/*"

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type {
+  CanvasHistoryOptions,
   CanvasObject,
   CanvasObjectType,
   CanvasTool,
@@ -28,12 +29,13 @@ type CanvasLayerProps = {
   objects: CanvasObject[];
   selectedObjectId: string | null;
   viewState: CanvasViewState;
-  onChange: (objects: CanvasObject[]) => void;
+  onChange: (objects: CanvasObject[], options?: CanvasHistoryOptions) => void;
   onSelectionChange: (objectId: string | null) => void;
   onViewStateChange: (viewState: CanvasViewState) => void;
 };
 
 type MoveInteraction = {
+  historyKey: string;
   kind: "move";
   id: string;
   offsetX: number;
@@ -41,6 +43,7 @@ type MoveInteraction = {
 };
 
 type ResizeInteraction = {
+  historyKey: string;
   kind: "resize";
   handle: ResizeHandle;
   id: string;
@@ -53,6 +56,7 @@ type ResizeInteraction = {
 };
 
 type LineMoveInteraction = {
+  historyKey: string;
   kind: "lineMove";
   id: string;
   pointerX: number;
@@ -65,11 +69,13 @@ type LineMoveInteraction = {
 
 type EndpointInteraction = {
   endpoint: "start" | "end";
+  historyKey: string;
   id: string;
   kind: "endpoint";
 };
 
 type CreateInteraction = {
+  historyKey: string;
   kind: "create";
   id: string;
   tool: CanvasTool;
@@ -79,6 +85,7 @@ type CreateInteraction = {
 };
 
 type PendingLineInteraction = {
+  historyKey: string;
   id: string;
   kind: "pendingLine";
   startX: number;
@@ -124,6 +131,7 @@ export function CanvasLayer({
 }: CanvasLayerProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [textEditHistoryKey, setTextEditHistoryKey] = useState<string | null>(null);
   const [interaction, setInteraction] = useState<Interaction | null>(null);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const selectedObject = objects.find((object) => object.id === selectedObjectId) ?? null;
@@ -164,22 +172,27 @@ export function CanvasLayer({
       return;
     }
 
-    updateObject(selectedObject.id, {
-      text: selectedObject.text ?? "Text box",
-    });
-    setEditingTextId(selectedObject.id);
+    const historyKey = createId("history");
+    updateObject(
+      selectedObject.id,
+      {
+        text: selectedObject.text ?? "Text box",
+      },
+      { historyKey },
+    );
+    startTextEditing(selectedObject.id);
   }, [activeTool, selectedObject?.id, selectedObject?.type]);
 
   useEffect(() => {
-    setEditingTextId(null);
+    clearTextEditing();
   }, [selectedObjectId]);
 
   useEffect(() => {
     setInteraction(null);
-    setEditingTextId(null);
+    clearTextEditing();
   }, [activeTool]);
 
-  function updateObject(objectId: string, updates: Partial<CanvasObject>) {
+  function updateObject(objectId: string, updates: Partial<CanvasObject>, options?: CanvasHistoryOptions) {
     const now = new Date().toISOString();
     onChange(
       objects.map((object) =>
@@ -191,7 +204,18 @@ export function CanvasLayer({
             }
           : object,
       ),
+      options,
     );
+  }
+
+  function startTextEditing(objectId: string) {
+    setEditingTextId(objectId);
+    setTextEditHistoryKey(createId("history"));
+  }
+
+  function clearTextEditing() {
+    setEditingTextId(null);
+    setTextEditHistoryKey(null);
   }
 
   function updateViewState(nextViewState: CanvasViewState) {
@@ -206,10 +230,10 @@ export function CanvasLayer({
     return isSnapToGridEnabled ? snapToGrid(value) : value;
   }
 
-  function deleteObject(objectId: string) {
-    onChange(objects.filter((object) => object.id !== objectId));
+  function deleteObject(objectId: string, options?: CanvasHistoryOptions) {
+    onChange(objects.filter((object) => object.id !== objectId), options);
     onSelectionChange(null);
-    setEditingTextId(null);
+    clearTextEditing();
     setInteraction(null);
   }
 
@@ -294,10 +318,12 @@ export function CanvasLayer({
       return;
     }
 
-    onChange([...objects, object]);
+    const historyKey = createId("history");
+    onChange([...objects, object], { historyKey });
     onSelectionChange(object.id);
-    setEditingTextId(null);
+    clearTextEditing();
     setInteraction({
+      historyKey,
       kind: "create",
       id: object.id,
       tool: activeTool,
@@ -332,6 +358,7 @@ export function CanvasLayer({
         },
         isSnapToGridEnabled,
       ),
+      { historyKey: interaction.historyKey },
     );
     setInteraction(null);
   }
@@ -343,7 +370,7 @@ export function CanvasLayer({
   function handleCanvasPointerDown(event: React.PointerEvent<HTMLDivElement>) {
     canvasRef.current?.focus();
 
-    setEditingTextId(null);
+    clearTextEditing();
 
     if (interaction?.kind === "pendingLine") {
       finishPendingLine(event.clientX, event.clientY);
@@ -412,20 +439,29 @@ export function CanvasLayer({
           },
           isSnapToGridEnabled,
         ),
+        { historyKey: interaction.historyKey },
       );
       return;
     }
 
     if (interaction.kind === "move") {
-      updateObject(object.id, {
-        x: alignToGrid(pointerX - interaction.offsetX),
-        y: alignToGrid(pointerY - interaction.offsetY),
-      });
+      updateObject(
+        object.id,
+        {
+          x: alignToGrid(pointerX - interaction.offsetX),
+          y: alignToGrid(pointerY - interaction.offsetY),
+        },
+        { historyKey: interaction.historyKey },
+      );
       return;
     }
 
     if (interaction.kind === "resize") {
-      updateObject(object.id, getResizeUpdates(interaction, pointerX, pointerY, isSnapToGridEnabled));
+      updateObject(
+        object.id,
+        getResizeUpdates(interaction, pointerX, pointerY, isSnapToGridEnabled),
+        { historyKey: interaction.historyKey },
+      );
       return;
     }
 
@@ -444,6 +480,7 @@ export function CanvasLayer({
           },
           isSnapToGridEnabled,
         ),
+        { historyKey: interaction.historyKey },
       );
       return;
     }
@@ -453,7 +490,9 @@ export function CanvasLayer({
         interaction.endpoint === "start"
           ? { ...object, x1: pointerX, y1: pointerY }
           : { ...object, x2: pointerX, y2: pointerY };
-      updateObject(object.id, normalizeLineBounds(nextLine, isSnapToGridEnabled));
+      updateObject(object.id, normalizeLineBounds(nextLine, isSnapToGridEnabled), {
+        historyKey: interaction.historyKey,
+      });
       return;
     }
 
@@ -478,6 +517,7 @@ export function CanvasLayer({
           },
           isSnapToGridEnabled,
         ),
+        { historyKey: interaction.historyKey },
       );
       setInteraction((current) => (current?.kind === "create" ? { ...current, moved: true } : current));
       return;
@@ -492,12 +532,16 @@ export function CanvasLayer({
     const width = Math.max(minObjectSize, Math.abs(pointerX - interaction.startX));
     const height = Math.max(minObjectSize, Math.abs(pointerY - interaction.startY));
 
-    updateObject(object.id, {
-      x: alignToGrid(x),
-      y: alignToGrid(y),
-      width: alignToGrid(width),
-      height: alignToGrid(height),
-    });
+    updateObject(
+      object.id,
+      {
+        x: alignToGrid(x),
+        y: alignToGrid(y),
+        width: alignToGrid(width),
+        height: alignToGrid(height),
+      },
+      { historyKey: interaction.historyKey },
+    );
 
     setInteraction((current) => (current?.kind === "create" ? { ...current, moved: true } : current));
   }
@@ -508,6 +552,7 @@ export function CanvasLayer({
       if (object && (object.type === "line" || object.type === "arrow")) {
         if (!interaction.moved) {
           setInteraction({
+            historyKey: interaction.historyKey,
             id: object.id,
             kind: "pendingLine",
             startX: interaction.startX,
@@ -522,7 +567,7 @@ export function CanvasLayer({
       }
 
       if (object?.type === "textBox") {
-        setEditingTextId(object.id);
+        startTextEditing(object.id);
       }
     }
 
@@ -571,12 +616,12 @@ export function CanvasLayer({
     }
 
     if (activeTool === "Pan") {
-      setEditingTextId(null);
+      clearTextEditing();
       return;
     }
 
     if (shouldPan(event)) {
-      setEditingTextId(null);
+      clearTextEditing();
       startPan(event.clientX, event.clientY);
       event.currentTarget.setPointerCapture(event.pointerId);
       return;
@@ -585,7 +630,7 @@ export function CanvasLayer({
     onSelectionChange(object.id);
 
     if (activeTool === "Text Box" && (object.type === "rectangle" || object.type === "circle")) {
-      setEditingTextId(null);
+      clearTextEditing();
       return;
     }
 
@@ -598,8 +643,9 @@ export function CanvasLayer({
       return;
     }
 
-    setEditingTextId(null);
+    clearTextEditing();
     setInteraction({
+      historyKey: createId("history"),
       kind: "move",
       id: object.id,
       offsetX: point.x - object.x,
@@ -611,13 +657,14 @@ export function CanvasLayer({
   function startResize(event: React.PointerEvent<HTMLButtonElement>, object: CanvasObject, handle: ResizeHandle) {
     event.stopPropagation();
     onSelectionChange(object.id);
-    setEditingTextId(null);
+    clearTextEditing();
     const point = screenToWorld(event.clientX, event.clientY);
     if (!point) {
       return;
     }
 
     setInteraction({
+      historyKey: createId("history"),
       kind: "resize",
       handle,
       id: object.id,
@@ -635,7 +682,7 @@ export function CanvasLayer({
     event.stopPropagation();
     canvasRef.current?.focus();
     onSelectionChange(object.id);
-    setEditingTextId(null);
+    clearTextEditing();
     const point = screenToWorld(event.clientX, event.clientY);
     const points = getLinePoints(object);
 
@@ -644,6 +691,7 @@ export function CanvasLayer({
     }
 
     setInteraction({
+      historyKey: createId("history"),
       kind: "lineMove",
       id: object.id,
       pointerX: point.x,
@@ -662,17 +710,17 @@ export function CanvasLayer({
   ) {
     event.stopPropagation();
     onSelectionChange(object.id);
-    setEditingTextId(null);
-    setInteraction({ endpoint, id: object.id, kind: "endpoint" });
+    clearTextEditing();
+    setInteraction({ endpoint, historyKey: createId("history"), id: object.id, kind: "endpoint" });
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
       if (interaction?.kind === "pendingLine") {
-        deleteObject(interaction.id);
+        deleteObject(interaction.id, { recordHistory: false });
       }
-      setEditingTextId(null);
+      clearTextEditing();
       return;
     }
 
@@ -691,7 +739,8 @@ export function CanvasLayer({
   const lineObjects = objects.filter((object) => object.type === "line" || object.type === "arrow");
   const boxObjects = objects.filter((object) => object.type !== "line" && object.type !== "arrow");
   const shouldUseCanvasHitLayer =
-    activeTool !== "Pan" && (Boolean(toolToObjectType[activeTool]) || isSpacePressed || interaction?.kind === "pendingLine");
+    activeTool !== "Pan" &&
+    (Boolean(toolToObjectType[activeTool]) || isSpacePressed || interaction?.kind === "pendingLine");
 
   return (
     <div
@@ -826,7 +875,7 @@ export function CanvasLayer({
               onDoubleClick={() => {
                 if (object.type === "textBox" || object.text !== undefined) {
                   onSelectionChange(object.id);
-                  setEditingTextId(object.id);
+                  startTextEditing(object.id);
                 }
               }}
               onPointerDown={(event) => handleObjectPointerDown(event, object)}
@@ -834,8 +883,14 @@ export function CanvasLayer({
               <CanvasObjectView
                 isEditing={isEditing}
                 object={object}
-                onFinishEditing={() => setEditingTextId(null)}
-                onTextChange={(text) => updateObject(object.id, { text })}
+                onFinishEditing={clearTextEditing}
+                onTextChange={(text) =>
+                  updateObject(
+                    object.id,
+                    { text },
+                    textEditHistoryKey ? { historyKey: textEditHistoryKey } : undefined,
+                  )
+                }
               />
               {isSelected ? (
                 <>
@@ -909,6 +964,7 @@ function CanvasObjectView({
         <textarea
           autoFocus
           className="h-full w-full resize-none border-none bg-transparent px-2 py-1 leading-5 outline-none"
+          data-canvas-text-editor="true"
           style={textStyle}
           value={object.text ?? ""}
           onBlur={onFinishEditing}

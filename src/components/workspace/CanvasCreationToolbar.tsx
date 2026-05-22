@@ -6,6 +6,7 @@ import {
   Hand,
   Image as ImageIcon,
   Magnet,
+  Redo2,
   RotateCcw,
   Settings2,
   MousePointer2,
@@ -15,6 +16,7 @@ import {
   Minus,
   ZoomIn,
   ZoomOut,
+  Undo2,
 } from "lucide-react";
 import type { CanvasTool } from "@/types/workspace";
 
@@ -30,26 +32,34 @@ const tools: Array<{ icon: typeof MousePointer2; label: CanvasTool; shortcut: st
 
 type CanvasCreationToolbarProps = {
   activeTool: CanvasTool;
+  canRedoCanvas: boolean;
+  canUndoCanvas: boolean;
   isGridVisible: boolean;
   isSnapToGridEnabled: boolean;
   onImageUploadClick: () => void;
+  onRedoCanvas: () => void;
   onResetView: () => void;
   onToggleGrid: () => void;
   onToggleSnapToGrid: () => void;
   onToolChange: (tool: CanvasTool) => void;
+  onUndoCanvas: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
 };
 
 export function CanvasCreationToolbar({
   activeTool,
+  canRedoCanvas,
+  canUndoCanvas,
   isGridVisible,
   isSnapToGridEnabled,
   onImageUploadClick,
+  onRedoCanvas,
   onResetView,
   onToggleGrid,
   onToggleSnapToGrid,
   onToolChange,
+  onUndoCanvas,
   onZoomIn,
   onZoomOut,
 }: CanvasCreationToolbarProps) {
@@ -68,7 +78,7 @@ export function CanvasCreationToolbar({
               key={tool.label}
               aria-label={`${tool.label} tool, shortcut ${tool.shortcut}`}
               className={[
-                "inline-flex h-9 w-9 items-center justify-center rounded-full border transition",
+                "relative inline-flex h-9 w-9 items-center justify-center rounded-full border transition",
                 activeTool === tool.label
                   ? "border-slate-900 bg-slate-900 text-white"
                   : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
@@ -78,27 +88,40 @@ export function CanvasCreationToolbar({
               onClick={() => onToolChange(tool.label)}
             >
               <Icon aria-hidden="true" className="h-4 w-4" />
+              <ShortcutBadge isActive={activeTool === tool.label}>{tool.shortcut}</ShortcutBadge>
             </button>
           );
         })}
         <button
-          aria-label="Import image"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
-          title="Import image"
+          aria-label="Import image, shortcut 8"
+          className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+          title="Import image (8)"
           type="button"
           onClick={onImageUploadClick}
         >
           <ImageIcon aria-hidden="true" className="h-4 w-4" />
+          <ShortcutBadge>8</ShortcutBadge>
         </button>
         <span className="mx-1 h-6 w-px bg-slate-200" />
         <button
-          aria-label="Zoom out"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
-          title="Zoom out"
+          aria-label="Zoom in, shortcut plus"
+          className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+          title="Zoom in (+)"
+          type="button"
+          onClick={onZoomIn}
+        >
+          <ZoomIn aria-hidden="true" className="h-4 w-4" />
+          <ShortcutBadge>+</ShortcutBadge>
+        </button>
+        <button
+          aria-label="Zoom out, shortcut minus"
+          className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+          title="Zoom out (-)"
           type="button"
           onClick={onZoomOut}
         >
           <ZoomOut aria-hidden="true" className="h-4 w-4" />
+          <ShortcutBadge>-</ShortcutBadge>
         </button>
         <button
           aria-label="Reset view"
@@ -109,14 +132,26 @@ export function CanvasCreationToolbar({
         >
           <RotateCcw aria-hidden="true" className="h-4 w-4" />
         </button>
+        <span className="mx-1 h-6 w-px bg-slate-200" />
         <button
-          aria-label="Zoom in"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
-          title="Zoom in"
+          aria-label="Undo canvas action, shortcut Command or Control Z"
+          className={toolbarButtonClass(false, !canUndoCanvas)}
+          disabled={!canUndoCanvas}
+          title="Undo canvas action (Cmd/Ctrl+Z)"
           type="button"
-          onClick={onZoomIn}
+          onClick={onUndoCanvas}
         >
-          <ZoomIn aria-hidden="true" className="h-4 w-4" />
+          <Undo2 aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Redo canvas action, shortcut Command or Control Shift Z or Command or Control Y"
+          className={toolbarButtonClass(false, !canRedoCanvas)}
+          disabled={!canRedoCanvas}
+          title="Redo canvas action (Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y)"
+          type="button"
+          onClick={onRedoCanvas}
+        >
+          <Redo2 aria-hidden="true" className="h-4 w-4" />
         </button>
         <span className="mx-1 h-6 w-px bg-slate-200" />
         <details className="relative">
@@ -163,4 +198,29 @@ export function CanvasCreationToolbar({
       </div>
     </div>
   );
+}
+
+function ShortcutBadge({ children, isActive = false }: { children: string; isActive?: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={[
+        "pointer-events-none absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border px-1 text-[10px] font-bold leading-none shadow-sm",
+        isActive ? "border-white/30 bg-white text-slate-900" : "border-slate-200 bg-slate-50 text-slate-500",
+      ].join(" ")}
+    >
+      {children}
+    </span>
+  );
+}
+
+function toolbarButtonClass(isActive = false, isDisabled = false) {
+  return [
+    "relative inline-flex h-9 w-9 items-center justify-center rounded-full border transition",
+    isDisabled
+      ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
+      : isActive
+        ? "border-slate-900 bg-slate-900 text-white"
+        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
+  ].join(" ");
 }
