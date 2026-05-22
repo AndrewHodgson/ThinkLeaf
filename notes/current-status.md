@@ -23,6 +23,8 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - The workspace uses one document block inside a pannable and zoomable dotted-grid canvas.
 - Two-finger trackpad scroll pans the whiteboard/canvas area horizontally and vertically, including over the main document body.
 - Whiteboard objects render above the document block when overlapping.
+- Top contextual toolbar edits the active selection: main document formatting, table extras, or selected canvas object properties.
+- Clicking into the page/editor clears canvas object selection so the document toolbar can take over cleanly.
 - Bottom floating canvas toolbar contains Select, Pan, Rectangle, Circle, Text, Line, Arrow, Image, Zoom In, Zoom Out, Reset View, and a Settings menu for Grid and Snap.
 - Bottom toolbar includes Undo and Redo for canvas/page actions, positioned between Reset View and Settings.
 - Undo and Redo toolbar polish pass verified icon-only buttons, disabled/muted unavailable states, and canvas-scoped shortcuts.
@@ -38,6 +40,8 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 
 - Canvas supports rectangle, circle, text box, line, arrow, and image objects.
 - Objects can be created, selected, moved, resized, styled, deleted, and persisted per page.
+- Selected canvas object controls now appear in the top contextual toolbar instead of a right-side properties panel.
+- Canvas object duplicate and delete actions are available from the top contextual toolbar.
 - Canvas undo/redo is tracked per page for create, delete, move, resize, style changes, whiteboard text edits, and inserted image objects.
 - Rectangles and circles can contain editable text.
 - Text-bearing canvas objects support practical formatting: bold, italic, alignment, vertical alignment, text color, highlight, and size.

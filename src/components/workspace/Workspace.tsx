@@ -23,7 +23,7 @@ import { RichTextEditor } from "@/components/workspace/RichTextEditor";
 import { Calendar, Clock3, Star, Trash2 } from "lucide-react";
 import { CanvasLayer } from "@/components/workspace/CanvasLayer";
 import { CanvasCreationToolbar } from "@/components/workspace/CanvasCreationToolbar";
-import { ObjectPropertiesPanel } from "@/components/workspace/ObjectPropertiesPanel";
+import { CanvasObjectToolbar } from "@/components/workspace/CanvasObjectToolbar";
 import { getImageFilesFromClipboard, type ProcessedImage, processImageFile } from "@/lib/imageUtils";
 
 type BoardPanInteraction = {
@@ -166,6 +166,42 @@ export function Workspace({
           : object,
       ),
     );
+  }
+
+  function duplicateSelectedObject() {
+    if (!selectedObject) {
+      return;
+    }
+
+    const now = timestamp();
+    const offset = isSnapToGridEnabled ? snapToGrid(24) : 24;
+    const duplicatedObject: CanvasObject = {
+      ...selectedObject,
+      id: createId("object"),
+      x: selectedObject.x + offset,
+      y: selectedObject.y + offset,
+      x1: selectedObject.x1 === undefined ? undefined : selectedObject.x1 + offset,
+      y1: selectedObject.y1 === undefined ? undefined : selectedObject.y1 + offset,
+      x2: selectedObject.x2 === undefined ? undefined : selectedObject.x2 + offset,
+      y2: selectedObject.y2 === undefined ? undefined : selectedObject.y2 + offset,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    onUpdateCanvasObjects(page.id, [...page.canvasObjects, duplicatedObject]);
+    onSelectionChange(duplicatedObject.id);
+  }
+
+  function deleteSelectedObject() {
+    if (!selectedObject) {
+      return;
+    }
+
+    onUpdateCanvasObjects(
+      page.id,
+      page.canvasObjects.filter((object) => object.id !== selectedObject.id),
+    );
+    onSelectionChange(null);
   }
 
   function alignCanvasValue(value: number) {
@@ -396,7 +432,16 @@ export function Workspace({
           : undefined
       }
     >
-      <div ref={setDocumentToolbarElement} className="pointer-events-none absolute left-0 right-0 top-0 z-30" />
+      <div ref={setDocumentToolbarElement} className="pointer-events-none absolute left-0 right-0 top-0 z-30">
+        {selectedObject ? (
+          <CanvasObjectToolbar
+            object={selectedObject}
+            onDelete={deleteSelectedObject}
+            onDuplicate={duplicateSelectedObject}
+            onUpdate={updateSelectedObject}
+          />
+        ) : null}
+      </div>
 
       <div
         className="relative origin-top-left"
@@ -420,6 +465,11 @@ export function Workspace({
         <article
           className="absolute z-10 min-h-[760px] w-[780px] cursor-auto rounded-md border border-slate-200 bg-white shadow-soft"
           data-pan-block="true"
+          onPointerDown={() => {
+            if (selectedObjectId) {
+              onSelectionChange(null);
+            }
+          }}
           style={{ left: documentBlockX, top: documentBlockY, width: documentBlockWidth }}
         >
           <div className="border-b border-slate-100 px-9 py-6">
@@ -499,29 +549,13 @@ export function Workspace({
               key={page.id}
               content={page.body}
               pageId={page.id}
-              toolbarPortalElement={documentToolbarElement}
+              toolbarPortalElement={selectedObject ? null : documentToolbarElement}
               onChange={(body) => onUpdatePage(page.id, { body })}
+              onFocus={() => onSelectionChange(null)}
             />
           </div>
         </article>
       </div>
-
-      {selectedObject ? (
-        <div className="absolute right-6 top-6 z-10" data-pan-block="true" data-wheel-block="true">
-          <ObjectPropertiesPanel
-            key={selectedObject.id}
-            object={selectedObject}
-            onDelete={() => {
-              onUpdateCanvasObjects(
-                page.id,
-                page.canvasObjects.filter((object) => object.id !== selectedObject.id),
-              );
-              onSelectionChange(null);
-            }}
-            onUpdate={(updates) => updateSelectedObject(updates)}
-          />
-        </div>
-      ) : null}
 
       <CanvasCreationToolbar
         activeTool={activeTool}

@@ -39,8 +39,8 @@ Keep this pass focused on confirming current behavior, fixing small regressions,
    - Confirm Ctrl/Cmd + wheel still zooms and plain trackpad scroll does not accidentally zoom.
    - Confirm trackpad panning works over the document body even when the editor is focused.
    - Confirm trackpad panning does not interfere with typing, cursor placement, text selection, tables, or formatting controls.
-   - Confirm toolbars, right panel, dropdowns, color pickers, inputs, and menus do not trigger canvas pan.
-   - Confirm the bottom toolbar stays fixed while panning, zooming, selecting, and opening the properties panel.
+   - Confirm toolbars, contextual controls, dropdowns, color pickers, inputs, and menus do not trigger canvas pan.
+   - Confirm the bottom toolbar stays fixed while panning, zooming, selecting, and showing contextual controls.
 
 6. Snap and Grid
    - Confirm Show Grid and Snap to Grid are separate.
@@ -49,13 +49,17 @@ Keep this pass focused on confirming current behavior, fixing small regressions,
 
 7. Object Editing
    - Confirm rectangles, circles, text boxes, lines, arrows, and images can be created, selected, moved, resized, styled, and deleted.
+   - Confirm selected canvas object controls appear in the top contextual toolbar and the old right-side properties panel is gone.
+   - Confirm duplicate and delete work from the top contextual toolbar.
    - Confirm line and arrow creation previews naturally and endpoint editing still works.
    - Confirm canvas undo/redo works per page for create, delete, move, resize, style changes, whiteboard text edits, and inserted image objects.
 
 8. Formatting
    - Confirm main document formatting, tables, alignment, text color, highlight, and text size work.
    - Confirm the main document toolbar appears at the top of the workspace when the editor is active and stays out of the page content.
+   - Confirm clicking from a selected whiteboard object into the document clears object selection and swaps to the document toolbar.
    - Confirm document table row/column/delete controls only appear while the cursor is inside a table.
+   - Confirm whiteboard object fill, stroke, stroke width, stroke style, text, highlight, and text size controls work from the top toolbar where applicable.
    - Confirm whiteboard text boxes and text-bearing shapes support bold, italic, alignment, vertical alignment, text color, highlight, and size.
 
 9. Persistence

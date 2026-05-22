@@ -130,7 +130,7 @@ Thinkleaf should have three primary interface areas:
 
 ### 1. Editor Formatting and Bottom Canvas Toolbar
 
-The document editor should expose practical formatting controls near the note content, while canvas tools should live in a fixed bottom floating toolbar.
+The top toolbar should edit the active selection, while canvas creation and navigation tools should live in a fixed bottom floating toolbar.
 
 Thinkleaf should avoid the clutter of multiple tabs like:
 
@@ -142,7 +142,8 @@ Thinkleaf should avoid the clutter of multiple tabs like:
 
 The current prototype uses:
 
-- Document formatting controls for headings, text size, color, highlight, alignment, lists, links, tables, and images
+- Document formatting controls for headings, text size, color, highlight, alignment, lists, links, tables, and images in the top contextual toolbar
+- Selected canvas object controls for fill, stroke, stroke width, stroke style, text formatting, duplicate, and delete in the top contextual toolbar
 - A bottom floating canvas toolbar for Undo, Redo, Select, Pan, Rectangle, Circle, Text, Line, Arrow, Image Import, Zoom In, Zoom Out, Reset View, and canvas settings
 - A compact settings menu for Grid and Snap to Grid
 - Shortcut badges on bottom toolbar tools
@@ -156,7 +157,7 @@ Future toolbar ideas include:
 - Page settings
 - Presenter view toggle later
 
-The interface can adapt based on selected content later, but the current direction is to keep the main note editor primary and the canvas controls visually secondary.
+The interface should adapt based on selected content while keeping the main note editor primary and canvas creation controls visually secondary.
 
 ### 2. Left Sidebar
 

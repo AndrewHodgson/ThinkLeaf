@@ -3,7 +3,7 @@
 - Object movement bug fixed
 - Click-and-drag object creation added
 - Bottom floating canvas toolbar added
-- Right-side object properties panel added
+- Selected object controls moved into the top contextual toolbar
 - Sidebar collapse/expand added
 - Project and folder collapse/expand added
 - Canvas objects still persist per page in localStorage
@@ -29,6 +29,7 @@
 - Change fill color
 - Change text color for text boxes
 - Change stroke width
+- Duplicate selected object
 - Delete selected object
 
 ## Recommended Next

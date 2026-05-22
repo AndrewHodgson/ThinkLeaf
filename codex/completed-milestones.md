@@ -83,14 +83,17 @@
 - Grid snapping added
 - Shape-to-text conversion added
 - Right properties panel added
+- Right properties panel removed and replaced with a top contextual toolbar for selected canvas objects
+- Canvas object duplicate action added to the top contextual toolbar
+- Canvas-to-document focus handoff fixed so clicking into the page clears object selection and restores the document toolbar
 - Stroke color, fill color, text color, and stroke width controls added
 - Canvas pan and zoom added
 - Two-finger trackpad scroll pans the whiteboard/canvas area, including over the main document body
-- Trackpad pan avoids inputs, menus, toolbars, and the right properties panel
+- Trackpad pan avoids inputs, menus, toolbars, and contextual controls
 - Ctrl/Cmd + wheel zoom preserved for canvas navigation
 - Hand/Pan tool fixed for board-level left-click drag on empty canvas space
 - Document block and canvas objects pan/zoom together
-- Bottom toolbar and right properties panel stay fixed while the board moves
+- Bottom toolbar and top contextual toolbar stay fixed while the board moves
 - New pages and Reset View use the left-document default board view
 - Tool switching after Pan fixed
 - Board surface expanded to a large virtual canvas
@@ -98,7 +101,7 @@
 - Object creation hit area covers the full virtual board after pan/zoom
 - Number-key shortcuts added for canvas tools
 - Bottom toolbar positioning stabilized so it stays centered in the usable workspace viewport
-- Bottom toolbar no longer shifts when selected object state or the right properties panel changes
+- Bottom toolbar no longer shifts when selected object state or contextual controls change
 - Click-drag creation restored for rectangles, circles, lines, and arrows
 - Drag creation previews live object size/line endpoints before pointer release
 - Click-drag creation works with pan/zoom and keeps 8px grid snapping

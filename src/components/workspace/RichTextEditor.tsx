@@ -176,9 +176,10 @@ type RichTextEditorProps = {
   pageId: string;
   toolbarPortalElement?: HTMLElement | null;
   onChange: (content: string) => void;
+  onFocus?: () => void;
 };
 
-export function RichTextEditor({ content, pageId, toolbarPortalElement, onChange }: RichTextEditorProps) {
+export function RichTextEditor({ content, pageId, toolbarPortalElement, onChange, onFocus }: RichTextEditorProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [hasMounted, setHasMounted] = useState(false);
@@ -270,7 +271,10 @@ export function RichTextEditor({ content, pageId, toolbarPortalElement, onChange
       return;
     }
 
-    const showToolbar = () => setIsDocumentToolbarVisible(true);
+    const showToolbar = () => {
+      onFocus?.();
+      setIsDocumentToolbarVisible(true);
+    };
     const hideToolbar = () => {
       window.setTimeout(() => {
         const activeElement = document.activeElement;
@@ -289,7 +293,7 @@ export function RichTextEditor({ content, pageId, toolbarPortalElement, onChange
       editor.off("focus", showToolbar);
       editor.off("blur", hideToolbar);
     };
-  }, [editor]);
+  }, [editor, onFocus]);
 
   useEffect(() => {
     if (!hasLoadedVerticalAlign) {
@@ -439,174 +443,177 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
   return (
     <div
       ref={ref}
-      className="pointer-events-auto flex min-h-14 flex-wrap items-center gap-2 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-soft backdrop-blur"
+      className="pointer-events-auto border-b border-slate-200 bg-white/95 px-4 py-3 shadow-soft backdrop-blur"
       data-pan-block="true"
       data-wheel-block="true"
     >
-      <HeadingDropdown editor={editor} />
-      <span className="h-6 w-px bg-slate-200" />
-      <button
-        aria-label="Bold"
-        className={buttonClass(editor?.isActive("bold"), isEditorUnavailable)}
-        title="Bold"
-        type="button"
-        onClick={() => editor?.chain().focus().toggleBold().run()}
-      >
-        <BoldIcon aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <button
-        aria-label="Italic"
-        className={buttonClass(editor?.isActive("italic"), isEditorUnavailable)}
-        title="Italic"
-        type="button"
-        onClick={() => editor?.chain().focus().toggleItalic().run()}
-      >
-        <ItalicIcon aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <button
-        aria-label="Link"
-        className={buttonClass(editor?.isActive("link"), isEditorUnavailable)}
-        title="Link"
-        type="button"
-        onClick={setLink}
-      >
-        <Link2 aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <button
-        aria-label="Insert image"
-        className={buttonClass(false, isEditorUnavailable)}
-        title="Insert image"
-        type="button"
-        onClick={() => {
-          if (editor) {
-            onImageUploadClick();
-          }
-        }}
-      >
-        <ImageIcon aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <span className="h-6 w-px bg-slate-200" />
-      <ColorPicker
-        currentValue={currentTextColor}
-        disabled={!editor}
-        icon={<Type aria-hidden="true" className="h-4 w-4" />}
-        label="Text color"
-        onSelect={setTextColor}
-        presets={colorPresets}
-      />
-      <ColorPicker
-        currentValue={currentHighlight}
-        disabled={!editor}
-        icon={<Highlighter aria-hidden="true" className="h-4 w-4" />}
-        label="Highlight"
-        onSelect={setHighlight}
-        presets={highlightPresets}
-      />
-      <SizeDropdown currentSize={currentFontSize} disabled={!editor} onSelect={setFontSize} />
-      <span className="h-6 w-px bg-slate-200" />
-      <button
-        aria-label="Align left"
-        className={buttonClass(editor?.isActive({ textAlign: "left" }), isEditorUnavailable)}
-        title="Align left"
-        type="button"
-        onClick={() => setTextAlign("left")}
-      >
-        <AlignLeft aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <button
-        aria-label="Align center"
-        className={buttonClass(editor?.isActive({ textAlign: "center" }), isEditorUnavailable)}
-        title="Align center"
-        type="button"
-        onClick={() => setTextAlign("center")}
-      >
-        <AlignCenter aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <button
-        aria-label="Align right"
-        className={buttonClass(editor?.isActive({ textAlign: "right" }), isEditorUnavailable)}
-        title="Align right"
-        type="button"
-        onClick={() => setTextAlign("right")}
-      >
-        <AlignRight aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <button
-        aria-label="Align content top"
-        className={buttonClass(verticalAlign === "top")}
-        title="Align content top"
-        type="button"
-        onClick={() => onVerticalAlignChange("top")}
-      >
-        <AlignVerticalJustifyStart aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <button
-        aria-label="Align content middle"
-        className={buttonClass(verticalAlign === "middle")}
-        title="Align content middle"
-        type="button"
-        onClick={() => onVerticalAlignChange("middle")}
-      >
-        <AlignVerticalJustifyCenter aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <button
-        aria-label="Align content bottom"
-        className={buttonClass(verticalAlign === "bottom")}
-        title="Align content bottom"
-        type="button"
-        onClick={() => onVerticalAlignChange("bottom")}
-      >
-        <AlignVerticalJustifyEnd aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <span className="h-6 w-px bg-slate-200" />
-      <button
-        aria-label="Bullet list"
-        className={buttonClass(editor?.isActive("bulletList"), isEditorUnavailable)}
-        title="Bullet list"
-        type="button"
-        onClick={() => editor?.chain().focus().toggleBulletList().run()}
-      >
-        <List aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <button
-        aria-label="Numbered list"
-        className={buttonClass(editor?.isActive("orderedList"), isEditorUnavailable)}
-        title="Numbered list"
-        type="button"
-        onClick={() => editor?.chain().focus().toggleOrderedList().run()}
-      >
-        <ListOrdered aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <button
-        aria-label="Checklist"
-        className={buttonClass(editor?.isActive("taskList"), isEditorUnavailable)}
-        title="Checklist"
-        type="button"
-        onClick={() => editor?.chain().focus().toggleTaskList().run()}
-      >
-        <ListChecks aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <button
-        aria-label="Callout"
-        className={buttonClass(editor?.isActive("blockquote"), isEditorUnavailable)}
-        title="Callout"
-        type="button"
-        onClick={() => editor?.chain().focus().toggleBlockquote().run()}
-      >
-        <Quote aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <span className="h-6 w-px bg-slate-200" />
-      <button
-        aria-label="Insert table"
-        className={buttonClass(editor?.isActive("table"), isEditorUnavailable)}
-        title="Insert table"
-        type="button"
-        onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
-      >
-        <Table2 aria-hidden="true" className="h-4 w-4" />
-      </button>
+      <div className="flex min-h-8 flex-wrap items-center gap-2">
+        <HeadingDropdown editor={editor} />
+        <span className="h-6 w-px bg-slate-200" />
+        <button
+          aria-label="Bold"
+          className={buttonClass(editor?.isActive("bold"), isEditorUnavailable)}
+          title="Bold"
+          type="button"
+          onClick={() => editor?.chain().focus().toggleBold().run()}
+        >
+          <BoldIcon aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Italic"
+          className={buttonClass(editor?.isActive("italic"), isEditorUnavailable)}
+          title="Italic"
+          type="button"
+          onClick={() => editor?.chain().focus().toggleItalic().run()}
+        >
+          <ItalicIcon aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Link"
+          className={buttonClass(editor?.isActive("link"), isEditorUnavailable)}
+          title="Link"
+          type="button"
+          onClick={setLink}
+        >
+          <Link2 aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Insert image"
+          className={buttonClass(false, isEditorUnavailable)}
+          title="Insert image"
+          type="button"
+          onClick={() => {
+            if (editor) {
+              onImageUploadClick();
+            }
+          }}
+        >
+          <ImageIcon aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <span className="h-6 w-px bg-slate-200" />
+        <ColorPicker
+          currentValue={currentTextColor}
+          disabled={!editor}
+          icon={<Type aria-hidden="true" className="h-4 w-4" />}
+          label="Text color"
+          onSelect={setTextColor}
+          presets={colorPresets}
+        />
+        <ColorPicker
+          currentValue={currentHighlight}
+          disabled={!editor}
+          icon={<Highlighter aria-hidden="true" className="h-4 w-4" />}
+          label="Highlight"
+          onSelect={setHighlight}
+          presets={highlightPresets}
+        />
+        <SizeDropdown currentSize={currentFontSize} disabled={!editor} onSelect={setFontSize} />
+        <span className="h-6 w-px bg-slate-200" />
+        <button
+          aria-label="Align left"
+          className={buttonClass(editor?.isActive({ textAlign: "left" }), isEditorUnavailable)}
+          title="Align left"
+          type="button"
+          onClick={() => setTextAlign("left")}
+        >
+          <AlignLeft aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Align center"
+          className={buttonClass(editor?.isActive({ textAlign: "center" }), isEditorUnavailable)}
+          title="Align center"
+          type="button"
+          onClick={() => setTextAlign("center")}
+        >
+          <AlignCenter aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Align right"
+          className={buttonClass(editor?.isActive({ textAlign: "right" }), isEditorUnavailable)}
+          title="Align right"
+          type="button"
+          onClick={() => setTextAlign("right")}
+        >
+          <AlignRight aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Align content top"
+          className={buttonClass(verticalAlign === "top")}
+          title="Align content top"
+          type="button"
+          onClick={() => onVerticalAlignChange("top")}
+        >
+          <AlignVerticalJustifyStart aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Align content middle"
+          className={buttonClass(verticalAlign === "middle")}
+          title="Align content middle"
+          type="button"
+          onClick={() => onVerticalAlignChange("middle")}
+        >
+          <AlignVerticalJustifyCenter aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Align content bottom"
+          className={buttonClass(verticalAlign === "bottom")}
+          title="Align content bottom"
+          type="button"
+          onClick={() => onVerticalAlignChange("bottom")}
+        >
+          <AlignVerticalJustifyEnd aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <span className="h-6 w-px bg-slate-200" />
+        <button
+          aria-label="Bullet list"
+          className={buttonClass(editor?.isActive("bulletList"), isEditorUnavailable)}
+          title="Bullet list"
+          type="button"
+          onClick={() => editor?.chain().focus().toggleBulletList().run()}
+        >
+          <List aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Numbered list"
+          className={buttonClass(editor?.isActive("orderedList"), isEditorUnavailable)}
+          title="Numbered list"
+          type="button"
+          onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+        >
+          <ListOrdered aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Checklist"
+          className={buttonClass(editor?.isActive("taskList"), isEditorUnavailable)}
+          title="Checklist"
+          type="button"
+          onClick={() => editor?.chain().focus().toggleTaskList().run()}
+        >
+          <ListChecks aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Callout"
+          className={buttonClass(editor?.isActive("blockquote"), isEditorUnavailable)}
+          title="Callout"
+          type="button"
+          onClick={() => editor?.chain().focus().toggleBlockquote().run()}
+        >
+          <Quote aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <span className="h-6 w-px bg-slate-200" />
+        <button
+          aria-label="Insert table"
+          className={buttonClass(editor?.isActive("table"), isEditorUnavailable)}
+          title="Insert table"
+          type="button"
+          onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+        >
+          <Table2 aria-hidden="true" className="h-4 w-4" />
+        </button>
+      </div>
       {isInTable ? (
-        <>
+        <div className="mt-2 flex min-h-8 flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Table</span>
           <button
             aria-label="Add column"
             className={buttonClass(false, !canAddColumn)}
@@ -646,7 +653,7 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
           >
             <Trash2 aria-hidden="true" className="h-4 w-4" />
           </button>
-        </>
+        </div>
       ) : null}
     </div>
   );
