@@ -5,6 +5,7 @@ import type {
   CanvasHistoryOptions,
   CanvasObject,
   CanvasObjectType,
+  CanvasPoint,
   CanvasTool,
   CanvasViewState,
 } from "@/types/workspace";
@@ -93,6 +94,13 @@ type PendingLineInteraction = {
   tool: "Line" | "Arrow";
 };
 
+type PenDrawInteraction = {
+  historyKey: string;
+  id: string;
+  kind: "penDraw";
+  moved: boolean;
+};
+
 type PanInteraction = {
   kind: "pan";
   pointerX: number;
@@ -108,6 +116,7 @@ type Interaction =
   | EndpointInteraction
   | CreateInteraction
   | PendingLineInteraction
+  | PenDrawInteraction
   | PanInteraction;
 type ResizeHandle = "n" | "e" | "s" | "w" | "nw" | "ne" | "sw" | "se";
 
@@ -117,6 +126,7 @@ const toolToObjectType: Partial<Record<CanvasTool, CanvasObjectType>> = {
   "Text Box": "textBox",
   Line: "line",
   Arrow: "arrow",
+  Pen: "penStroke",
 };
 
 export function CanvasLayer({
@@ -271,6 +281,11 @@ export function CanvasLayer({
       object.strokeWidth = 1;
     }
 
+    if (type === "penStroke") {
+      object.fillColor = "transparent";
+      object.penPoints = [{ x: 0, y: 0 }];
+    }
+
     return object;
   }
 
@@ -334,6 +349,40 @@ export function CanvasLayer({
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
+  function startPenDrawing(event: React.PointerEvent<HTMLDivElement>) {
+    const point = screenToWorld(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const object: CanvasObject = {
+      id: createId("object"),
+      type: "penStroke",
+      x: point.x,
+      y: point.y,
+      width: 1,
+      height: 1,
+      penPoints: [{ x: 0, y: 0 }],
+      ...defaultCanvasStyle,
+      fillColor: "transparent",
+      createdAt: now,
+      updatedAt: now,
+    };
+    const historyKey = createId("history");
+
+    onChange([...objects, object], { historyKey });
+    onSelectionChange(object.id);
+    clearTextEditing();
+    setInteraction({
+      historyKey,
+      id: object.id,
+      kind: "penDraw",
+      moved: false,
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
   function finishPendingLine(clientX: number, clientY: number) {
     if (interaction?.kind !== "pendingLine") {
       return;
@@ -387,6 +436,11 @@ export function CanvasLayer({
       return;
     }
 
+    if (activeTool === "Pen") {
+      startPenDrawing(event);
+      return;
+    }
+
     if (toolToObjectType[activeTool]) {
       startCreation(event);
       return;
@@ -426,6 +480,13 @@ export function CanvasLayer({
     const pointerX = alignToGrid(point.x);
     const pointerY = alignToGrid(point.y);
 
+    if (interaction.kind === "penDraw") {
+      const points = [...getPenAbsolutePoints(object), { x: point.x, y: point.y }];
+      updateObject(object.id, normalizePenBounds(points), { historyKey: interaction.historyKey });
+      setInteraction((current) => (current?.kind === "penDraw" ? { ...current, moved: true } : current));
+      return;
+    }
+
     if (interaction.kind === "pendingLine") {
       updateObject(
         object.id,
@@ -445,6 +506,18 @@ export function CanvasLayer({
     }
 
     if (interaction.kind === "move") {
+      if (object.type === "penStroke") {
+        updateObject(
+          object.id,
+          {
+            x: point.x - interaction.offsetX,
+            y: point.y - interaction.offsetY,
+          },
+          { historyKey: interaction.historyKey },
+        );
+        return;
+      }
+
       updateObject(
         object.id,
         {
@@ -547,6 +620,21 @@ export function CanvasLayer({
   }
 
   function handleCanvasPointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    if (interaction?.kind === "penDraw") {
+      const object = objects.find((item) => item.id === interaction.id);
+      if (object && !interaction.moved) {
+        const size = Math.max(1, object.strokeWidth);
+        updateObject(
+          object.id,
+          normalizePenBounds([
+            { x: object.x, y: object.y },
+            { x: object.x + size, y: object.y + size },
+          ]),
+          { historyKey: interaction.historyKey },
+        );
+      }
+    }
+
     if (interaction?.kind === "create") {
       const object = objects.find((item) => item.id === interaction.id);
       if (object && (object.type === "line" || object.type === "arrow")) {
@@ -704,6 +792,27 @@ export function CanvasLayer({
     });
   }
 
+  function startPenMove(event: React.PointerEvent<SVGPathElement>, object: CanvasObject) {
+    event.stopPropagation();
+    canvasRef.current?.focus();
+    onSelectionChange(object.id);
+    clearTextEditing();
+    const point = screenToWorld(event.clientX, event.clientY);
+
+    if (!point) {
+      return;
+    }
+
+    setInteraction({
+      historyKey: createId("history"),
+      kind: "move",
+      id: object.id,
+      offsetX: point.x - object.x,
+      offsetY: point.y - object.y,
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
   function startEndpointDrag(
     event: React.PointerEvent<HTMLButtonElement>,
     object: CanvasObject,
@@ -738,10 +847,16 @@ export function CanvasLayer({
   }
 
   const lineObjects = objects.filter((object) => object.type === "line" || object.type === "arrow");
-  const boxObjects = objects.filter((object) => object.type !== "line" && object.type !== "arrow");
+  const penObjects = objects.filter((object) => object.type === "penStroke");
+  const boxObjects = objects.filter(
+    (object) => object.type !== "line" && object.type !== "arrow" && object.type !== "penStroke",
+  );
   const shouldUseCanvasHitLayer =
     activeTool !== "Pan" &&
-    (Boolean(toolToObjectType[activeTool]) || isSpacePressed || interaction?.kind === "pendingLine");
+    (activeTool === "Pen" ||
+      Boolean(toolToObjectType[activeTool]) ||
+      isSpacePressed ||
+      interaction?.kind === "pendingLine");
 
   return (
     <div
@@ -775,6 +890,46 @@ export function CanvasLayer({
         }}
       >
         <svg className="absolute inset-0 h-full w-full overflow-visible">
+          {penObjects.map((object) => {
+            const isSelected = selectedObjectId === object.id;
+            const path = getPenPath(object);
+
+            return (
+              <g key={object.id}>
+                <path
+                  className="pointer-events-auto cursor-move"
+                  d={path}
+                  fill="none"
+                  opacity="0"
+                  stroke={object.strokeColor}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={Math.max(12, object.strokeWidth + 8)}
+                  onPointerDown={(event) => startPenMove(event, object)}
+                />
+                <path
+                  d={path}
+                  fill="none"
+                  stroke={object.strokeColor}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={object.strokeWidth}
+                />
+                {isSelected ? (
+                  <rect
+                    fill="none"
+                    height={Math.max(1, object.height)}
+                    pointerEvents="none"
+                    stroke="#238157"
+                    strokeDasharray="4 4"
+                    width={Math.max(1, object.width)}
+                    x={object.x}
+                    y={object.y}
+                  />
+                ) : null}
+              </g>
+            );
+          })}
           {lineObjects.map((object) => {
             const points = getLinePoints(object);
             const isSelected = selectedObjectId === object.id;
@@ -1074,6 +1229,45 @@ function EndpointHandle({
       onPointerDown={(event) => onStart(event, object, endpoint)}
     />
   );
+}
+
+function getPenAbsolutePoints(object: CanvasObject): CanvasPoint[] {
+  const points = object.penPoints?.length ? object.penPoints : [{ x: 0, y: 0 }];
+
+  return points.map((point) => ({
+    x: object.x + point.x,
+    y: object.y + point.y,
+  }));
+}
+
+function normalizePenBounds(points: CanvasPoint[]): Partial<CanvasObject> {
+  const nextPoints = points.length ? points : [{ x: 0, y: 0 }];
+  const minX = Math.min(...nextPoints.map((point) => point.x));
+  const minY = Math.min(...nextPoints.map((point) => point.y));
+  const maxX = Math.max(...nextPoints.map((point) => point.x));
+  const maxY = Math.max(...nextPoints.map((point) => point.y));
+
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY),
+    penPoints: nextPoints.map((point) => ({
+      x: point.x - minX,
+      y: point.y - minY,
+    })),
+  };
+}
+
+function getPenPath(object: CanvasObject) {
+  const points = getPenAbsolutePoints(object);
+
+  if (points.length === 1) {
+    const point = points[0];
+    return `M ${point.x} ${point.y} L ${point.x + 0.1} ${point.y + 0.1}`;
+  }
+
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
 }
 
 function getResizeUpdates(

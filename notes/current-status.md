@@ -29,10 +29,10 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Top contextual toolbar applies row 1 text controls to the active target only: the Tiptap document when document editing is active, or the selected whiteboard text object when a text box/text-bearing shape is selected.
 - Whiteboard text toolbar controls preserve the selected canvas object while applying formatting.
 - Clicking into the page/editor clears canvas object selection so the document toolbar can take over cleanly.
-- Bottom floating canvas toolbar contains Select, Pan, Rectangle, Circle, Text, Line, Arrow, Image, Zoom In, Zoom Out, Reset View, and a Settings menu for Grid and Snap.
+- Bottom floating canvas toolbar contains Select, Pan, Rectangle, Circle, Text, Line, Arrow, Image, Pen, Zoom In, Zoom Out, Reset View, and a Settings menu for Grid and Snap.
 - Bottom toolbar includes Undo and Redo for canvas/page actions, positioned between Reset View and Settings.
 - Undo and Redo toolbar polish pass verified icon-only buttons, disabled/muted unavailable states, and canvas-scoped shortcuts.
-- Toolbar shortcut badges show 1-8 for tools/image, + for Zoom In, and - for Zoom Out.
+- Toolbar shortcut badges show 1-9 for tools/image/pen, + for Zoom In, and - for Zoom Out.
 - Canvas Undo uses Cmd/Ctrl+Z; Canvas Redo uses Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y.
 - Zoom In works with + and = outside editable fields; Zoom Out works with -.
 - A transient zoom percentage indicator appears near the bottom toolbar after zoom changes and Reset View.
@@ -42,14 +42,15 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 
 ## Canvas Editing
 
-- Canvas supports rectangle, circle, text box, line, arrow, and image objects.
+- Canvas supports rectangle, circle, text box, line, arrow, image, and pen stroke objects.
 - Objects can be created, selected, moved, resized, styled, deleted, and persisted per page.
+- Pen strokes can be drawn freehand, selected, moved, duplicated, deleted, styled with stroke color/width, and persisted per page.
 - Selected canvas object controls now appear in the top contextual toolbar instead of a right-side properties panel.
 - Canvas object duplicate and delete actions are available from the top contextual toolbar.
 - Canvas undo/redo is tracked per page for create, delete, move, resize, style changes, whiteboard text edits, and inserted image objects.
 - Rectangles and circles can contain editable text.
 - Text-bearing canvas objects support practical formatting: bold, italic, alignment, vertical alignment, text color, highlight, and size, while preserving plain text storage.
-- Shape and line styling includes stroke color, fill color, stroke width, and solid/dashed/dotted stroke style where applicable.
+- Shape, line, and pen stroke styling includes stroke color and stroke width; shapes and lines also support solid/dashed/dotted stroke style where applicable.
 - Image objects can be imported or pasted, resized/compressed, moved, resized, deleted, and stored per page.
 - Snap to Grid is separate from Show Grid, is on by default, and applies to creation, movement, resizing, and line/arrow endpoints when enabled.
 

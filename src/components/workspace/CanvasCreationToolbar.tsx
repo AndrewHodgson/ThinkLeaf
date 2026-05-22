@@ -14,6 +14,7 @@ import {
   Square,
   Type,
   Minus,
+  Pencil,
   ZoomIn,
   ZoomOut,
   Undo2,
@@ -102,6 +103,21 @@ export function CanvasCreationToolbar({
         >
           <ImageIcon aria-hidden="true" className="h-4 w-4" />
           <ShortcutBadge>8</ShortcutBadge>
+        </button>
+        <button
+          aria-label="Pen tool, shortcut 9"
+          className={[
+            "relative inline-flex h-9 w-9 items-center justify-center rounded-full border transition",
+            activeTool === "Pen"
+              ? "border-slate-900 bg-slate-900 text-white"
+              : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
+          ].join(" ")}
+          title="Pen (9)"
+          type="button"
+          onClick={() => onToolChange("Pen")}
+        >
+          <Pencil aria-hidden="true" className="h-4 w-4" />
+          <ShortcutBadge isActive={activeTool === "Pen"}>9</ShortcutBadge>
         </button>
         <span className="mx-1 h-6 w-px bg-slate-200" />
         <button

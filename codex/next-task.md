@@ -27,7 +27,7 @@ The latest code-path QA/build pass after the whiteboard text formatting fix pass
    - Confirm custom HEX colors apply and recent colors only contain custom colors.
 
 4. Toolbar Shortcuts
-   - Confirm 1-8 tool/image shortcuts work outside editable fields.
+   - Confirm 1-9 tool/image/pen shortcuts work outside editable fields.
    - Confirm + and = zoom in, - zooms out, and shortcut badges remain accurate.
    - Confirm shortcuts do not trigger inside editors, inputs, textareas, selects, or contenteditable areas.
    - Confirm Cmd/Ctrl+Z undoes canvas actions outside the main document editor.
@@ -51,7 +51,9 @@ The latest code-path QA/build pass after the whiteboard text formatting fix pass
    - Confirm free movement works when Snap to Grid is disabled.
 
 7. Object Editing
-   - Confirm rectangles, circles, text boxes, lines, arrows, and images can be created, selected, moved, resized, styled, and deleted.
+   - Confirm rectangles, circles, text boxes, lines, arrows, images, and pen strokes can be created, selected, moved, styled, duplicated, and deleted.
+   - Confirm pen drawing ignores Snap to Grid and feels natural while drawing.
+   - Confirm pen stroke color and width controls work from the top contextual toolbar.
    - Confirm selected canvas object controls appear in the top contextual toolbar and the old right-side properties panel is gone.
    - Confirm duplicate and delete work from the top contextual toolbar.
    - Confirm line and arrow creation previews naturally and endpoint editing still works.
@@ -75,7 +77,7 @@ The latest code-path QA/build pass after the whiteboard text formatting fix pass
 
 ## Future Ideas
 
-Keep future feature ideas in `notes/feature-ideas.md`. Page Types, document block lock/unlock, connectors, pen, eraser, layers, expanded document/cross-page history, and laser pointer are not part of this QA pass.
+Keep future feature ideas in `notes/feature-ideas.md`. Page Types, document block lock/unlock, connectors, advanced pen behavior, eraser, layers, expanded document/cross-page history, and laser pointer are not part of this QA pass.
 
 ## Verification
 

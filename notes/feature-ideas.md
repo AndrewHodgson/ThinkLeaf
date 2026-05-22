@@ -55,24 +55,24 @@ Future whiteboard text objects could support:
 
 Do not build until the current toolbar and canvas text formatting are stable.
 
-## Pen Tool for Whiteboard
+## Advanced Pen Tool
 
-Add a freehand pen tool for drawing directly on the whiteboard.
+Expand the basic freehand pen tool.
 
 ### Expected Behavior
 
-The pen tool should support:
+The advanced pen tool could support:
 
-- Freehand drawing
-- Stroke color
-- Stroke width
+- Smoother stroke rendering
+- Pressure or velocity-aware strokes, if practical
+- Additional stroke width options
+- Better stroke simplification for lower localStorage usage
 - Eraser support
-- Persistence per page
-- Interaction with pan/zoom
+- More precise selection/editing affordances
 
 ### Build Later
 
-Do not build until canvas object creation, movement, resizing, snapping, and pan/zoom are stable.
+Do not expand until the basic pen stroke object behavior is manually QA'd.
 
 ## Eraser Tool for Whiteboard
 

@@ -38,10 +38,14 @@ export type Page = {
   updatedAt: string;
 };
 
-export type CanvasObjectType = "rectangle" | "circle" | "textBox" | "line" | "arrow" | "image";
+export type CanvasObjectType = "rectangle" | "circle" | "textBox" | "line" | "arrow" | "image" | "penStroke";
 export type CanvasTextAlign = "left" | "center" | "right";
 export type CanvasTextVerticalAlign = "top" | "middle" | "bottom";
 export type CanvasStrokeStyle = "solid" | "dashed" | "dotted";
+export type CanvasPoint = {
+  x: number;
+  y: number;
+};
 
 export type CanvasTool =
   | "Select"
@@ -67,6 +71,7 @@ export type CanvasObject = {
   x2?: number;
   y2?: number;
   imageDataUrl?: string;
+  penPoints?: CanvasPoint[];
   text?: string;
   strokeColor: string;
   fillColor: string;

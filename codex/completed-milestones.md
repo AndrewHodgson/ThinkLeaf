@@ -68,6 +68,9 @@
 - Transient zoom percentage indicator added near the bottom toolbar for zoom changes and Reset View
 - Canvas object model added
 - Rectangle, circle, text box, line, and arrow tools added
+- Basic freehand Pen tool added with shortcut 9
+- Pen strokes persist per page and pan/zoom with the canvas
+- Pen strokes support selection, move, duplicate, delete, stroke color, stroke width, and canvas undo/redo
 - Canvas image objects added
 - Canvas image upload/import added
 - Canvas image paste from clipboard added

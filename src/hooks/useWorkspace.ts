@@ -29,6 +29,11 @@ function normalizeCanvasObject(object: CanvasObject): CanvasObject {
     textVerticalAlign: object.textVerticalAlign ?? defaultCanvasStyle.textVerticalAlign,
     fontSize: object.fontSize ?? defaultCanvasStyle.fontSize,
     imageDataUrl: object.imageDataUrl,
+    penPoints: Array.isArray(object.penPoints)
+      ? object.penPoints.filter(
+          (point) => Number.isFinite(point.x) && Number.isFinite(point.y),
+        )
+      : undefined,
   };
 
   if ((object.type === "line" || object.type === "arrow") && object.x1 === undefined) {

@@ -80,6 +80,7 @@ export const defaultObjectSizes: Record<CanvasObjectType, { width: number; heigh
   line: { width: 184, height: 32 },
   arrow: { width: 192, height: 32 },
   image: { width: 320, height: 220 },
+  penStroke: { width: 1, height: 1 },
 };
 
 export function snapToGrid(value: number) {

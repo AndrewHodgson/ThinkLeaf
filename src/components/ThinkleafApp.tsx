@@ -16,6 +16,7 @@ const toolShortcuts: Record<string, CanvasTool> = {
   "5": "Text Box",
   "6": "Line",
   "7": "Arrow",
+  "9": "Pen",
 };
 
 const SNAP_TO_GRID_STORAGE_KEY = "thinkleaf.snapToGrid.v1";

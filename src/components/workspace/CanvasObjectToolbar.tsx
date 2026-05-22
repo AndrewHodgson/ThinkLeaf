@@ -29,7 +29,7 @@ export function CanvasObjectToolbar({ object, onDelete, onDuplicate, onUpdate }:
     <>
       <div className="mr-2 min-w-24">
         <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Selection</div>
-        <div className="text-xs font-semibold capitalize text-slate-700">{object.type}</div>
+        <div className="text-xs font-semibold capitalize text-slate-700">{getObjectLabel(object)}</div>
       </div>
 
       {supportsFill ? (
@@ -111,6 +111,18 @@ export function CanvasObjectToolbar({ object, onDelete, onDuplicate, onUpdate }:
       ) : null}
     </>
   );
+}
+
+function getObjectLabel(object: CanvasObject) {
+  if (object.type === "penStroke") {
+    return "Pen stroke";
+  }
+
+  if (object.type === "textBox") {
+    return "Text box";
+  }
+
+  return object.type;
 }
 
 function SegmentLabel({ children }: { children: string }) {
