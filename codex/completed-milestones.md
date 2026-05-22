@@ -30,6 +30,8 @@
 - Numbered lists added
 - Checklists added
 - Links added
+- Image insert and paste added
+- Document images are resized/compressed and stored as data URLs
 - Callout/blockquotes added
 - Tables added
 - Tiptap duplicate Link warning fixed
@@ -48,8 +50,15 @@
 - Left-positioned document block added
 - Dotted grid workspace added
 - Bottom floating canvas toolbar added
+- Top canvas bar removed
+- Zoom controls moved into the bottom floating canvas toolbar
 - Canvas object model added
 - Rectangle, circle, text box, line, and arrow tools added
+- Canvas image objects added
+- Canvas image upload/import added
+- Canvas image paste from clipboard added
+- Canvas images are resized/compressed and stored as data URLs per page
+- Canvas image objects support move, resize, select, delete, and persistence
 - Click-and-drag object creation added
 - Object movement fixed
 - Object resizing added
@@ -122,4 +131,4 @@
 
 ## Current Recommended Next Feature
 
-Manual browser QA for profiles plus polished canvas/editor interactions, then document block lock/unlock.
+Manual browser QA for profiles, image import/paste, and polished canvas/editor interactions, then document block lock/unlock.

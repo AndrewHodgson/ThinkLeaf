@@ -839,7 +839,10 @@ export function CanvasLayer({
               />
               {isSelected ? (
                 <>
-                  {object.type === "rectangle" || object.type === "circle" || object.type === "textBox" ? (
+                  {object.type === "rectangle" ||
+                  object.type === "circle" ||
+                  object.type === "textBox" ||
+                  object.type === "image" ? (
                     <>
                       <ResizeHandleButton handle="n" onPointerDown={(event) => startResize(event, object, "n")} />
                       <ResizeHandleButton handle="e" onPointerDown={(event) => startResize(event, object, "e")} />
@@ -941,6 +944,18 @@ function CanvasObjectView({
     return (
       <div className="h-full w-full overflow-hidden rounded-full" style={sharedStyle}>
         {renderTextContent()}
+      </div>
+    );
+  }
+
+  if (object.type === "image") {
+    return (
+      <div className="h-full w-full overflow-hidden rounded-md border border-slate-200 bg-white" style={sharedStyle}>
+        {object.imageDataUrl ? (
+          <img alt="" className="h-full w-full object-contain" draggable={false} src={object.imageDataUrl} />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">Missing image</div>
+        )}
       </div>
     );
   }

@@ -1,5 +1,18 @@
 ## Latest Completed Milestone
 
+- Focused toolbar cleanup pass completed
+- Removed the top canvas bar that showed "CANVAS"
+- Zoom In, Zoom Out, and Reset View now live in the fixed bottom floating canvas toolbar
+- Bottom toolbar remains icon-only for primary controls with accessible labels and tooltips
+- Bottom toolbar still contains Select, Pan, Rectangle, Circle, Text, Line, Arrow, Image, and Settings/Grid/Snap controls
+- Image support added for the main document and whiteboard canvas
+- Main Tiptap document now supports inserted/pasted images stored as compressed data URLs
+- Whiteboard canvas now supports image objects stored as compressed data URLs
+- Canvas image objects can be moved, resized, selected, deleted, and persisted per page
+- Image import buttons added for both document editing and whiteboard canvas import
+- Clipboard image paste routes to the document when focus is in the editor and to the canvas when focus is on the whiteboard
+- Large images are resized to a max dimension of about 1600px and compressed before localStorage storage
+- Basic image import errors now surface when an image is too large or cannot be processed
 - Focused profiles/color-picker stability pass completed
 - Production build passes after the latest Profiles and color-picker work
 - Existing dev server responds successfully on localhost
@@ -82,6 +95,10 @@
 - Text Box
 - Line
 - Arrow
+- Image Import
+- Zoom Out
+- Reset View
+- Zoom In
 - Grid Toggle
 - Canvas Settings
 
@@ -89,6 +106,7 @@
 
 - Move objects
 - Resize rectangles, circles, and text boxes
+- Move and resize image objects
 - Edit line and arrow endpoints
 - Edit text boxes
 - Change stroke color
@@ -102,10 +120,9 @@
 
 ## Recommended Next
 
-Do a manual browser QA pass on profile switching, migration, color picker interactions, and core canvas/editor workflows before adding new major features.
+Do a manual browser QA pass on profile switching, image import/paste, color picker interactions, and core canvas/editor workflows before adding new major features.
 
 Possible next feature after stabilization:
 - Simple connectors later
 - Document block lock/unlock
-- Image insert
 - Freehand pen

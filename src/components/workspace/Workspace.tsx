@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CanvasTool, Page, WorkspaceData } from "@/types/workspace";
-import { findFolder, findProject, toDateInputValue } from "@/lib/workspaceUtils";
+import type { CanvasObject, CanvasTool, Page, WorkspaceData } from "@/types/workspace";
+import { createId, findFolder, findProject, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
 import {
   defaultCanvasViewState,
+  defaultCanvasStyle,
   documentBlockX,
   documentBlockWidth,
   documentBlockY,
+  objectCanvasOriginX,
+  objectCanvasOriginY,
+  snapToGrid,
   virtualBoardHeight,
   virtualBoardWidth,
 } from "@/lib/canvasStyle";
@@ -17,6 +21,7 @@ import { Calendar, Clock3, Star, Trash2 } from "lucide-react";
 import { CanvasLayer } from "@/components/workspace/CanvasLayer";
 import { CanvasCreationToolbar } from "@/components/workspace/CanvasCreationToolbar";
 import { ObjectPropertiesPanel } from "@/components/workspace/ObjectPropertiesPanel";
+import { getImageFilesFromClipboard, type ProcessedImage, processImageFile } from "@/lib/imageUtils";
 
 type BoardPanInteraction = {
   pointerX: number;
@@ -33,6 +38,7 @@ type WorkspaceProps = {
   isSnapToGridEnabled: boolean;
   selectedObjectId: string | null;
   onDeletePage: (pageId: string) => void;
+  onResetView: () => void;
   onSearchByTag: (tag: string) => void;
   onSelectionChange: (objectId: string | null) => void;
   onToggleGrid: () => void;
@@ -44,6 +50,8 @@ type WorkspaceProps = {
       Pick<Page, "title" | "body" | "noteDate" | "canvasViewState" | "canvasObjects" | "tags" | "isFavorite">
     >,
   ) => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
 };
 
 export function Workspace({
@@ -54,14 +62,18 @@ export function Workspace({
   isSnapToGridEnabled,
   selectedObjectId,
   onDeletePage,
+  onResetView,
   onSearchByTag,
   onSelectionChange,
   onToggleGrid,
   onToggleSnapToGrid,
   onToolChange,
   onUpdatePage,
+  onZoomIn,
+  onZoomOut,
 }: WorkspaceProps) {
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const canvasImageInputRef = useRef<HTMLInputElement>(null);
   const panInteractionRef = useRef<BoardPanInteraction | null>(null);
   const capturedPanPointerIdRef = useRef<number | null>(null);
   const [boardPanInteraction, setBoardPanInteraction] = useState<BoardPanInteraction | null>(null);
@@ -113,6 +125,74 @@ export function Workspace({
     });
   }
 
+  function alignCanvasValue(value: number) {
+    return isSnapToGridEnabled ? snapToGrid(value) : value;
+  }
+
+  function getVisibleCanvasInsertPoint(width: number, height: number) {
+    const bounds = workspaceRef.current?.getBoundingClientRect();
+    const screenX = bounds ? bounds.width / 2 : 640;
+    const screenY = bounds ? bounds.height / 2 : 360;
+    const x = (screenX - canvasViewState.panX) / canvasViewState.zoom - objectCanvasOriginX - width / 2;
+    const y = (screenY - canvasViewState.panY) / canvasViewState.zoom - objectCanvasOriginY - height / 2;
+
+    return {
+      x: alignCanvasValue(x),
+      y: alignCanvasValue(y),
+    };
+  }
+
+  function createCanvasImageObject(image: ProcessedImage): CanvasObject {
+    const maxDisplayDimension = 360;
+    const displayScale = Math.min(1, maxDisplayDimension / Math.max(image.width, image.height));
+    const width = Math.max(80, Math.round(image.width * displayScale));
+    const height = Math.max(80, Math.round(image.height * displayScale));
+    const position = getVisibleCanvasInsertPoint(width, height);
+    const now = timestamp();
+
+    return {
+      id: createId("object"),
+      type: "image",
+      x: position.x,
+      y: position.y,
+      width: alignCanvasValue(width),
+      height: alignCanvasValue(height),
+      imageDataUrl: image.dataUrl,
+      ...defaultCanvasStyle,
+      fillColor: "transparent",
+      strokeColor: "transparent",
+      strokeWidth: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  async function importCanvasImageFiles(files: File[]) {
+    if (!files.length) {
+      return;
+    }
+
+    try {
+      const importedObjects: CanvasObject[] = [];
+
+      for (const file of files) {
+        const image = await processImageFile(file);
+        importedObjects.push(createCanvasImageObject(image));
+      }
+
+      if (!importedObjects.length) {
+        return;
+      }
+
+      onUpdatePage(page.id, {
+        canvasObjects: [...page.canvasObjects, ...importedObjects],
+      });
+      onSelectionChange(importedObjects[importedObjects.length - 1].id);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not import that image.");
+    }
+  }
+
   function isPanBlockedTarget(target: EventTarget | null) {
     if (!(target instanceof HTMLElement)) {
       return false;
@@ -126,6 +206,10 @@ export function Workspace({
   }
 
   function handleWorkspacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (!isPanBlockedTarget(event.target)) {
+      event.currentTarget.focus();
+    }
+
     if (activeTool === "Select" && event.button === 0 && !isPanBlockedTarget(event.target)) {
       onSelectionChange(null);
       return;
@@ -186,6 +270,20 @@ export function Workspace({
     releaseWorkspacePan(event.pointerId);
   }
 
+  function handleWorkspacePaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    if (isPanBlockedTarget(event.target)) {
+      return;
+    }
+
+    const files = getImageFilesFromClipboard(event);
+    if (!files.length) {
+      return;
+    }
+
+    event.preventDefault();
+    void importCanvasImageFiles(files);
+  }
+
   return (
     <div
       ref={workspaceRef}
@@ -200,6 +298,8 @@ export function Workspace({
       onLostPointerCapture={() => releaseWorkspacePan()}
       onPointerMove={handleWorkspacePointerMove}
       onPointerUp={stopWorkspacePan}
+      onPaste={handleWorkspacePaste}
+      tabIndex={0}
       style={
         isGridVisible
           ? {
@@ -336,9 +436,25 @@ export function Workspace({
         activeTool={activeTool}
         isGridVisible={isGridVisible}
         isSnapToGridEnabled={isSnapToGridEnabled}
+        onImageUploadClick={() => canvasImageInputRef.current?.click()}
+        onResetView={onResetView}
         onToggleGrid={onToggleGrid}
         onToggleSnapToGrid={onToggleSnapToGrid}
         onToolChange={onToolChange}
+        onZoomIn={onZoomIn}
+        onZoomOut={onZoomOut}
+      />
+      <input
+        ref={canvasImageInputRef}
+        accept="image/*"
+        className="hidden"
+        multiple
+        type="file"
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          event.target.value = "";
+          void importCanvasImageFiles(files);
+        }}
       />
     </div>
   );

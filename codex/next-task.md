@@ -2,7 +2,7 @@
 
 ## Goal
 
-Do a hands-on browser QA pass for the Profiles layer, shared color picker, canvas interactions, and main document editor.
+Do a hands-on browser QA pass for the Profiles layer, image import/paste, shared color picker, canvas interactions, and main document editor.
 
 The latest code-path/build stability pass found and fixed a hydration mismatch around saved UI preferences. A full click-through pass is still recommended before adding another feature.
 
@@ -31,6 +31,9 @@ The latest code-path/build stability pass found and fixed a hydration mismatch a
    - H1/H2/H3 work from the compact text-style dropdown.
 
 3. Verify canvas behavior.
+   - There is no top canvas bar showing "CANVAS".
+   - Zoom In, Zoom Out, and Reset View work from the bottom floating toolbar.
+   - The bottom toolbar stays fixed while panning, zooming, selecting objects, and showing the right properties panel.
    - Pan, zoom, and Reset View still work.
    - Select, move, resize, endpoint edit, and text edit still work.
    - Rectangle/circle click-drag creation defines width and height.
@@ -41,12 +44,17 @@ The latest code-path/build stability pass found and fixed a hydration mismatch a
    - Snap to Grid affects creation, movement, resizing, and line/arrow endpoints.
    - Turning Snap to Grid off allows free movement.
    - Number-key shortcuts 1-7 switch tools outside editable fields.
+   - Whiteboard image import creates a movable canvas image object.
+   - Whiteboard image paste creates a movable canvas image object when focus is on the canvas.
+   - Canvas image objects resize, delete, and persist per page.
 
 4. Verify editor behavior.
    - Tiptap typing, rich text formatting, links, checklists, and tables still work.
    - Document left, center, and right alignment work.
    - Table header left, center, and right alignment work.
    - Document text size and vertical content alignment work.
+   - Document image import inserts an image into the Tiptap document.
+   - Pasted screenshots/images insert into the document when focus is in the editor.
    - Canvas text object formatting works for standalone text boxes and rectangles/circles with text.
 
 5. Verify persistence.
@@ -56,6 +64,7 @@ The latest code-path/build stability pass found and fixed a hydration mismatch a
    - Snap to Grid persists without hydration errors.
    - Canvas view state persists per page.
    - Canvas objects persist per page.
+   - Document and canvas images persist after refresh.
    - Switching pages and refreshing restores the expected profile/page/canvas state.
 
 ## Recommended Next Feature After QA
@@ -72,7 +81,6 @@ Do not add:
 
 - Connectors
 - Freehand pen
-- Image upload
 - Grouping
 - Layers
 - Rotation

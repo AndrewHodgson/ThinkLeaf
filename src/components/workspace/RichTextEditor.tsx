@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Extension, Mark } from "@tiptap/core";
+import { useEffect, useRef, useState } from "react";
+import { Extension, Mark, Node } from "@tiptap/core";
+import type { EditorView } from "@tiptap/pm/view";
 import { Editor, EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
@@ -21,6 +22,7 @@ import {
   AlignVerticalJustifyStart,
   Columns3,
   Highlighter,
+  Image as ImageIcon,
   Italic as ItalicIcon,
   Link2,
   List,
@@ -34,6 +36,7 @@ import {
 } from "lucide-react";
 import { colorPresets, defaultCanvasStyle, highlightPresets, textSizePresets } from "@/lib/canvasStyle";
 import { ColorPicker } from "@/components/workspace/ColorPicker";
+import { getImageFilesFromClipboard, processImageFile } from "@/lib/imageUtils";
 
 type DocumentTextAlign = "left" | "center" | "right";
 type DocumentVerticalAlign = "top" | "middle" | "bottom";
@@ -132,6 +135,41 @@ const FontSizeMark = Mark.create({
   },
 });
 
+const DocumentImageNode = Node.create({
+  name: "thinkleafImage",
+  group: "block",
+  draggable: true,
+
+  addAttributes() {
+    return {
+      alt: {
+        default: "",
+      },
+      src: {
+        default: null,
+      },
+      title: {
+        default: null,
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: "img[src]" }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "img",
+      {
+        ...HTMLAttributes,
+        "data-thinkleaf-image": "true",
+        class: "my-4 max-w-full rounded-md border border-slate-200",
+      },
+    ];
+  },
+});
+
 type RichTextEditorProps = {
   content: string;
   pageId: string;
@@ -139,6 +177,7 @@ type RichTextEditorProps = {
 };
 
 export function RichTextEditor({ content, pageId, onChange }: RichTextEditorProps) {
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [verticalAlign, setVerticalAlign] = useState<DocumentVerticalAlign>("top");
   const [hasLoadedVerticalAlign, setHasLoadedVerticalAlign] = useState(false);
   useEffect(() => {
@@ -182,11 +221,22 @@ export function RichTextEditor({ content, pageId, onChange }: RichTextEditorProp
       TextColorMark,
       TextHighlightMark,
       FontSizeMark,
+      DocumentImageNode,
     ],
     content: normalizeEditorContent(content),
     editorProps: {
       attributes: {
         class: "thinkleaf-editor min-h-[560px] outline-none",
+      },
+      handlePaste: (view, event) => {
+        const files = getImageFilesFromClipboard(event);
+        if (!files.length) {
+          return false;
+        }
+
+        event.preventDefault();
+        void insertImagesIntoDocumentView(view, files);
+        return true;
       },
     },
     onUpdate: ({ editor: currentEditor }) => {
@@ -219,7 +269,24 @@ export function RichTextEditor({ content, pageId, onChange }: RichTextEditorProp
 
   return (
     <div>
-      <EditorToolbar editor={editor} verticalAlign={verticalAlign} onVerticalAlignChange={setVerticalAlign} />
+      <EditorToolbar
+        editor={editor}
+        verticalAlign={verticalAlign}
+        onImageUploadClick={() => imageInputRef.current?.click()}
+        onVerticalAlignChange={setVerticalAlign}
+      />
+      <input
+        ref={imageInputRef}
+        accept="image/*"
+        className="hidden"
+        multiple
+        type="file"
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          event.target.value = "";
+          void insertImagesIntoDocumentEditor(editor, files);
+        }}
+      />
       <div className={["flex min-h-[560px] pt-5", getDocumentVerticalAlignClass(verticalAlign)].join(" ")}>
         <EditorContent editor={editor} />
       </div>
@@ -229,10 +296,12 @@ export function RichTextEditor({ content, pageId, onChange }: RichTextEditorProp
 
 function EditorToolbar({
   editor,
+  onImageUploadClick,
   onVerticalAlignChange,
   verticalAlign,
 }: {
   editor: Editor | null;
+  onImageUploadClick: () => void;
   onVerticalAlignChange: (align: DocumentVerticalAlign) => void;
   verticalAlign: DocumentVerticalAlign;
 }) {
@@ -348,6 +417,16 @@ function EditorToolbar({
         onClick={setLink}
       >
         <Link2 aria-hidden="true" className="h-4 w-4" />
+      </button>
+      <button
+        aria-label="Insert image"
+        className={buttonClass()}
+        disabled={!editor}
+        title="Insert image"
+        type="button"
+        onClick={onImageUploadClick}
+      >
+        <ImageIcon aria-hidden="true" className="h-4 w-4" />
       </button>
       <span className="h-6 w-px bg-slate-200" />
       <ColorPicker
@@ -622,4 +701,51 @@ function parseFontSize(fontSize?: string) {
 
   const parsed = Number.parseInt(fontSize, 10);
   return Number.isFinite(parsed) ? parsed : defaultCanvasStyle.fontSize;
+}
+
+async function insertImagesIntoDocumentEditor(editor: Editor | null, files: File[]) {
+  if (!editor || !files.length) {
+    return;
+  }
+
+  try {
+    for (const file of files) {
+      const image = await processImageFile(file);
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: "thinkleafImage",
+          attrs: {
+            alt: file.name,
+            src: image.dataUrl,
+            title: file.name,
+          },
+        })
+        .run();
+    }
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : "Could not import that image.");
+  }
+}
+
+async function insertImagesIntoDocumentView(view: EditorView, files: File[]) {
+  try {
+    for (const file of files) {
+      const image = await processImageFile(file);
+      const imageNode = view.state.schema.nodes.thinkleafImage?.create({
+        alt: file.name,
+        src: image.dataUrl,
+        title: file.name,
+      });
+
+      if (!imageNode) {
+        throw new Error("Could not insert that image.");
+      }
+
+      view.dispatch(view.state.tr.replaceSelectionWith(imageNode).scrollIntoView());
+    }
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : "Could not import that image.");
+  }
 }

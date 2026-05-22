@@ -79,6 +79,7 @@ export const defaultObjectSizes: Record<CanvasObjectType, { width: number; heigh
   textBox: { width: 220, height: 92, text: "Text box" },
   line: { width: 184, height: 32 },
   arrow: { width: 192, height: 32 },
+  image: { width: 320, height: 220 },
 };
 
 export function snapToGrid(value: number) {

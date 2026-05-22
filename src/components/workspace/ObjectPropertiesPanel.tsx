@@ -31,6 +31,7 @@ type ObjectPropertiesPanelProps = {
 
 export function ObjectPropertiesPanel({ object, onDelete, onUpdate }: ObjectPropertiesPanelProps) {
   const supportsFill = object.type === "rectangle" || object.type === "circle" || object.type === "textBox";
+  const supportsStroke = object.type !== "image";
   const supportsText = object.type === "textBox" || object.text !== undefined;
   const supportsStrokeStyle = object.type === "rectangle" || object.type === "line" || object.type === "arrow";
 
@@ -41,15 +42,17 @@ export function ObjectPropertiesPanel({ object, onDelete, onUpdate }: ObjectProp
         <div className="mt-1 text-sm font-medium text-slate-900">{object.type}</div>
 
         <div className="mt-4 space-y-4">
-          <div>
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Stroke</div>
-            <ColorPicker
-              currentValue={object.strokeColor}
-              label="Stroke"
-              onSelect={(strokeColor) => onUpdate({ strokeColor })}
-              presets={colorPresets}
-            />
-          </div>
+          {supportsStroke ? (
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Stroke</div>
+              <ColorPicker
+                currentValue={object.strokeColor}
+                label="Stroke"
+                onSelect={(strokeColor) => onUpdate({ strokeColor })}
+                presets={colorPresets}
+              />
+            </div>
+          ) : null}
           {supportsFill ? (
             <div>
               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Fill</div>
@@ -84,28 +87,30 @@ export function ObjectPropertiesPanel({ object, onDelete, onUpdate }: ObjectProp
               <TextFormattingControls object={object} onUpdate={onUpdate} />
             </>
           ) : null}
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Stroke width</div>
-            <div className="mt-2 flex items-center gap-2">
-              {strokeWidthPresets.map((strokeWidth) => (
-                <button
-                  key={strokeWidth}
-                  aria-label={`Stroke width ${strokeWidth}`}
-                  className={[
-                    "inline-flex h-8 min-w-8 items-center justify-center rounded-md border px-2 text-xs font-semibold transition",
-                    object.strokeWidth === strokeWidth
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
-                  ].join(" ")}
-                  title={`Stroke width ${strokeWidth}`}
-                  type="button"
-                  onClick={() => onUpdate({ strokeWidth })}
-                >
-                  {strokeWidth}
-                </button>
-              ))}
+          {supportsStroke ? (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Stroke width</div>
+              <div className="mt-2 flex items-center gap-2">
+                {strokeWidthPresets.map((strokeWidth) => (
+                  <button
+                    key={strokeWidth}
+                    aria-label={`Stroke width ${strokeWidth}`}
+                    className={[
+                      "inline-flex h-8 min-w-8 items-center justify-center rounded-md border px-2 text-xs font-semibold transition",
+                      object.strokeWidth === strokeWidth
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
+                    ].join(" ")}
+                    title={`Stroke width ${strokeWidth}`}
+                    type="button"
+                    onClick={() => onUpdate({ strokeWidth })}
+                  >
+                    {strokeWidth}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
           {supportsStrokeStyle ? (
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Stroke style</div>

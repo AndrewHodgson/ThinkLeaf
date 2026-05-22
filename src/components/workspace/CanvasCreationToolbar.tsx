@@ -4,13 +4,17 @@ import {
   Circle,
   Grid3X3,
   Hand,
+  Image as ImageIcon,
   Magnet,
+  RotateCcw,
   Settings2,
   MousePointer2,
   ArrowRight,
   Square,
   Type,
   Minus,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import type { CanvasTool } from "@/types/workspace";
 
@@ -28,18 +32,26 @@ type CanvasCreationToolbarProps = {
   activeTool: CanvasTool;
   isGridVisible: boolean;
   isSnapToGridEnabled: boolean;
+  onImageUploadClick: () => void;
+  onResetView: () => void;
   onToggleGrid: () => void;
   onToggleSnapToGrid: () => void;
   onToolChange: (tool: CanvasTool) => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
 };
 
 export function CanvasCreationToolbar({
   activeTool,
   isGridVisible,
   isSnapToGridEnabled,
+  onImageUploadClick,
+  onResetView,
   onToggleGrid,
   onToggleSnapToGrid,
   onToolChange,
+  onZoomIn,
+  onZoomOut,
 }: CanvasCreationToolbarProps) {
   return (
     <div
@@ -69,6 +81,43 @@ export function CanvasCreationToolbar({
             </button>
           );
         })}
+        <button
+          aria-label="Import image"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+          title="Import image"
+          type="button"
+          onClick={onImageUploadClick}
+        >
+          <ImageIcon aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <span className="mx-1 h-6 w-px bg-slate-200" />
+        <button
+          aria-label="Zoom out"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+          title="Zoom out"
+          type="button"
+          onClick={onZoomOut}
+        >
+          <ZoomOut aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Reset view"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+          title="Reset view"
+          type="button"
+          onClick={onResetView}
+        >
+          <RotateCcw aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button
+          aria-label="Zoom in"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+          title="Zoom in"
+          type="button"
+          onClick={onZoomIn}
+        >
+          <ZoomIn aria-hidden="true" className="h-4 w-4" />
+        </button>
         <span className="mx-1 h-6 w-px bg-slate-200" />
         <details className="relative">
           <summary

@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Sidebar } from "@/components/sidebar/Sidebar";
-import { TopToolbar } from "@/components/toolbar/TopToolbar";
 import { Workspace } from "@/components/workspace/Workspace";
 import { createDefaultCanvasViewState, defaultCanvasViewState, maxZoom, minZoom, zoomStep } from "@/lib/canvasStyle";
 import { useWorkspace } from "@/hooks/useWorkspace";
@@ -168,13 +167,6 @@ export function ThinkleafApp() {
         onSelectPage={workspace.selectPage}
       />
       <section className="flex min-w-0 flex-1 flex-col">
-        <TopToolbar
-          activeTool={activeTool}
-          zoomPercent={Math.round(canvasViewState.zoom * 100)}
-          onResetView={resetView}
-          onZoomIn={() => updateZoom(canvasViewState.zoom + zoomStep)}
-          onZoomOut={() => updateZoom(canvasViewState.zoom - zoomStep)}
-        />
         <Workspace
           activeTool={activeTool}
           activePage={workspace.activePage}
@@ -182,6 +174,7 @@ export function ThinkleafApp() {
           isGridVisible={isGridVisible}
           isSnapToGridEnabled={isSnapToGridEnabled}
           onDeletePage={workspace.deletePage}
+          onResetView={resetView}
           onSearchByTag={(tag) => setSearchQuery(tag)}
           onUpdatePage={workspace.updatePage}
           onSelectionChange={setSelectedObjectId}
@@ -189,6 +182,8 @@ export function ThinkleafApp() {
           onToggleGrid={() => setIsGridVisible((value) => !value)}
           selectedObjectId={selectedObjectId}
           onToolChange={setActiveTool}
+          onZoomIn={() => updateZoom(canvasViewState.zoom + zoomStep)}
+          onZoomOut={() => updateZoom(canvasViewState.zoom - zoomStep)}
         />
       </section>
     </main>

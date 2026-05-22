@@ -28,6 +28,7 @@ function normalizeCanvasObject(object: CanvasObject): CanvasObject {
     textAlign: object.textAlign ?? defaultCanvasStyle.textAlign,
     textVerticalAlign: object.textVerticalAlign ?? defaultCanvasStyle.textVerticalAlign,
     fontSize: object.fontSize ?? defaultCanvasStyle.fontSize,
+    imageDataUrl: object.imageDataUrl,
   };
 
   if ((object.type === "line" || object.type === "arrow") && object.x1 === undefined) {
