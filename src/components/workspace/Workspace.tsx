@@ -14,6 +14,9 @@ import {
   snapToGrid,
   virtualBoardHeight,
   virtualBoardWidth,
+  maxZoom,
+  minZoom,
+  zoomStep,
 } from "@/lib/canvasStyle";
 import { TagEditor } from "@/components/workspace/TagEditor";
 import { RichTextEditor } from "@/components/workspace/RichTextEditor";
@@ -93,6 +96,7 @@ export function Workspace({
   const panInteractionRef = useRef<BoardPanInteraction | null>(null);
   const capturedPanPointerIdRef = useRef<number | null>(null);
   const [boardPanInteraction, setBoardPanInteraction] = useState<BoardPanInteraction | null>(null);
+  const [documentToolbarElement, setDocumentToolbarElement] = useState<HTMLDivElement | null>(null);
   const [isZoomIndicatorVisible, setIsZoomIndicatorVisible] = useState(false);
 
   useEffect(() => {
@@ -242,6 +246,18 @@ export function Workspace({
     );
   }
 
+  function isWheelBlockedTarget(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    return Boolean(
+      target.closest(
+        "button, input, textarea, select, summary, option, [role='menu'], [role='listbox'], [data-wheel-block='true']",
+      ),
+    );
+  }
+
   function handleWorkspacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (!isPanBlockedTarget(event.target)) {
       event.currentTarget.focus();
@@ -321,6 +337,39 @@ export function Workspace({
     void importCanvasImageFiles(files);
   }
 
+  function handleWorkspaceWheel(event: React.WheelEvent<HTMLDivElement>) {
+    if (isWheelBlockedTarget(event.target)) {
+      return;
+    }
+
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+
+      const direction = event.deltaY > 0 ? -1 : 1;
+      const nextZoom = Math.min(maxZoom, Math.max(minZoom, canvasViewState.zoom + direction * zoomStep));
+      onUpdatePage(page.id, {
+        canvasViewState: {
+          ...canvasViewState,
+          zoom: nextZoom,
+        },
+      });
+      return;
+    }
+
+    if (event.deltaX === 0 && event.deltaY === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    onUpdatePage(page.id, {
+      canvasViewState: {
+        ...canvasViewState,
+        panX: canvasViewState.panX - event.deltaX,
+        panY: canvasViewState.panY - event.deltaY,
+      },
+    });
+  }
+
   return (
     <div
       ref={workspaceRef}
@@ -336,6 +385,7 @@ export function Workspace({
       onPointerMove={handleWorkspacePointerMove}
       onPointerUp={stopWorkspacePan}
       onPaste={handleWorkspacePaste}
+      onWheel={handleWorkspaceWheel}
       tabIndex={0}
       style={
         isGridVisible
@@ -346,6 +396,8 @@ export function Workspace({
           : undefined
       }
     >
+      <div ref={setDocumentToolbarElement} className="pointer-events-none absolute left-0 right-0 top-0 z-30" />
+
       <div
         className="relative origin-top-left"
         style={{
@@ -447,6 +499,7 @@ export function Workspace({
               key={page.id}
               content={page.body}
               pageId={page.id}
+              toolbarPortalElement={documentToolbarElement}
               onChange={(body) => onUpdatePage(page.id, { body })}
             />
           </div>
@@ -454,7 +507,7 @@ export function Workspace({
       </div>
 
       {selectedObject ? (
-        <div className="absolute right-6 top-6 z-10" data-pan-block="true">
+        <div className="absolute right-6 top-6 z-10" data-pan-block="true" data-wheel-block="true">
           <ObjectPropertiesPanel
             key={selectedObject.id}
             object={selectedObject}

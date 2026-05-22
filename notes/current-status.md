@@ -14,11 +14,14 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Tiptap editor supports headings, bold, italic, lists, checklists, links, tables, callouts, images, text color, highlight, text size, horizontal alignment, and document vertical alignment.
 - Document images can be inserted or pasted, resized/compressed, and stored as data URLs.
 - Table header alignment supports left, center, and right.
+- Main document formatting controls now appear in a top workspace toolbar when the editor is active, keeping the page content focused on title, metadata, tags, and body.
+- Table row/column/delete controls appear only while the editor cursor is inside a table; Insert Table remains available from the active editor toolbar.
 - Formatting controls use compact dropdowns/popovers where practical.
 
 ## Canvas and Toolbar
 
 - The workspace uses one document block inside a pannable and zoomable dotted-grid canvas.
+- Two-finger trackpad scroll pans the whiteboard/canvas area horizontally and vertically, including over the main document body.
 - Whiteboard objects render above the document block when overlapping.
 - Bottom floating canvas toolbar contains Select, Pan, Rectangle, Circle, Text, Line, Arrow, Image, Zoom In, Zoom Out, Reset View, and a Settings menu for Grid and Snap.
 - Bottom toolbar includes Undo and Redo for canvas/page actions, positioned between Reset View and Settings.
@@ -29,7 +32,7 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - A transient zoom percentage indicator appears near the bottom toolbar after zoom changes and Reset View.
 - Tool and zoom shortcuts do not trigger while typing in editors, inputs, textareas, selects, or contenteditable areas.
 - Canvas undo/redo does not override Tiptap document undo/redo while typing in the main document.
-- Main document toolbar hydration is stabilized so disabled editor controls do not create a browser console mismatch on initial load.
+- Main document and bottom toolbar unavailable states avoid native disabled-attribute hydration mismatches while still no-oping unavailable actions.
 
 ## Canvas Editing
 
@@ -54,6 +57,7 @@ Focus the pass on:
 - Toolbar shortcuts and shortcut badges
 - Canvas undo/redo buttons and shortcuts
 - Pan, zoom, Reset View, and the zoom percentage indicator
+- Trackpad two-finger pan over the board/document body and Ctrl/Cmd + wheel zoom
 - Snap to Grid and Show Grid
 - Object creation, movement, resizing, endpoint editing, styling, and deletion
 - Main document formatting

@@ -31,10 +31,15 @@ Keep this pass focused on confirming current behavior, fixing small regressions,
    - Confirm Cmd/Ctrl+Shift+Z and Cmd/Ctrl+Y redo canvas actions outside the main document editor.
    - Confirm Undo and Redo buttons sit between Reset View and Settings and are muted when unavailable.
    - Confirm Tiptap keeps its own undo/redo while typing in the main document.
-   - Confirm the main document toolbar does not log a hydration mismatch on initial load.
+   - Confirm the main document and bottom toolbar do not log disabled-attribute hydration mismatches on initial load.
 
 5. Canvas Navigation
    - Confirm pan, zoom, Reset View, and the zoom percentage indicator work.
+   - Confirm two-finger trackpad scroll pans the canvas horizontally and vertically.
+   - Confirm Ctrl/Cmd + wheel still zooms and plain trackpad scroll does not accidentally zoom.
+   - Confirm trackpad panning works over the document body even when the editor is focused.
+   - Confirm trackpad panning does not interfere with typing, cursor placement, text selection, tables, or formatting controls.
+   - Confirm toolbars, right panel, dropdowns, color pickers, inputs, and menus do not trigger canvas pan.
    - Confirm the bottom toolbar stays fixed while panning, zooming, selecting, and opening the properties panel.
 
 6. Snap and Grid
@@ -49,6 +54,8 @@ Keep this pass focused on confirming current behavior, fixing small regressions,
 
 8. Formatting
    - Confirm main document formatting, tables, alignment, text color, highlight, and text size work.
+   - Confirm the main document toolbar appears at the top of the workspace when the editor is active and stays out of the page content.
+   - Confirm document table row/column/delete controls only appear while the cursor is inside a table.
    - Confirm whiteboard text boxes and text-bearing shapes support bold, italic, alignment, vertical alignment, text color, highlight, and size.
 
 9. Persistence

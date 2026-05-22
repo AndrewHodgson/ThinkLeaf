@@ -66,6 +66,7 @@ export function CanvasCreationToolbar({
   return (
     <div
       data-pan-block="true"
+      data-wheel-block="true"
       className="pointer-events-auto absolute bottom-5 left-1/2 z-20 -translate-x-1/2 rounded-full border border-slate-200 bg-white/95 px-2 py-2 shadow-soft backdrop-blur"
       onPointerDown={(event) => event.stopPropagation()}
     >
@@ -136,20 +137,26 @@ export function CanvasCreationToolbar({
         <button
           aria-label="Undo canvas action, shortcut Command or Control Z"
           className={toolbarButtonClass(false, !canUndoCanvas)}
-          disabled={!canUndoCanvas}
           title="Undo canvas action (Cmd/Ctrl+Z)"
           type="button"
-          onClick={onUndoCanvas}
+          onClick={() => {
+            if (canUndoCanvas) {
+              onUndoCanvas();
+            }
+          }}
         >
           <Undo2 aria-hidden="true" className="h-4 w-4" />
         </button>
         <button
           aria-label="Redo canvas action, shortcut Command or Control Shift Z or Command or Control Y"
           className={toolbarButtonClass(false, !canRedoCanvas)}
-          disabled={!canRedoCanvas}
           title="Redo canvas action (Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y)"
           type="button"
-          onClick={onRedoCanvas}
+          onClick={() => {
+            if (canRedoCanvas) {
+              onRedoCanvas();
+            }
+          }}
         >
           <Redo2 aria-hidden="true" className="h-4 w-4" />
         </button>

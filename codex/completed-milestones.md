@@ -43,8 +43,11 @@
 - Document text color, highlight, and size controls compacted into dropdowns/popovers
 - Document color and highlight controls now use the shared HEX-capable color picker
 - H1/H2/H3 controls consolidated into a compact text-style dropdown
+- Main document formatting toolbar moved out of the page content into a top workspace toolbar
+- Main document toolbar only appears while the editor is active
+- Table row, column, and delete controls now appear only when the cursor is inside a table
 - Document formatting toolbar active states refresh from current selection/cursor where practical
-- Main document toolbar initial disabled state no longer causes a hydration mismatch warning
+- Main document toolbar initial unavailable state no longer uses native disabled attributes that can cause hydration mismatch warnings
 
 ## Canvas Foundation
 
@@ -56,7 +59,7 @@
 - Bottom toolbar shortcut badges added for numbered tools, image import, and zoom controls
 - Bottom toolbar Undo and Redo buttons added for canvas/page actions
 - Undo and Redo buttons positioned between Reset View and Settings in the bottom toolbar
-- Undo and Redo buttons verified with muted disabled states and canvas-scoped shortcuts
+- Undo and Redo buttons verified with muted unavailable states and canvas-scoped shortcuts
 - Image import shortcut added on 8
 - Zoom shortcuts added with + for Zoom In and - for Zoom Out
 - Canvas Undo shortcut added on Cmd/Ctrl+Z
@@ -82,6 +85,9 @@
 - Right properties panel added
 - Stroke color, fill color, text color, and stroke width controls added
 - Canvas pan and zoom added
+- Two-finger trackpad scroll pans the whiteboard/canvas area, including over the main document body
+- Trackpad pan avoids inputs, menus, toolbars, and the right properties panel
+- Ctrl/Cmd + wheel zoom preserved for canvas navigation
 - Hand/Pan tool fixed for board-level left-click drag on empty canvas space
 - Document block and canvas objects pan/zoom together
 - Bottom toolbar and right properties panel stay fixed while the board moves

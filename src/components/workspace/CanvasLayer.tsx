@@ -592,6 +592,7 @@ export function CanvasLayer({
     }
 
     event.preventDefault();
+    event.stopPropagation();
 
     const point = screenToWorld(event.clientX, event.clientY);
     if (!point) {

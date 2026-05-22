@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 import { Extension, Mark, Node } from "@tiptap/core";
 import type { EditorView } from "@tiptap/pm/view";
 import { Editor, EditorContent, useEditor } from "@tiptap/react";
+import { createPortal } from "react-dom";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -173,12 +174,15 @@ const DocumentImageNode = Node.create({
 type RichTextEditorProps = {
   content: string;
   pageId: string;
+  toolbarPortalElement?: HTMLElement | null;
   onChange: (content: string) => void;
 };
 
-export function RichTextEditor({ content, pageId, onChange }: RichTextEditorProps) {
+export function RichTextEditor({ content, pageId, toolbarPortalElement, onChange }: RichTextEditorProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const [hasMounted, setHasMounted] = useState(false);
+  const [isDocumentToolbarVisible, setIsDocumentToolbarVisible] = useState(false);
   const [verticalAlign, setVerticalAlign] = useState<DocumentVerticalAlign>("top");
   const [hasLoadedVerticalAlign, setHasLoadedVerticalAlign] = useState(false);
 
@@ -262,6 +266,32 @@ export function RichTextEditor({ content, pageId, onChange }: RichTextEditorProp
   }, [content, editor, pageId]);
 
   useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    const showToolbar = () => setIsDocumentToolbarVisible(true);
+    const hideToolbar = () => {
+      window.setTimeout(() => {
+        const activeElement = document.activeElement;
+        if (activeElement && toolbarRef.current?.contains(activeElement)) {
+          return;
+        }
+
+        setIsDocumentToolbarVisible(false);
+      }, 0);
+    };
+
+    editor.on("focus", showToolbar);
+    editor.on("blur", hideToolbar);
+
+    return () => {
+      editor.off("focus", showToolbar);
+      editor.off("blur", hideToolbar);
+    };
+  }, [editor]);
+
+  useEffect(() => {
     if (!hasLoadedVerticalAlign) {
       return;
     }
@@ -273,14 +303,22 @@ export function RichTextEditor({ content, pageId, onChange }: RichTextEditorProp
     }
   }, [hasLoadedVerticalAlign, verticalAlign]);
 
-  return (
-    <div>
+  const documentToolbar = hasMounted && editor && isDocumentToolbarVisible && toolbarPortalElement
+    ? createPortal(
       <EditorToolbar
-        editor={hasMounted ? editor : null}
+        ref={toolbarRef}
+        editor={editor}
         verticalAlign={verticalAlign}
         onImageUploadClick={() => imageInputRef.current?.click()}
         onVerticalAlignChange={setVerticalAlign}
-      />
+      />,
+      toolbarPortalElement,
+    )
+    : null;
+
+  return (
+    <div>
+      {documentToolbar}
       <input
         ref={imageInputRef}
         accept="image/*"
@@ -293,24 +331,24 @@ export function RichTextEditor({ content, pageId, onChange }: RichTextEditorProp
           void insertImagesIntoDocumentEditor(editor, files);
         }}
       />
-      <div className={["flex min-h-[560px] pt-5", getDocumentVerticalAlignClass(verticalAlign)].join(" ")}>
+      <div className={["flex min-h-[560px]", getDocumentVerticalAlignClass(verticalAlign)].join(" ")}>
         <EditorContent editor={editor} />
       </div>
     </div>
   );
 }
 
-function EditorToolbar({
-  editor,
-  onImageUploadClick,
-  onVerticalAlignChange,
-  verticalAlign,
-}: {
+const EditorToolbar = forwardRef<HTMLDivElement, {
   editor: Editor | null;
   onImageUploadClick: () => void;
   onVerticalAlignChange: (align: DocumentVerticalAlign) => void;
   verticalAlign: DocumentVerticalAlign;
-}) {
+}>(function EditorToolbar({
+  editor,
+  onImageUploadClick,
+  onVerticalAlignChange,
+  verticalAlign,
+}, ref) {
   const [, setToolbarVersion] = useState(0);
 
   useEffect(() => {
@@ -381,23 +419,35 @@ function EditorToolbar({
     (editor?.getAttributes("thinkleafTextHighlight").backgroundColor as string | undefined) ?? "transparent";
   const currentFontSize = parseFontSize(editor?.getAttributes("thinkleafFontSize").fontSize as string | undefined);
 
-  function buttonClass(isActive = false) {
+  function buttonClass(isActive = false, isUnavailable = false) {
     return [
-      "inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40",
-      isActive
+      "inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm font-semibold transition",
+      isUnavailable
+        ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
+        : isActive
         ? "border-slate-900 bg-slate-900 text-white"
         : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
     ].join(" ");
   }
 
+  const isEditorUnavailable = !editor;
+  const isInTable = Boolean(editor?.isActive("table"));
+  const canAddColumn = Boolean(editor?.can().addColumnAfter());
+  const canAddRow = Boolean(editor?.can().addRowAfter());
+  const canDeleteTable = isInTable;
+
   return (
-    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-slate-100 bg-white pb-4">
+    <div
+      ref={ref}
+      className="pointer-events-auto flex min-h-14 flex-wrap items-center gap-2 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-soft backdrop-blur"
+      data-pan-block="true"
+      data-wheel-block="true"
+    >
       <HeadingDropdown editor={editor} />
       <span className="h-6 w-px bg-slate-200" />
       <button
         aria-label="Bold"
-        className={buttonClass(editor?.isActive("bold"))}
-        disabled={!editor}
+        className={buttonClass(editor?.isActive("bold"), isEditorUnavailable)}
         title="Bold"
         type="button"
         onClick={() => editor?.chain().focus().toggleBold().run()}
@@ -406,8 +456,7 @@ function EditorToolbar({
       </button>
       <button
         aria-label="Italic"
-        className={buttonClass(editor?.isActive("italic"))}
-        disabled={!editor}
+        className={buttonClass(editor?.isActive("italic"), isEditorUnavailable)}
         title="Italic"
         type="button"
         onClick={() => editor?.chain().focus().toggleItalic().run()}
@@ -416,8 +465,7 @@ function EditorToolbar({
       </button>
       <button
         aria-label="Link"
-        className={buttonClass(editor?.isActive("link"))}
-        disabled={!editor}
+        className={buttonClass(editor?.isActive("link"), isEditorUnavailable)}
         title="Link"
         type="button"
         onClick={setLink}
@@ -426,11 +474,14 @@ function EditorToolbar({
       </button>
       <button
         aria-label="Insert image"
-        className={buttonClass()}
-        disabled={!editor}
+        className={buttonClass(false, isEditorUnavailable)}
         title="Insert image"
         type="button"
-        onClick={onImageUploadClick}
+        onClick={() => {
+          if (editor) {
+            onImageUploadClick();
+          }
+        }}
       >
         <ImageIcon aria-hidden="true" className="h-4 w-4" />
       </button>
@@ -455,8 +506,7 @@ function EditorToolbar({
       <span className="h-6 w-px bg-slate-200" />
       <button
         aria-label="Align left"
-        className={buttonClass(editor?.isActive({ textAlign: "left" }))}
-        disabled={!editor}
+        className={buttonClass(editor?.isActive({ textAlign: "left" }), isEditorUnavailable)}
         title="Align left"
         type="button"
         onClick={() => setTextAlign("left")}
@@ -465,8 +515,7 @@ function EditorToolbar({
       </button>
       <button
         aria-label="Align center"
-        className={buttonClass(editor?.isActive({ textAlign: "center" }))}
-        disabled={!editor}
+        className={buttonClass(editor?.isActive({ textAlign: "center" }), isEditorUnavailable)}
         title="Align center"
         type="button"
         onClick={() => setTextAlign("center")}
@@ -475,8 +524,7 @@ function EditorToolbar({
       </button>
       <button
         aria-label="Align right"
-        className={buttonClass(editor?.isActive({ textAlign: "right" }))}
-        disabled={!editor}
+        className={buttonClass(editor?.isActive({ textAlign: "right" }), isEditorUnavailable)}
         title="Align right"
         type="button"
         onClick={() => setTextAlign("right")}
@@ -513,8 +561,7 @@ function EditorToolbar({
       <span className="h-6 w-px bg-slate-200" />
       <button
         aria-label="Bullet list"
-        className={buttonClass(editor?.isActive("bulletList"))}
-        disabled={!editor}
+        className={buttonClass(editor?.isActive("bulletList"), isEditorUnavailable)}
         title="Bullet list"
         type="button"
         onClick={() => editor?.chain().focus().toggleBulletList().run()}
@@ -523,8 +570,7 @@ function EditorToolbar({
       </button>
       <button
         aria-label="Numbered list"
-        className={buttonClass(editor?.isActive("orderedList"))}
-        disabled={!editor}
+        className={buttonClass(editor?.isActive("orderedList"), isEditorUnavailable)}
         title="Numbered list"
         type="button"
         onClick={() => editor?.chain().focus().toggleOrderedList().run()}
@@ -533,8 +579,7 @@ function EditorToolbar({
       </button>
       <button
         aria-label="Checklist"
-        className={buttonClass(editor?.isActive("taskList"))}
-        disabled={!editor}
+        className={buttonClass(editor?.isActive("taskList"), isEditorUnavailable)}
         title="Checklist"
         type="button"
         onClick={() => editor?.chain().focus().toggleTaskList().run()}
@@ -543,8 +588,7 @@ function EditorToolbar({
       </button>
       <button
         aria-label="Callout"
-        className={buttonClass(editor?.isActive("blockquote"))}
-        disabled={!editor}
+        className={buttonClass(editor?.isActive("blockquote"), isEditorUnavailable)}
         title="Callout"
         type="button"
         onClick={() => editor?.chain().focus().toggleBlockquote().run()}
@@ -554,47 +598,59 @@ function EditorToolbar({
       <span className="h-6 w-px bg-slate-200" />
       <button
         aria-label="Insert table"
-        className={buttonClass(editor?.isActive("table"))}
-        disabled={!editor}
+        className={buttonClass(editor?.isActive("table"), isEditorUnavailable)}
         title="Insert table"
         type="button"
         onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
       >
         <Table2 aria-hidden="true" className="h-4 w-4" />
       </button>
-      <button
-        aria-label="Add column"
-        className={buttonClass()}
-        disabled={!editor || !editor.can().addColumnAfter()}
-        title="Add column"
-        type="button"
-        onClick={() => editor?.chain().focus().addColumnAfter().run()}
-      >
-        <Columns3 aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <button
-        aria-label="Add row"
-        className={buttonClass()}
-        disabled={!editor || !editor.can().addRowAfter()}
-        title="Add row"
-        type="button"
-        onClick={() => editor?.chain().focus().addRowAfter().run()}
-      >
-        <Rows3 aria-hidden="true" className="h-4 w-4" />
-      </button>
-      <button
-        aria-label="Delete table"
-        className={buttonClass()}
-        disabled={!editor || !editor.isActive("table")}
-        title="Delete table"
-        type="button"
-        onClick={() => editor?.chain().focus().deleteTable().run()}
-      >
-        <Trash2 aria-hidden="true" className="h-4 w-4" />
-      </button>
+      {isInTable ? (
+        <>
+          <button
+            aria-label="Add column"
+            className={buttonClass(false, !canAddColumn)}
+            title="Add column"
+            type="button"
+            onClick={() => {
+              if (canAddColumn) {
+                editor?.chain().focus().addColumnAfter().run();
+              }
+            }}
+          >
+            <Columns3 aria-hidden="true" className="h-4 w-4" />
+          </button>
+          <button
+            aria-label="Add row"
+            className={buttonClass(false, !canAddRow)}
+            title="Add row"
+            type="button"
+            onClick={() => {
+              if (canAddRow) {
+                editor?.chain().focus().addRowAfter().run();
+              }
+            }}
+          >
+            <Rows3 aria-hidden="true" className="h-4 w-4" />
+          </button>
+          <button
+            aria-label="Delete table"
+            className={buttonClass(false, !canDeleteTable)}
+            title="Delete table"
+            type="button"
+            onClick={() => {
+              if (canDeleteTable) {
+                editor?.chain().focus().deleteTable().run();
+              }
+            }}
+          >
+            <Trash2 aria-hidden="true" className="h-4 w-4" />
+          </button>
+        </>
+      ) : null}
     </div>
   );
-}
+});
 
 function getDocumentVerticalAlignClass(verticalAlign: DocumentVerticalAlign) {
   if (verticalAlign === "middle") {
