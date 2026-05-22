@@ -37,6 +37,24 @@ Current canvas undo/redo already supports basic page-local canvas actions. Futur
 
 Only expand after the current lightweight canvas undo/redo has been manually QA'd.
 
+## Rich Text Whiteboard Text Boxes
+
+Upgrade whiteboard text boxes and text-bearing shapes from plain text to lightweight rich text.
+
+### Expected Behavior
+
+Future whiteboard text objects could support:
+
+- Bulleted lists
+- Numbered lists
+- Inline formatting spans
+- Better paste preservation from rich text sources
+- Persistence without turning canvas text into a full document editor
+
+### Build Later
+
+Do not build until the current toolbar and canvas text formatting are stable.
+
 ## Pen Tool for Whiteboard
 
 Add a freehand pen tool for drawing directly on the whiteboard.

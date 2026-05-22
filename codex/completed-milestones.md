@@ -86,6 +86,13 @@
 - Right properties panel removed and replaced with a top contextual toolbar for selected canvas objects
 - Canvas object duplicate action added to the top contextual toolbar
 - Canvas-to-document focus handoff fixed so clicking into the page clears object selection and restores the document toolbar
+- Top toolbar polished so document formatting stays on row 1 and table/object/image tools appear on row 2
+- Explicit toolbar formatting target added for document, whiteboard text, and no active text target
+- Whiteboard text toolbar controls now update selected canvas text objects instead of the main document
+- Whiteboard text toolbar interactions now preserve selection while using buttons, size menus, and color/highlight popovers
+- Focused code-path QA/build pass completed after the whiteboard text formatting target fix
+- Document heading and text size toolbar indicators now refresh with cursor/selection changes
+- Shared color picker swatches now apply on pointer down to avoid blur/close races
 - Stroke color, fill color, text color, and stroke width controls added
 - Canvas pan and zoom added
 - Two-finger trackpad scroll pans the whiteboard/canvas area, including over the main document body

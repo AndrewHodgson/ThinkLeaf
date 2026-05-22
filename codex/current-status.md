@@ -14,7 +14,10 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Tiptap editor supports headings, bold, italic, lists, checklists, links, tables, callouts, images, text color, highlight, text size, horizontal alignment, and document vertical alignment.
 - Document images can be inserted or pasted, resized/compressed, and stored as data URLs.
 - Table header alignment supports left, center, and right.
-- Main document formatting controls now appear in a top workspace toolbar when the editor is active, keeping the page content focused on title, metadata, tags, and body.
+- Main document formatting controls stay visible in the top workspace toolbar, keeping the page content focused on title, metadata, tags, and body.
+- Context-specific table, whiteboard object, and image controls appear on the second toolbar row when relevant.
+- Top toolbar text formatting has an explicit active target: document, whiteboard text, or none.
+- Toolbar interactions are event-contained so whiteboard text selection stays active while using buttons, size menus, and color/highlight popovers.
 - Table row/column/delete controls appear only while the editor cursor is inside a table; Insert Table remains available from the active editor toolbar.
 - Formatting controls use compact dropdowns/popovers where practical.
 
@@ -23,7 +26,8 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - The workspace uses one document block inside a pannable and zoomable dotted-grid canvas.
 - Two-finger trackpad scroll pans the whiteboard/canvas area horizontally and vertically, including over the main document body.
 - Whiteboard objects render above the document block when overlapping.
-- Top contextual toolbar edits the active selection: main document formatting, table extras, or selected canvas object properties.
+- Top contextual toolbar applies row 1 text controls to the active target only: the Tiptap document when document editing is active, or the selected whiteboard text object when a text box/text-bearing shape is selected.
+- Whiteboard text toolbar controls preserve the selected canvas object while applying formatting.
 - Clicking into the page/editor clears canvas object selection so the document toolbar can take over cleanly.
 - Bottom floating canvas toolbar contains Select, Pan, Rectangle, Circle, Text, Line, Arrow, Image, Zoom In, Zoom Out, Reset View, and a Settings menu for Grid and Snap.
 - Bottom toolbar includes Undo and Redo for canvas/page actions, positioned between Reset View and Settings.
@@ -44,14 +48,16 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Canvas object duplicate and delete actions are available from the top contextual toolbar.
 - Canvas undo/redo is tracked per page for create, delete, move, resize, style changes, whiteboard text edits, and inserted image objects.
 - Rectangles and circles can contain editable text.
-- Text-bearing canvas objects support practical formatting: bold, italic, alignment, vertical alignment, text color, highlight, and size.
+- Text-bearing canvas objects support practical formatting: bold, italic, alignment, vertical alignment, text color, highlight, and size, while preserving plain text storage.
 - Shape and line styling includes stroke color, fill color, stroke width, and solid/dashed/dotted stroke style where applicable.
 - Image objects can be imported or pasted, resized/compressed, moved, resized, deleted, and stored per page.
 - Snap to Grid is separate from Show Grid, is on by default, and applies to creation, movement, resizing, and line/arrow endpoints when enabled.
 
 ## Current Recommended Next
 
-Do a short manual QA/polish pass before adding new features.
+Do a short manual browser QA/polish pass before adding new features.
+
+Latest code-path QA/build verification after the whiteboard text formatting target fix passed. No new regressions were found in the reviewed document formatting, whiteboard text formatting, toolbar event containment, canvas history, image object, pan/zoom/reset, profile-scoped search/favorites, or localStorage persistence paths.
 
 Focus the pass on:
 

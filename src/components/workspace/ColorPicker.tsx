@@ -182,7 +182,17 @@ function ColorSwatch({
       style={{ background: getSwatchBackground(value) }}
       title={label}
       type="button"
-      onClick={() => onSelect(value)}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (event.detail === 0) {
+          onSelect(value);
+        }
+      }}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onSelect(value);
+      }}
     />
   );
 }

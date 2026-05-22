@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
 import { Extension, Mark, Node } from "@tiptap/core";
 import type { EditorView } from "@tiptap/pm/view";
 import { Editor, EditorContent, useEditor } from "@tiptap/react";
@@ -38,9 +38,11 @@ import {
 import { colorPresets, defaultCanvasStyle, highlightPresets, textSizePresets } from "@/lib/canvasStyle";
 import { ColorPicker } from "@/components/workspace/ColorPicker";
 import { getImageFilesFromClipboard, processImageFile } from "@/lib/imageUtils";
+import type { CanvasObject, CanvasTextAlign, CanvasTextVerticalAlign } from "@/types/workspace";
 
 type DocumentTextAlign = "left" | "center" | "right";
 type DocumentVerticalAlign = "top" | "middle" | "bottom";
+export type FormattingTarget = "document" | "whiteboardText" | "none";
 
 const DOCUMENT_VERTICAL_ALIGN_STORAGE_KEY = "thinkleaf.documentVerticalAlign.v1";
 
@@ -173,17 +175,30 @@ const DocumentImageNode = Node.create({
 
 type RichTextEditorProps = {
   content: string;
+  formattingTarget: FormattingTarget;
   pageId: string;
+  toolbarExtraContent?: ReactNode;
   toolbarPortalElement?: HTMLElement | null;
+  whiteboardTextObject?: CanvasObject | null;
   onChange: (content: string) => void;
   onFocus?: () => void;
+  onWhiteboardTextUpdate?: (updates: Partial<CanvasObject>) => void;
 };
 
-export function RichTextEditor({ content, pageId, toolbarPortalElement, onChange, onFocus }: RichTextEditorProps) {
+export function RichTextEditor({
+  content,
+  formattingTarget,
+  pageId,
+  toolbarExtraContent,
+  toolbarPortalElement,
+  whiteboardTextObject,
+  onChange,
+  onFocus,
+  onWhiteboardTextUpdate,
+}: RichTextEditorProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [hasMounted, setHasMounted] = useState(false);
-  const [isDocumentToolbarVisible, setIsDocumentToolbarVisible] = useState(false);
   const [verticalAlign, setVerticalAlign] = useState<DocumentVerticalAlign>("top");
   const [hasLoadedVerticalAlign, setHasLoadedVerticalAlign] = useState(false);
 
@@ -271,27 +286,12 @@ export function RichTextEditor({ content, pageId, toolbarPortalElement, onChange
       return;
     }
 
-    const showToolbar = () => {
-      onFocus?.();
-      setIsDocumentToolbarVisible(true);
-    };
-    const hideToolbar = () => {
-      window.setTimeout(() => {
-        const activeElement = document.activeElement;
-        if (activeElement && toolbarRef.current?.contains(activeElement)) {
-          return;
-        }
-
-        setIsDocumentToolbarVisible(false);
-      }, 0);
-    };
+    const showToolbar = () => onFocus?.();
 
     editor.on("focus", showToolbar);
-    editor.on("blur", hideToolbar);
 
     return () => {
       editor.off("focus", showToolbar);
-      editor.off("blur", hideToolbar);
     };
   }, [editor, onFocus]);
 
@@ -307,14 +307,18 @@ export function RichTextEditor({ content, pageId, toolbarPortalElement, onChange
     }
   }, [hasLoadedVerticalAlign, verticalAlign]);
 
-  const documentToolbar = hasMounted && editor && isDocumentToolbarVisible && toolbarPortalElement
+  const documentToolbar = hasMounted && editor && toolbarPortalElement
     ? createPortal(
       <EditorToolbar
         ref={toolbarRef}
         editor={editor}
+        extraContent={toolbarExtraContent}
+        formattingTarget={formattingTarget}
         verticalAlign={verticalAlign}
+        whiteboardTextObject={whiteboardTextObject}
         onImageUploadClick={() => imageInputRef.current?.click()}
         onVerticalAlignChange={setVerticalAlign}
+        onWhiteboardTextUpdate={onWhiteboardTextUpdate}
       />,
       toolbarPortalElement,
     )
@@ -344,14 +348,22 @@ export function RichTextEditor({ content, pageId, toolbarPortalElement, onChange
 
 const EditorToolbar = forwardRef<HTMLDivElement, {
   editor: Editor | null;
+  extraContent?: ReactNode;
+  formattingTarget: FormattingTarget;
   onImageUploadClick: () => void;
   onVerticalAlignChange: (align: DocumentVerticalAlign) => void;
+  onWhiteboardTextUpdate?: (updates: Partial<CanvasObject>) => void;
   verticalAlign: DocumentVerticalAlign;
+  whiteboardTextObject?: CanvasObject | null;
 }>(function EditorToolbar({
   editor,
+  extraContent,
+  formattingTarget,
   onImageUploadClick,
   onVerticalAlignChange,
+  onWhiteboardTextUpdate,
   verticalAlign,
+  whiteboardTextObject,
 }, ref) {
   const [, setToolbarVersion] = useState(0);
 
@@ -418,10 +430,11 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
     editor?.chain().focus().setMark("thinkleafFontSize", { fontSize: `${fontSize}px` }).run();
   }
 
-  const currentTextColor = (editor?.getAttributes("thinkleafTextColor").color as string | undefined) ?? defaultCanvasStyle.textColor;
+  const currentTextColor =
+    (editor?.getAttributes("thinkleafTextColor").color as string | undefined) ?? defaultCanvasStyle.textColor;
   const currentHighlight =
     (editor?.getAttributes("thinkleafTextHighlight").backgroundColor as string | undefined) ?? "transparent";
-  const currentFontSize = parseFontSize(editor?.getAttributes("thinkleafFontSize").fontSize as string | undefined);
+  const currentFontSize = getCurrentDocumentFontSize(editor);
 
   function buttonClass(isActive = false, isUnavailable = false) {
     return [
@@ -446,172 +459,191 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
       className="pointer-events-auto border-b border-slate-200 bg-white/95 px-4 py-3 shadow-soft backdrop-blur"
       data-pan-block="true"
       data-wheel-block="true"
+      onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="flex min-h-8 flex-wrap items-center gap-2">
-        <HeadingDropdown editor={editor} />
-        <span className="h-6 w-px bg-slate-200" />
-        <button
-          aria-label="Bold"
-          className={buttonClass(editor?.isActive("bold"), isEditorUnavailable)}
-          title="Bold"
-          type="button"
-          onClick={() => editor?.chain().focus().toggleBold().run()}
-        >
-          <BoldIcon aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <button
-          aria-label="Italic"
-          className={buttonClass(editor?.isActive("italic"), isEditorUnavailable)}
-          title="Italic"
-          type="button"
-          onClick={() => editor?.chain().focus().toggleItalic().run()}
-        >
-          <ItalicIcon aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <button
-          aria-label="Link"
-          className={buttonClass(editor?.isActive("link"), isEditorUnavailable)}
-          title="Link"
-          type="button"
-          onClick={setLink}
-        >
-          <Link2 aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <button
-          aria-label="Insert image"
-          className={buttonClass(false, isEditorUnavailable)}
-          title="Insert image"
-          type="button"
-          onClick={() => {
-            if (editor) {
-              onImageUploadClick();
-            }
-          }}
-        >
-          <ImageIcon aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <span className="h-6 w-px bg-slate-200" />
-        <ColorPicker
-          currentValue={currentTextColor}
-          disabled={!editor}
-          icon={<Type aria-hidden="true" className="h-4 w-4" />}
-          label="Text color"
-          onSelect={setTextColor}
-          presets={colorPresets}
-        />
-        <ColorPicker
-          currentValue={currentHighlight}
-          disabled={!editor}
-          icon={<Highlighter aria-hidden="true" className="h-4 w-4" />}
-          label="Highlight"
-          onSelect={setHighlight}
-          presets={highlightPresets}
-        />
-        <SizeDropdown currentSize={currentFontSize} disabled={!editor} onSelect={setFontSize} />
-        <span className="h-6 w-px bg-slate-200" />
-        <button
-          aria-label="Align left"
-          className={buttonClass(editor?.isActive({ textAlign: "left" }), isEditorUnavailable)}
-          title="Align left"
-          type="button"
-          onClick={() => setTextAlign("left")}
-        >
-          <AlignLeft aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <button
-          aria-label="Align center"
-          className={buttonClass(editor?.isActive({ textAlign: "center" }), isEditorUnavailable)}
-          title="Align center"
-          type="button"
-          onClick={() => setTextAlign("center")}
-        >
-          <AlignCenter aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <button
-          aria-label="Align right"
-          className={buttonClass(editor?.isActive({ textAlign: "right" }), isEditorUnavailable)}
-          title="Align right"
-          type="button"
-          onClick={() => setTextAlign("right")}
-        >
-          <AlignRight aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <button
-          aria-label="Align content top"
-          className={buttonClass(verticalAlign === "top")}
-          title="Align content top"
-          type="button"
-          onClick={() => onVerticalAlignChange("top")}
-        >
-          <AlignVerticalJustifyStart aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <button
-          aria-label="Align content middle"
-          className={buttonClass(verticalAlign === "middle")}
-          title="Align content middle"
-          type="button"
-          onClick={() => onVerticalAlignChange("middle")}
-        >
-          <AlignVerticalJustifyCenter aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <button
-          aria-label="Align content bottom"
-          className={buttonClass(verticalAlign === "bottom")}
-          title="Align content bottom"
-          type="button"
-          onClick={() => onVerticalAlignChange("bottom")}
-        >
-          <AlignVerticalJustifyEnd aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <span className="h-6 w-px bg-slate-200" />
-        <button
-          aria-label="Bullet list"
-          className={buttonClass(editor?.isActive("bulletList"), isEditorUnavailable)}
-          title="Bullet list"
-          type="button"
-          onClick={() => editor?.chain().focus().toggleBulletList().run()}
-        >
-          <List aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <button
-          aria-label="Numbered list"
-          className={buttonClass(editor?.isActive("orderedList"), isEditorUnavailable)}
-          title="Numbered list"
-          type="button"
-          onClick={() => editor?.chain().focus().toggleOrderedList().run()}
-        >
-          <ListOrdered aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <button
-          aria-label="Checklist"
-          className={buttonClass(editor?.isActive("taskList"), isEditorUnavailable)}
-          title="Checklist"
-          type="button"
-          onClick={() => editor?.chain().focus().toggleTaskList().run()}
-        >
-          <ListChecks aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <button
-          aria-label="Callout"
-          className={buttonClass(editor?.isActive("blockquote"), isEditorUnavailable)}
-          title="Callout"
-          type="button"
-          onClick={() => editor?.chain().focus().toggleBlockquote().run()}
-        >
-          <Quote aria-hidden="true" className="h-4 w-4" />
-        </button>
-        <span className="h-6 w-px bg-slate-200" />
-        <button
-          aria-label="Insert table"
-          className={buttonClass(editor?.isActive("table"), isEditorUnavailable)}
-          title="Insert table"
-          type="button"
-          onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
-        >
-          <Table2 aria-hidden="true" className="h-4 w-4" />
-        </button>
+        {formattingTarget === "whiteboardText" && whiteboardTextObject ? (
+          <WhiteboardTextFormattingControls
+            buttonClass={buttonClass}
+            object={whiteboardTextObject}
+            onUpdate={onWhiteboardTextUpdate}
+          />
+        ) : formattingTarget === "document" ? (
+          <>
+            <HeadingDropdown editor={editor} />
+            <span className="h-6 w-px bg-slate-200" />
+            <button
+              aria-label="Bold"
+              className={buttonClass(editor?.isActive("bold"), isEditorUnavailable)}
+              title="Bold"
+              type="button"
+              onClick={() => editor?.chain().focus().toggleBold().run()}
+            >
+              <BoldIcon aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Italic"
+              className={buttonClass(editor?.isActive("italic"), isEditorUnavailable)}
+              title="Italic"
+              type="button"
+              onClick={() => editor?.chain().focus().toggleItalic().run()}
+            >
+              <ItalicIcon aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Link"
+              className={buttonClass(editor?.isActive("link"), isEditorUnavailable)}
+              title="Link"
+              type="button"
+              onClick={setLink}
+            >
+              <Link2 aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Insert image"
+              className={buttonClass(false, isEditorUnavailable)}
+              title="Insert image"
+              type="button"
+              onClick={() => {
+                if (editor) {
+                  onImageUploadClick();
+                }
+              }}
+            >
+              <ImageIcon aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <span className="h-6 w-px bg-slate-200" />
+            <ColorPicker
+              currentValue={currentTextColor}
+              disabled={!editor}
+              icon={<Type aria-hidden="true" className="h-4 w-4" />}
+              label="Text color"
+              onSelect={setTextColor}
+              presets={colorPresets}
+            />
+            <ColorPicker
+              currentValue={currentHighlight}
+              disabled={!editor}
+              icon={<Highlighter aria-hidden="true" className="h-4 w-4" />}
+              label="Highlight"
+              onSelect={setHighlight}
+              presets={highlightPresets}
+            />
+            <SizeDropdown currentSize={currentFontSize} disabled={!editor} onSelect={setFontSize} />
+            <span className="h-6 w-px bg-slate-200" />
+            <button
+              aria-label="Align left"
+              className={buttonClass(editor?.isActive({ textAlign: "left" }), isEditorUnavailable)}
+              title="Align left"
+              type="button"
+              onClick={() => setTextAlign("left")}
+            >
+              <AlignLeft aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Align center"
+              className={buttonClass(editor?.isActive({ textAlign: "center" }), isEditorUnavailable)}
+              title="Align center"
+              type="button"
+              onClick={() => setTextAlign("center")}
+            >
+              <AlignCenter aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Align right"
+              className={buttonClass(editor?.isActive({ textAlign: "right" }), isEditorUnavailable)}
+              title="Align right"
+              type="button"
+              onClick={() => setTextAlign("right")}
+            >
+              <AlignRight aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Align content top"
+              className={buttonClass(verticalAlign === "top")}
+              title="Align content top"
+              type="button"
+              onClick={() => onVerticalAlignChange("top")}
+            >
+              <AlignVerticalJustifyStart aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Align content middle"
+              className={buttonClass(verticalAlign === "middle")}
+              title="Align content middle"
+              type="button"
+              onClick={() => onVerticalAlignChange("middle")}
+            >
+              <AlignVerticalJustifyCenter aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Align content bottom"
+              className={buttonClass(verticalAlign === "bottom")}
+              title="Align content bottom"
+              type="button"
+              onClick={() => onVerticalAlignChange("bottom")}
+            >
+              <AlignVerticalJustifyEnd aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <span className="h-6 w-px bg-slate-200" />
+            <button
+              aria-label="Bullet list"
+              className={buttonClass(editor?.isActive("bulletList"), isEditorUnavailable)}
+              title="Bullet list"
+              type="button"
+              onClick={() => editor?.chain().focus().toggleBulletList().run()}
+            >
+              <List aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Numbered list"
+              className={buttonClass(editor?.isActive("orderedList"), isEditorUnavailable)}
+              title="Numbered list"
+              type="button"
+              onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+            >
+              <ListOrdered aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Checklist"
+              className={buttonClass(editor?.isActive("taskList"), isEditorUnavailable)}
+              title="Checklist"
+              type="button"
+              onClick={() => editor?.chain().focus().toggleTaskList().run()}
+            >
+              <ListChecks aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Callout"
+              className={buttonClass(editor?.isActive("blockquote"), isEditorUnavailable)}
+              title="Callout"
+              type="button"
+              onClick={() => editor?.chain().focus().toggleBlockquote().run()}
+            >
+              <Quote aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <span className="h-6 w-px bg-slate-200" />
+            <button
+              aria-label="Insert table"
+              className={buttonClass(editor?.isActive("table"), isEditorUnavailable)}
+              title="Insert table"
+              type="button"
+              onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+            >
+              <Table2 aria-hidden="true" className="h-4 w-4" />
+            </button>
+          </>
+        ) : (
+          <span className="text-xs font-medium text-slate-400">Select the document or a text object to format.</span>
+        )}
       </div>
-      {isInTable ? (
+      {extraContent ? (
+        <div className="mt-2 flex min-h-8 flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
+          {extraContent}
+        </div>
+      ) : formattingTarget === "document" && isInTable ? (
         <div className="mt-2 flex min-h-8 flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
           <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Table</span>
           <button
@@ -659,6 +691,127 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
   );
 });
 
+function WhiteboardTextFormattingControls({
+  buttonClass,
+  object,
+  onUpdate,
+}: {
+  buttonClass: (isActive?: boolean, isUnavailable?: boolean) => string;
+  object: CanvasObject;
+  onUpdate?: (updates: Partial<CanvasObject>) => void;
+}) {
+  const updateWhiteboardText = (updates: Partial<CanvasObject>) => onUpdate?.(updates);
+  const textAlign = object.textAlign ?? defaultCanvasStyle.textAlign;
+  const textVerticalAlign = object.textVerticalAlign ?? defaultCanvasStyle.textVerticalAlign;
+
+  function setTextAlign(nextTextAlign: CanvasTextAlign) {
+    updateWhiteboardText({ textAlign: nextTextAlign });
+  }
+
+  function setTextVerticalAlign(nextTextVerticalAlign: CanvasTextVerticalAlign) {
+    updateWhiteboardText({ textVerticalAlign: nextTextVerticalAlign });
+  }
+
+  return (
+    <>
+      <span className="mr-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Whiteboard text</span>
+      <button
+        aria-label="Bold whiteboard text"
+        className={buttonClass(Boolean(object.textBold))}
+        title="Bold"
+        type="button"
+        onClick={() => updateWhiteboardText({ textBold: !object.textBold })}
+      >
+        <BoldIcon aria-hidden="true" className="h-4 w-4" />
+      </button>
+      <button
+        aria-label="Italic whiteboard text"
+        className={buttonClass(Boolean(object.textItalic))}
+        title="Italic"
+        type="button"
+        onClick={() => updateWhiteboardText({ textItalic: !object.textItalic })}
+      >
+        <ItalicIcon aria-hidden="true" className="h-4 w-4" />
+      </button>
+      <span className="h-6 w-px bg-slate-200" />
+      <ColorPicker
+        currentValue={object.textColor}
+        icon={<Type aria-hidden="true" className="h-4 w-4" />}
+        label="Text color"
+        onSelect={(textColor) => updateWhiteboardText({ textColor })}
+        presets={colorPresets}
+      />
+      <ColorPicker
+        currentValue={object.textHighlightColor ?? "transparent"}
+        icon={<Highlighter aria-hidden="true" className="h-4 w-4" />}
+        label="Highlight"
+        onSelect={(textHighlightColor) => updateWhiteboardText({ textHighlightColor })}
+        presets={highlightPresets}
+      />
+      <SizeDropdown
+        currentSize={object.fontSize ?? defaultCanvasStyle.fontSize}
+        disabled={false}
+        onSelect={(fontSize) => updateWhiteboardText({ fontSize })}
+      />
+      <span className="h-6 w-px bg-slate-200" />
+      <button
+        aria-label="Align whiteboard text left"
+        className={buttonClass(textAlign === "left")}
+        title="Align left"
+        type="button"
+        onClick={() => setTextAlign("left")}
+      >
+        <AlignLeft aria-hidden="true" className="h-4 w-4" />
+      </button>
+      <button
+        aria-label="Align whiteboard text center"
+        className={buttonClass(textAlign === "center")}
+        title="Align center"
+        type="button"
+        onClick={() => setTextAlign("center")}
+      >
+        <AlignCenter aria-hidden="true" className="h-4 w-4" />
+      </button>
+      <button
+        aria-label="Align whiteboard text right"
+        className={buttonClass(textAlign === "right")}
+        title="Align right"
+        type="button"
+        onClick={() => setTextAlign("right")}
+      >
+        <AlignRight aria-hidden="true" className="h-4 w-4" />
+      </button>
+      <button
+        aria-label="Align whiteboard text top"
+        className={buttonClass(textVerticalAlign === "top")}
+        title="Align top"
+        type="button"
+        onClick={() => setTextVerticalAlign("top")}
+      >
+        <AlignVerticalJustifyStart aria-hidden="true" className="h-4 w-4" />
+      </button>
+      <button
+        aria-label="Align whiteboard text middle"
+        className={buttonClass(textVerticalAlign === "middle")}
+        title="Align middle"
+        type="button"
+        onClick={() => setTextVerticalAlign("middle")}
+      >
+        <AlignVerticalJustifyCenter aria-hidden="true" className="h-4 w-4" />
+      </button>
+      <button
+        aria-label="Align whiteboard text bottom"
+        className={buttonClass(textVerticalAlign === "bottom")}
+        title="Align bottom"
+        type="button"
+        onClick={() => setTextVerticalAlign("bottom")}
+      >
+        <AlignVerticalJustifyEnd aria-hidden="true" className="h-4 w-4" />
+      </button>
+    </>
+  );
+}
+
 function getDocumentVerticalAlignClass(verticalAlign: DocumentVerticalAlign) {
   if (verticalAlign === "middle") {
     return "items-center [&>*]:w-full";
@@ -672,7 +825,7 @@ function getDocumentVerticalAlignClass(verticalAlign: DocumentVerticalAlign) {
 }
 
 function HeadingDropdown({ editor }: { editor: Editor | null }) {
-  const currentHeading = ([1, 2, 3] as const).find((level) => editor?.isActive("heading", { level }));
+  const currentHeading = getCurrentHeadingLevel(editor);
   const label = currentHeading ? `H${currentHeading}` : "Text";
 
   return (
@@ -728,9 +881,32 @@ function SizeDropdown({
   disabled: boolean;
   onSelect: (fontSize: number) => void;
 }) {
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (event.target instanceof globalThis.Node && !dropdownRef.current?.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
+
+  function selectSize(fontSize: number) {
+    onSelect(fontSize);
+    setIsOpen(false);
+  }
+
   return (
-    <details className="relative">
-      <summary
+    <div ref={dropdownRef} className="relative">
+      <button
+        aria-expanded={isOpen}
         aria-label="Text size"
         className={[
           "inline-flex h-8 min-w-14 cursor-pointer list-none items-center justify-center gap-1 rounded-md border px-2 text-xs font-semibold transition",
@@ -739,27 +915,35 @@ function SizeDropdown({
             : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
         ].join(" ")}
         title="Text size"
+        type="button"
+        onClick={() => {
+          if (!disabled) {
+            setIsOpen((current) => !current);
+          }
+        }}
       >
         {currentSize}
         <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
-      </summary>
-      <div className="absolute left-0 top-9 z-30 grid min-w-20 gap-1 rounded-md border border-slate-200 bg-white p-1 shadow-soft">
-        {textSizePresets.map((fontSize) => (
-          <button
-            key={`document-size-${fontSize}`}
-            aria-label={`Text size ${fontSize}`}
-            className={[
-              "h-8 rounded px-2 text-left text-xs font-semibold transition",
-              currentSize === fontSize ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50",
-            ].join(" ")}
-            type="button"
-            onClick={() => onSelect(fontSize)}
-          >
-            {fontSize}
-          </button>
-        ))}
-      </div>
-    </details>
+      </button>
+      {isOpen ? (
+        <div className="absolute left-0 top-9 z-30 grid min-w-20 gap-1 rounded-md border border-slate-200 bg-white p-1 shadow-soft">
+          {textSizePresets.map((fontSize) => (
+            <button
+              key={`document-size-${fontSize}`}
+              aria-label={`Text size ${fontSize}`}
+              className={[
+                "h-8 rounded px-2 text-left text-xs font-semibold transition",
+                currentSize === fontSize ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50",
+              ].join(" ")}
+              type="button"
+              onClick={() => selectSize(fontSize)}
+            >
+              {fontSize}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -770,6 +954,35 @@ function parseFontSize(fontSize?: string) {
 
   const parsed = Number.parseInt(fontSize, 10);
   return Number.isFinite(parsed) ? parsed : defaultCanvasStyle.fontSize;
+}
+
+function getCurrentHeadingLevel(editor: Editor | null) {
+  const level = editor?.getAttributes("heading").level;
+
+  return level === 1 || level === 2 || level === 3 ? level : null;
+}
+
+function getCurrentDocumentFontSize(editor: Editor | null) {
+  const explicitFontSize = parseFontSize(editor?.getAttributes("thinkleafFontSize").fontSize as string | undefined);
+
+  if (editor?.getAttributes("thinkleafFontSize").fontSize) {
+    return explicitFontSize;
+  }
+
+  const currentHeading = getCurrentHeadingLevel(editor);
+  if (currentHeading === 1) {
+    return 32;
+  }
+
+  if (currentHeading === 2) {
+    return 24;
+  }
+
+  if (currentHeading === 3) {
+    return 20;
+  }
+
+  return explicitFontSize;
 }
 
 async function insertImagesIntoDocumentEditor(editor: Editor | null, files: File[]) {

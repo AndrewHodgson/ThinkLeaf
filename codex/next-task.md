@@ -2,9 +2,11 @@
 
 ## Goal
 
-Run a short manual QA/polish pass before starting new feature work.
+Run a short manual browser QA/polish pass before starting new feature work.
 
 Keep this pass focused on confirming current behavior, fixing small regressions, and tightening obvious rough edges. Do not add new major features.
+
+The latest code-path QA/build pass after the whiteboard text formatting fix passed. The remaining recommended work is hands-on browser verification with real clicks, typing, image import, trackpad gestures, refreshes, and profile/page switching.
 
 ## QA Focus
 
@@ -21,6 +23,7 @@ Keep this pass focused on confirming current behavior, fixing small regressions,
 3. Color Pickers
    - Check text color, highlight, stroke, and fill pickers.
    - Confirm popovers close cleanly.
+   - Confirm clicking a swatch applies the color before the popover closes.
    - Confirm custom HEX colors apply and recent colors only contain custom colors.
 
 4. Toolbar Shortcuts
@@ -56,10 +59,15 @@ Keep this pass focused on confirming current behavior, fixing small regressions,
 
 8. Formatting
    - Confirm main document formatting, tables, alignment, text color, highlight, and text size work.
-   - Confirm the main document toolbar appears at the top of the workspace when the editor is active and stays out of the page content.
+   - Confirm the main document formatting row stays visible at the top of the workspace and stays out of the page content.
+   - Confirm H1/H2/H3 and text size indicators update when moving the cursor between differently formatted text.
+   - Confirm toolbar text controls apply to the document when the main editor is active.
+   - Confirm toolbar text controls apply to selected whiteboard text boxes and text-bearing shapes without changing the main document.
+   - Confirm whiteboard text selection stays active while using toolbar buttons, size menus, color pickers, and highlight pickers.
+   - Confirm non-text canvas selections do not expose document text-formatting actions.
    - Confirm clicking from a selected whiteboard object into the document clears object selection and swaps to the document toolbar.
-   - Confirm document table row/column/delete controls only appear while the cursor is inside a table.
-   - Confirm whiteboard object fill, stroke, stroke width, stroke style, text, highlight, and text size controls work from the top toolbar where applicable.
+   - Confirm document table row/column/delete controls appear on toolbar row 2 only while the cursor is inside a table.
+   - Confirm whiteboard object fill, stroke, stroke width, stroke style, text, highlight, and text size controls appear on toolbar row 2 where applicable.
    - Confirm whiteboard text boxes and text-bearing shapes support bold, italic, alignment, vertical alignment, text color, highlight, and size.
 
 9. Persistence

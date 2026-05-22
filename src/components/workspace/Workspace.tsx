@@ -19,7 +19,7 @@ import {
   zoomStep,
 } from "@/lib/canvasStyle";
 import { TagEditor } from "@/components/workspace/TagEditor";
-import { RichTextEditor } from "@/components/workspace/RichTextEditor";
+import { RichTextEditor, type FormattingTarget } from "@/components/workspace/RichTextEditor";
 import { Calendar, Clock3, Star, Trash2 } from "lucide-react";
 import { CanvasLayer } from "@/components/workspace/CanvasLayer";
 import { CanvasCreationToolbar } from "@/components/workspace/CanvasCreationToolbar";
@@ -140,6 +140,12 @@ export function Workspace({
   const project = findProject(data, page.projectId);
   const folder = findFolder(data, page.folderId);
   const selectedObject = page.canvasObjects.find((object) => object.id === selectedObjectId) ?? null;
+  const selectedWhiteboardTextObject = selectedObject && isCanvasTextObject(selectedObject) ? selectedObject : null;
+  const formattingTarget: FormattingTarget = selectedWhiteboardTextObject
+    ? "whiteboardText"
+    : selectedObject
+    ? "none"
+    : "document";
   const canvasViewState = page.canvasViewState ?? defaultCanvasViewState;
   const isPanning = boardPanInteraction !== null;
 
@@ -432,16 +438,7 @@ export function Workspace({
           : undefined
       }
     >
-      <div ref={setDocumentToolbarElement} className="pointer-events-none absolute left-0 right-0 top-0 z-30">
-        {selectedObject ? (
-          <CanvasObjectToolbar
-            object={selectedObject}
-            onDelete={deleteSelectedObject}
-            onDuplicate={duplicateSelectedObject}
-            onUpdate={updateSelectedObject}
-          />
-        ) : null}
-      </div>
+      <div ref={setDocumentToolbarElement} className="pointer-events-none absolute left-0 right-0 top-0 z-30" />
 
       <div
         className="relative origin-top-left"
@@ -548,10 +545,23 @@ export function Workspace({
             <RichTextEditor
               key={page.id}
               content={page.body}
+              formattingTarget={formattingTarget}
               pageId={page.id}
-              toolbarPortalElement={selectedObject ? null : documentToolbarElement}
+              toolbarExtraContent={
+                selectedObject ? (
+                  <CanvasObjectToolbar
+                    object={selectedObject}
+                    onDelete={deleteSelectedObject}
+                    onDuplicate={duplicateSelectedObject}
+                    onUpdate={updateSelectedObject}
+                  />
+                ) : null
+              }
+              toolbarPortalElement={documentToolbarElement}
+              whiteboardTextObject={selectedWhiteboardTextObject}
               onChange={(body) => onUpdatePage(page.id, { body })}
               onFocus={() => onSelectionChange(null)}
+              onWhiteboardTextUpdate={updateSelectedObject}
             />
           </div>
         </article>
@@ -596,4 +606,8 @@ export function Workspace({
       />
     </div>
   );
+}
+
+function isCanvasTextObject(object: CanvasObject) {
+  return object.type === "textBox" || object.text !== undefined;
 }
