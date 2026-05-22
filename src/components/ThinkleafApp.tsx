@@ -19,26 +19,34 @@ const toolShortcuts: Record<string, CanvasTool> = {
   "7": "Arrow",
 };
 
+const SNAP_TO_GRID_STORAGE_KEY = "thinkleaf.snapToGrid.v1";
+
 export function ThinkleafApp() {
   const workspace = useWorkspace();
   const [searchQuery, setSearchQuery] = useState("");
   const [isGridVisible, setIsGridVisible] = useState(true);
+  const [isSnapToGridEnabled, setIsSnapToGridEnabled] = useState(true);
   const [activeTool, setActiveTool] = useState<CanvasTool>("Select");
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
-    try {
-      return window.localStorage.getItem("thinkleaf.ui.v1") === "sidebar-collapsed";
-    } catch {
-      return false;
-    }
-  });
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [hasLoadedUiPreferences, setHasLoadedUiPreferences] = useState(false);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
-  const sidebarWidth = isSidebarCollapsed ? 72 : 320;
 
   useEffect(() => {
+    try {
+      setIsSidebarCollapsed(window.localStorage.getItem("thinkleaf.ui.v1") === "sidebar-collapsed");
+      setIsSnapToGridEnabled(window.localStorage.getItem(SNAP_TO_GRID_STORAGE_KEY) !== "off");
+    } catch {
+      // Ignore storage errors in private/incognito modes.
+    } finally {
+      setHasLoadedUiPreferences(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedUiPreferences) {
+      return;
+    }
+
     try {
       window.localStorage.setItem(
         "thinkleaf.ui.v1",
@@ -47,7 +55,19 @@ export function ThinkleafApp() {
     } catch {
       // Ignore storage errors in private/incognito modes.
     }
-  }, [isSidebarCollapsed]);
+  }, [hasLoadedUiPreferences, isSidebarCollapsed]);
+
+  useEffect(() => {
+    if (!hasLoadedUiPreferences) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(SNAP_TO_GRID_STORAGE_KEY, isSnapToGridEnabled ? "on" : "off");
+    } catch {
+      // Ignore storage errors in private/incognito modes.
+    }
+  }, [hasLoadedUiPreferences, isSnapToGridEnabled]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -72,13 +92,13 @@ export function ThinkleafApp() {
   }, []);
 
   const searchResults = useMemo(
-    () => searchPages(workspace.data.pages, searchQuery),
-    [searchQuery, workspace.data.pages],
+    () => searchPages(workspace.activeProfileData.pages, searchQuery),
+    [searchQuery, workspace.activeProfileData.pages],
   );
 
   const favoritePages = useMemo(
-    () => sortPagesByUpdatedAt(workspace.data.pages.filter((page) => page.isFavorite)),
-    [workspace.data.pages],
+    () => sortPagesByUpdatedAt(workspace.activeProfileData.pages.filter((page) => page.isFavorite)),
+    [workspace.activeProfileData.pages],
   );
   const canvasViewState = workspace.activePage?.canvasViewState ?? defaultCanvasViewState;
 
@@ -104,7 +124,10 @@ export function ThinkleafApp() {
     }
 
     workspace.updatePage(page.id, {
-      canvasViewState: createDefaultCanvasViewState(),
+      canvasViewState: {
+        ...createDefaultCanvasViewState(),
+        zoom: canvasViewState.zoom,
+      },
     });
   }
 
@@ -112,14 +135,18 @@ export function ThinkleafApp() {
     <main className="flex h-screen min-h-0 bg-slate-50 text-slate-900">
       <Sidebar
         activePageId={workspace.activePageId}
-        data={workspace.data}
+        activeProfileId={workspace.activeProfileId}
+        data={workspace.activeProfileData}
         favoritePages={favoritePages}
         isCollapsed={isSidebarCollapsed}
+        profiles={workspace.data.profiles}
         searchQuery={searchQuery}
         searchResults={searchResults}
+        onCreateProfile={workspace.createProfile}
         onCreateFolder={workspace.createFolder}
         onCreatePage={workspace.createPage}
         onCreateProject={workspace.createProject}
+        onDeleteProfile={workspace.deleteProfile}
         onDeletePage={workspace.deletePage}
         onDeleteFolder={workspace.deleteFolder}
         onDeleteProject={workspace.deleteProject}
@@ -127,6 +154,7 @@ export function ThinkleafApp() {
         onDuplicatePage={workspace.duplicatePage}
         onDuplicateProject={workspace.duplicateProject}
         onRenameFolder={workspace.renameFolder}
+        onRenameProfile={workspace.renameProfile}
         onRenameProject={workspace.renameProject}
         onRenamePage={workspace.renamePage}
         onToggleFavoritePage={(pageId) =>
@@ -136,6 +164,7 @@ export function ThinkleafApp() {
         }
         onToggleCollapsed={() => setIsSidebarCollapsed((value) => !value)}
         onSearchChange={setSearchQuery}
+        onSelectProfile={workspace.selectProfile}
         onSelectPage={workspace.selectPage}
       />
       <section className="flex min-w-0 flex-1 flex-col">
@@ -149,13 +178,14 @@ export function ThinkleafApp() {
         <Workspace
           activeTool={activeTool}
           activePage={workspace.activePage}
-          data={workspace.data}
+          data={workspace.activeProfileData}
           isGridVisible={isGridVisible}
-          sidebarWidth={sidebarWidth}
+          isSnapToGridEnabled={isSnapToGridEnabled}
           onDeletePage={workspace.deletePage}
           onSearchByTag={(tag) => setSearchQuery(tag)}
           onUpdatePage={workspace.updatePage}
           onSelectionChange={setSelectedObjectId}
+          onToggleSnapToGrid={() => setIsSnapToGridEnabled((value) => !value)}
           onToggleGrid={() => setIsGridVisible((value) => !value)}
           selectedObjectId={selectedObjectId}
           onToolChange={setActiveTool}

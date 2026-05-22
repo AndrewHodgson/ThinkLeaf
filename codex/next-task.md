@@ -1,38 +1,66 @@
-# Next Codex Task: Canvas Interaction QA and Polish
+# Next Codex Task: Manual Browser QA for Profiles, Canvas, and Editor
 
 ## Goal
 
-Do a focused browser QA and small polish pass on the current Thinkleaf canvas workspace.
+Do a hands-on browser QA pass for the Profiles layer, shared color picker, canvas interactions, and main document editor.
 
-Thinkleaf should remain note-first. The document block stays primary, while the canvas behavior should feel stable and predictable.
+The latest code-path/build stability pass found and fixed a hydration mismatch around saved UI preferences. A full click-through pass is still recommended before adding another feature.
 
 ## Requirements
 
-1. Verify pan behavior.
-   - Hand/Pan tool should left-click and drag on empty canvas space.
-   - Document block and canvas objects should move together.
-   - Bottom toolbar and right properties panel should stay fixed.
-   - Switching from Pan to Select or object tools should work without refresh.
-   - New pages and Reset View should return to the left-document default board view.
-   - The large virtual board should feel spacious and objects should not clip at the old right-side panel boundary.
-   - Pan should not interfere with Tiptap typing.
-   - Pan should not create or select objects.
+1. Verify profile behavior.
+   - Existing localStorage data appears under the default Work profile.
+   - Users can create, rename, delete, and switch profiles.
+   - Deleting a profile removes only that profile's projects, folders, pages, and canvas objects.
+   - The last remaining profile is not removed.
+   - Each profile has its own projects, folders, and pages.
+   - Search only returns pages from the active profile.
+   - Favorite Pages only shows favorites from the active profile.
+   - Active profile persists after refresh.
+   - Project/folder/page create, rename, duplicate, and delete still work inside each profile.
 
-2. Verify existing canvas interactions.
-   - Select, move, resize, endpoint edit, and text edit should still work.
-   - Object creation tools should still work.
-   - Object creation should work after panning far from the default view.
-   - Number-key shortcuts 1-7 should switch canvas tools outside editable text fields.
-   - Grid toggle, zoom controls, and reset view should still work.
+2. Verify color and formatting behavior.
+   - Shared color picker popovers have a solid surface and do not visually float or overlap awkwardly.
+   - Color picker popovers close on outside click and when another color picker opens.
+   - Custom HEX colors apply from text, highlight, stroke, and fill pickers.
+   - Recent colors only show custom HEX colors the user added.
+   - Document text color and highlight work.
+   - Whiteboard text color and highlight work.
+   - Stroke and fill colors work.
+   - Solid, dashed, and dotted stroke styles work for rectangles, lines, and arrows.
+   - H1/H2/H3 work from the compact text-style dropdown.
 
-3. Verify persistence.
-   - Canvas view state should persist per page.
-   - Canvas objects should still persist per page.
-   - Switching pages and refreshing should restore the right state.
+3. Verify canvas behavior.
+   - Pan, zoom, and Reset View still work.
+   - Select, move, resize, endpoint edit, and text edit still work.
+   - Rectangle/circle click-drag creation defines width and height.
+   - Line/arrow click-drag creation defines start and end points.
+   - Single-click object creation still creates default-sized objects.
+   - Object creation works after panning and zooming.
+   - Snap to Grid persists separately from Show Grid.
+   - Snap to Grid affects creation, movement, resizing, and line/arrow endpoints.
+   - Turning Snap to Grid off allows free movement.
+   - Number-key shortcuts 1-7 switch tools outside editable fields.
 
-4. Fix any obvious canvas regressions.
-   - Only fix issues found during the QA pass.
-   - Do not add new major features.
+4. Verify editor behavior.
+   - Tiptap typing, rich text formatting, links, checklists, and tables still work.
+   - Document left, center, and right alignment work.
+   - Table header left, center, and right alignment work.
+   - Document text size and vertical content alignment work.
+   - Canvas text object formatting works for standalone text boxes and rectangles/circles with text.
+
+5. Verify persistence.
+   - Profiles persist in localStorage.
+   - Active profile persists in localStorage.
+   - Sidebar collapsed state persists without hydration errors.
+   - Snap to Grid persists without hydration errors.
+   - Canvas view state persists per page.
+   - Canvas objects persist per page.
+   - Switching pages and refreshing restores the expected profile/page/canvas state.
+
+## Recommended Next Feature After QA
+
+Document block lock/unlock.
 
 ## Must Preserve
 
@@ -56,19 +84,11 @@ Do not add:
 
 ## Verification
 
-Test:
+Run:
 
-- Hand/Pan tool left-drag works
-- Zoom works
-- Reset view works
-- Page view state persists after switching pages
-- Page view state persists after refresh
-- Editor typing still works
-- Canvas objects still create, move, resize, style, and persist
-- Number-key shortcuts do not trigger while typing in notes, text boxes, or fields
-- Objects do not clip when placed beyond the initial right-side viewport
-- Sidebar still works
-- `npm.cmd run build` passes
+- `npm run build`
+
+Also check the running dev server logs for fresh browser runtime errors after loading and interacting with the app.
 
 ## Response Format
 
@@ -79,4 +99,5 @@ After completing this, summarize:
 3. Bugs found
 4. Bugs fixed
 5. Build status
-6. Recommended next feature
+6. Remaining issues
+7. Recommended next feature

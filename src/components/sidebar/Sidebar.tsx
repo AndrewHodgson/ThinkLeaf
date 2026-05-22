@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Page, WorkspaceData } from "@/types/workspace";
+import type { Page, Profile, WorkspaceData } from "@/types/workspace";
 import type { MouseEvent, ReactNode } from "react";
 import { PageButton } from "@/components/sidebar/PageButton";
 import {
@@ -22,14 +22,18 @@ import {
 
 type SidebarProps = {
   activePageId: string;
+  activeProfileId: string;
   data: WorkspaceData;
   favoritePages: Page[];
   isCollapsed: boolean;
+  profiles: Profile[];
   searchQuery: string;
   searchResults: Page[];
+  onCreateProfile: (name: string) => void;
   onCreateFolder: (projectId: string, name: string) => void;
   onCreatePage: (projectId: string, folderId: string, title?: string) => void;
   onCreateProject: (name: string) => void;
+  onDeleteProfile: (profileId: string) => void;
   onDuplicateFolder: (folderId: string) => void;
   onDuplicatePage: (pageId: string) => void;
   onDuplicateProject: (projectId: string) => void;
@@ -37,10 +41,12 @@ type SidebarProps = {
   onDeleteProject: (projectId: string) => void;
   onDeletePage: (pageId: string) => void;
   onRenameFolder: (folderId: string, name: string) => void;
+  onRenameProfile: (profileId: string, name: string) => void;
   onRenameProject: (projectId: string, name: string) => void;
   onRenamePage: (pageId: string, name: string) => void;
   onToggleFavoritePage: (pageId: string) => void;
   onSearchChange: (value: string) => void;
+  onSelectProfile: (profileId: string) => void;
   onSelectPage: (pageId: string) => void;
   onToggleCollapsed: () => void;
 };
@@ -75,14 +81,18 @@ function loadSidebarState(): SidebarState {
 
 export function Sidebar({
   activePageId,
+  activeProfileId,
   data,
   favoritePages,
   isCollapsed,
+  profiles,
   searchQuery,
   searchResults,
+  onCreateProfile,
   onCreateFolder,
   onCreatePage,
   onCreateProject,
+  onDeleteProfile,
   onDuplicateFolder,
   onDuplicatePage,
   onDuplicateProject,
@@ -90,10 +100,12 @@ export function Sidebar({
   onDeleteProject,
   onDeletePage,
   onRenameFolder,
+  onRenameProfile,
   onRenameProject,
   onRenamePage,
   onToggleFavoritePage,
   onSearchChange,
+  onSelectProfile,
   onSelectPage,
   onToggleCollapsed,
 }: SidebarProps) {
@@ -156,6 +168,7 @@ export function Sidebar({
 
   const expandedProjectSet = useMemo(() => new Set(expandedProjectIds), [expandedProjectIds]);
   const expandedFolderSet = useMemo(() => new Set(expandedFolderIds), [expandedFolderIds]);
+  const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? profiles[0];
 
   function promptProject() {
     const name = window.prompt("Project name");
@@ -164,6 +177,15 @@ export function Sidebar({
     }
 
     onCreateProject(name);
+  }
+
+  function promptProfile() {
+    const name = window.prompt("Profile name", "New Profile");
+    if (!name) {
+      return;
+    }
+
+    onCreateProfile(name);
   }
 
   function promptFolder(projectId: string) {
@@ -191,6 +213,15 @@ export function Sidebar({
     }
 
     onRenameProject(projectId, nextName);
+  }
+
+  function promptProfileRename(profileId: string, currentName: string) {
+    const nextName = window.prompt("Rename profile", currentName);
+    if (nextName === null) {
+      return;
+    }
+
+    onRenameProfile(profileId, nextName);
   }
 
   function promptFolderRename(folderId: string, currentName: string) {
@@ -359,6 +390,72 @@ export function Sidebar({
             )}
           </section>
         ) : null}
+
+        <section className="mb-5">
+          <div className="mb-2 flex items-center justify-between px-1">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Profiles</h2>
+            <button
+              aria-label="Create profile"
+              className="inline-flex h-7 w-7 items-center justify-center rounded text-leaf-700 hover:bg-leaf-50"
+              title="Create profile"
+              type="button"
+              onClick={promptProfile}
+            >
+              <Plus aria-hidden="true" className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-white p-2">
+            <label className="block">
+              <span className="sr-only">Active profile</span>
+              <select
+                className="h-9 w-full rounded-md border border-slate-200 bg-slate-50 px-2 text-sm font-medium text-slate-700 outline-none transition focus:border-leaf-500 focus:bg-white focus:ring-2 focus:ring-leaf-100"
+                value={activeProfileId}
+                onChange={(event) => onSelectProfile(event.target.value)}
+              >
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <div className="min-w-0 truncate text-xs text-slate-500">{activeProfile?.name ?? "Profile"}</div>
+              <div className="flex items-center gap-1">
+                {activeProfile
+                  ? actionButton(
+                      `Rename profile ${activeProfile.name}`,
+                      <Pencil aria-hidden="true" className="h-3.5 w-3.5" />,
+                      (event) => {
+                        event.stopPropagation();
+                        promptProfileRename(activeProfile.id, activeProfile.name);
+                      },
+                    )
+                  : null}
+                {activeProfile
+                  ? actionButton(
+                      `Delete profile ${activeProfile.name}`,
+                      <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />,
+                      (event) => {
+                        event.stopPropagation();
+                        if (profiles.length <= 1) {
+                          return;
+                        }
+
+                        const shouldDelete = window.confirm(
+                          `Delete profile "${activeProfile.name}"? This will remove its projects, folders, pages, and canvas objects.`,
+                        );
+                        if (shouldDelete) {
+                          onDeleteProfile(activeProfile.id);
+                        }
+                      },
+                      "danger",
+                    )
+                  : null}
+              </div>
+            </div>
+          </div>
+        </section>
 
         <section className="mb-5">
           <div className="mb-2 flex items-center justify-between px-1">

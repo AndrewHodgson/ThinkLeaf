@@ -28,7 +28,14 @@ export const defaultCanvasStyle = {
   strokeColor: "#64748b",
   fillColor: "rgba(148, 163, 184, 0.16)",
   strokeWidth: 2,
+  strokeStyle: "solid" as const,
   textColor: "#1f2937",
+  textHighlightColor: "transparent",
+  textBold: false,
+  textItalic: false,
+  textAlign: "left" as const,
+  textVerticalAlign: "top" as const,
+  fontSize: 14,
 };
 
 export const colorPresets = [
@@ -49,7 +56,22 @@ export const fillPresets = [
   { label: "Yellow", value: "rgba(250, 204, 21, 0.22)" },
 ];
 
+export const highlightPresets = [
+  { label: "No highlight", value: "transparent" },
+  { label: "Yellow", value: "rgba(250, 204, 21, 0.38)" },
+  { label: "Green", value: "rgba(35, 129, 87, 0.2)" },
+  { label: "Blue", value: "rgba(37, 99, 235, 0.18)" },
+  { label: "Red", value: "rgba(220, 38, 38, 0.16)" },
+  { label: "Gray", value: "rgba(148, 163, 184, 0.2)" },
+];
+
 export const strokeWidthPresets = [1, 2, 4, 6];
+export const strokeStylePresets = [
+  { label: "Solid", value: "solid" as const },
+  { label: "Dashed", value: "dashed" as const },
+  { label: "Dotted", value: "dotted" as const },
+];
+export const textSizePresets = [12, 14, 16, 20, 24, 32];
 
 export const defaultObjectSizes: Record<CanvasObjectType, { width: number; height: number; text?: string }> = {
   rectangle: { width: 168, height: 104 },

@@ -1,6 +1,9 @@
 import type { Folder, Page, Project, WorkspaceData } from "@/types/workspace";
 import { htmlToSearchText } from "@/lib/editorContent";
 
+export const defaultProfileId = "profile-work";
+export const defaultProfileName = "Work";
+
 export function createId(prefix: string) {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return `${prefix}-${crypto.randomUUID()}`;

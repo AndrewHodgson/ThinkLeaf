@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { sampleWorkspace } from "@/lib/sampleWorkspace";
 import { createDefaultCanvasViewState, defaultCanvasStyle } from "@/lib/canvasStyle";
-import { createId, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
-import type { CanvasObject, Folder, Page, Project, WorkspaceData } from "@/types/workspace";
+import { createId, defaultProfileId, defaultProfileName, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
+import type { CanvasObject, Folder, Page, Profile, Project, WorkspaceData } from "@/types/workspace";
 
 const STORAGE_KEY = "thinkleaf.workspace.v1";
 
@@ -20,7 +20,14 @@ function normalizeCanvasObject(object: CanvasObject): CanvasObject {
     strokeColor: object.strokeColor ?? defaultCanvasStyle.strokeColor,
     fillColor: object.fillColor ?? defaultCanvasStyle.fillColor,
     strokeWidth: object.strokeWidth ?? defaultCanvasStyle.strokeWidth,
+    strokeStyle: object.strokeStyle ?? defaultCanvasStyle.strokeStyle,
     textColor: object.textColor ?? defaultCanvasStyle.textColor,
+    textHighlightColor: object.textHighlightColor ?? defaultCanvasStyle.textHighlightColor,
+    textBold: object.textBold ?? defaultCanvasStyle.textBold,
+    textItalic: object.textItalic ?? defaultCanvasStyle.textItalic,
+    textAlign: object.textAlign ?? defaultCanvasStyle.textAlign,
+    textVerticalAlign: object.textVerticalAlign ?? defaultCanvasStyle.textVerticalAlign,
+    fontSize: object.fontSize ?? defaultCanvasStyle.fontSize,
   };
 
   if ((object.type === "line" || object.type === "arrow") && object.x1 === undefined) {
@@ -36,17 +43,102 @@ function normalizeCanvasObject(object: CanvasObject): CanvasObject {
   return normalized;
 }
 
-function normalizeWorkspace(data: WorkspaceData): WorkspaceData {
+function createDefaultProfile(now = timestamp()): Profile {
   return {
-    ...data,
-    pages: data.pages.map((page) => ({
+    id: defaultProfileId,
+    name: defaultProfileName,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function createStarterProfileContent(profileId: string, now = timestamp()) {
+  const projectId = createId("project");
+  const folderId = createId("folder");
+  const pageId = createId("page");
+
+  return {
+    project: {
+      id: projectId,
+      profileId,
+      name: "New Project",
+      createdAt: now,
+      updatedAt: now,
+    },
+    folder: {
+      id: folderId,
+      profileId,
+      projectId,
+      name: "Notes",
+      createdAt: now,
+      updatedAt: now,
+    },
+    page: {
+      id: pageId,
+      profileId,
+      projectId,
+      folderId,
+      title: "Untitled meeting note",
+      body: "",
+      noteDate: toDateInputValue(now),
+      canvasViewState: createDefaultCanvasViewState(),
+      canvasObjects: [],
+      tags: [],
+      isFavorite: false,
+      createdAt: now,
+      updatedAt: now,
+    },
+  } satisfies { project: Project; folder: Folder; page: Page };
+}
+
+function normalizeWorkspace(data: Partial<WorkspaceData>): WorkspaceData {
+  const now = timestamp();
+  const profiles =
+    Array.isArray(data.profiles) && data.profiles.length
+      ? data.profiles.map((profile) => ({
+          ...profile,
+          name: profile.name?.trim() || defaultProfileName,
+          createdAt: profile.createdAt ?? now,
+          updatedAt: profile.updatedAt ?? now,
+        }))
+      : [createDefaultProfile(now)];
+  const profileIds = new Set(profiles.map((profile) => profile.id));
+  const activeProfileId =
+    data.activeProfileId && profileIds.has(data.activeProfileId) ? data.activeProfileId : profiles[0].id;
+  const rawProjects = Array.isArray(data.projects) ? data.projects : [];
+  const projects = rawProjects.map((project) => ({
+    ...project,
+    profileId: project.profileId && profileIds.has(project.profileId) ? project.profileId : activeProfileId,
+  }));
+  const projectProfileIds = new Map(projects.map((project) => [project.id, project.profileId]));
+  const rawFolders = Array.isArray(data.folders) ? data.folders : [];
+  const folders = rawFolders.map((folder) => ({
+    ...folder,
+    profileId:
+      folder.profileId && profileIds.has(folder.profileId)
+        ? folder.profileId
+        : projectProfileIds.get(folder.projectId) ?? activeProfileId,
+  }));
+  const folderProfileIds = new Map(folders.map((folder) => [folder.id, folder.profileId]));
+
+  return {
+    profiles,
+    activeProfileId,
+    projects,
+    folders,
+    pages: (Array.isArray(data.pages) ? data.pages : []).map((page) => ({
       ...page,
+      profileId:
+        page.profileId && profileIds.has(page.profileId)
+          ? page.profileId
+          : projectProfileIds.get(page.projectId) ?? folderProfileIds.get(page.folderId) ?? activeProfileId,
       noteDate: page.noteDate ?? toDateInputValue(page.createdAt),
       canvasViewState: page.canvasViewState ?? createDefaultCanvasViewState(),
       canvasObjects: Array.isArray(page.canvasObjects)
         ? page.canvasObjects.map((object) => normalizeCanvasObject(object))
         : [],
     })),
+    recentPageIds: Array.isArray(data.recentPageIds) ? data.recentPageIds : [],
   };
 }
 
@@ -56,6 +148,21 @@ function pickFallbackPageId(pages: Page[], preferredPageId: string) {
   }
 
   return pages[0]?.id ?? "";
+}
+
+function getProfilePages(data: WorkspaceData, profileId: string) {
+  return data.pages.filter((page) => page.profileId === profileId);
+}
+
+function pickFallbackPageIdForProfile(data: WorkspaceData, profileId: string, preferredPageId?: string) {
+  const pages = getProfilePages(data, profileId);
+  const recentPageId = data.recentPageIds.find((pageId) => pages.some((page) => page.id === pageId));
+
+  return pickFallbackPageId(pages, preferredPageId ?? recentPageId ?? "");
+}
+
+function currentProjectProfileId(data: WorkspaceData, projectId: string) {
+  return data.projects.find((project) => project.id === projectId)?.profileId;
 }
 
 function cloneCanvasObjects(objects: CanvasObject[]) {
@@ -88,18 +195,13 @@ function loadWorkspace(): WorkspaceData {
   }
 
   try {
-    const parsed = JSON.parse(stored) as WorkspaceData;
+    const parsed = JSON.parse(stored) as Partial<WorkspaceData>;
 
     if (!Array.isArray(parsed.projects) || !Array.isArray(parsed.folders) || !Array.isArray(parsed.pages)) {
       return sampleWorkspace;
     }
 
-    return normalizeWorkspace({
-      projects: parsed.projects,
-      folders: parsed.folders,
-      pages: parsed.pages,
-      recentPageIds: Array.isArray(parsed.recentPageIds) ? parsed.recentPageIds : [],
-    });
+    return normalizeWorkspace(parsed);
   } catch {
     return sampleWorkspace;
   }
@@ -113,7 +215,7 @@ export function useWorkspace() {
   useEffect(() => {
     const loaded = loadWorkspace();
     setData(loaded);
-    setActivePageId(loaded.recentPageIds[0] ?? loaded.pages[0]?.id ?? "");
+    setActivePageId(pickFallbackPageIdForProfile(loaded, loaded.activeProfileId));
     setHasHydrated(true);
   }, []);
 
@@ -125,10 +227,115 @@ export function useWorkspace() {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }, [data, hasHydrated]);
 
-  const activePage = useMemo(
-    () => data.pages.find((page) => page.id === activePageId) ?? data.pages[0],
-    [activePageId, data.pages],
+  const activeProfile = useMemo(
+    () => data.profiles.find((profile) => profile.id === data.activeProfileId) ?? data.profiles[0],
+    [data.activeProfileId, data.profiles],
   );
+  const activeProfileId = activeProfile?.id ?? "";
+  const activeProfileData = useMemo(
+    () => ({
+      ...data,
+      activeProfileId,
+      projects: data.projects.filter((project) => project.profileId === activeProfileId),
+      folders: data.folders.filter((folder) => folder.profileId === activeProfileId),
+      pages: data.pages.filter((page) => page.profileId === activeProfileId),
+      recentPageIds: data.recentPageIds.filter((pageId) =>
+        data.pages.some((page) => page.id === pageId && page.profileId === activeProfileId),
+      ),
+    }),
+    [activeProfileId, data],
+  );
+  const activePage = useMemo(
+    () => activeProfileData.pages.find((page) => page.id === activePageId) ?? activeProfileData.pages[0],
+    [activePageId, activeProfileData.pages],
+  );
+
+  function selectProfile(profileId: string) {
+    setData((current) => {
+      if (!current.profiles.some((profile) => profile.id === profileId)) {
+        return current;
+      }
+
+      setActivePageId(pickFallbackPageIdForProfile(current, profileId));
+      return {
+        ...current,
+        activeProfileId: profileId,
+      };
+    });
+  }
+
+  function createProfile(name: string) {
+    const cleanName = name.trim();
+    if (!cleanName) {
+      return;
+    }
+
+    const now = timestamp();
+    const profile: Profile = {
+      id: createId("profile"),
+      name: cleanName,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const starter = createStarterProfileContent(profile.id, now);
+
+    setData((current) => ({
+      ...current,
+      profiles: [...current.profiles, profile],
+      activeProfileId: profile.id,
+      projects: [...current.projects, starter.project],
+      folders: [...current.folders, starter.folder],
+      pages: [...current.pages, starter.page],
+      recentPageIds: [starter.page.id, ...current.recentPageIds.filter((id) => id !== starter.page.id)].slice(0, 8),
+    }));
+    setActivePageId(starter.page.id);
+  }
+
+  function renameProfile(profileId: string, name: string) {
+    const cleanName = name.trim();
+    if (!cleanName) {
+      return;
+    }
+
+    const now = timestamp();
+
+    setData((current) => ({
+      ...current,
+      profiles: current.profiles.map((profile) =>
+        profile.id === profileId ? { ...profile, name: cleanName, updatedAt: now } : profile,
+      ),
+    }));
+  }
+
+  function deleteProfile(profileId: string) {
+    setData((current) => {
+      if (current.profiles.length <= 1 || !current.profiles.some((profile) => profile.id === profileId)) {
+        return current;
+      }
+
+      const nextProfiles = current.profiles.filter((profile) => profile.id !== profileId);
+      const nextActiveProfileId =
+        current.activeProfileId === profileId ? nextProfiles[0]?.id ?? "" : current.activeProfileId;
+      const deletedPageIds = new Set(
+        current.pages.filter((page) => page.profileId === profileId).map((page) => page.id),
+      );
+      const nextData: WorkspaceData = {
+        ...current,
+        profiles: nextProfiles,
+        activeProfileId: nextActiveProfileId,
+        projects: current.projects.filter((project) => project.profileId !== profileId),
+        folders: current.folders.filter((folder) => folder.profileId !== profileId),
+        pages: current.pages.filter((page) => page.profileId !== profileId),
+        recentPageIds: current.recentPageIds.filter((pageId) => !deletedPageIds.has(pageId)),
+      };
+
+      if (current.activeProfileId === profileId) {
+        setActivePageId(pickFallbackPageIdForProfile(nextData, nextActiveProfileId));
+      }
+
+      return nextData;
+    });
+  }
 
   function selectPage(pageId: string) {
     setActivePageId(pageId);
@@ -147,6 +354,7 @@ export function useWorkspace() {
     const now = timestamp();
     const project: Project = {
       id: createId("project"),
+      profileId: activeProfileId,
       name: cleanName,
       createdAt: now,
       updatedAt: now,
@@ -179,6 +387,7 @@ export function useWorkspace() {
             ...folder,
             id: nextFolderId,
             projectId: projectCopyId,
+            profileId: sourceProject.profileId,
             name: `${folder.name} Copy`,
             createdAt: now,
             updatedAt: now,
@@ -195,6 +404,7 @@ export function useWorkspace() {
             ...page,
             id: nextPageId,
             projectId: projectCopyId,
+            profileId: sourceProject.profileId,
             folderId: nextFolderId ?? copiedFolders[0]?.id ?? page.folderId,
             title: `${page.title || "Untitled meeting note"} Copy`,
             body: page.body,
@@ -211,13 +421,18 @@ export function useWorkspace() {
       const copiedProject: Project = {
         ...sourceProject,
         id: projectCopyId,
+        profileId: sourceProject.profileId,
         name: `${sourceProject.name} Copy`,
         createdAt: now,
         updatedAt: now,
       };
 
       const nextPages = [...current.pages, ...copiedPages];
-      const nextActivePageId = copiedPages[0]?.id ?? pickFallbackPageId(nextPages, activePageId);
+      const nextActivePageId =
+        sourceProject.profileId === current.activeProfileId
+          ? copiedPages[0]?.id ??
+            pickFallbackPageId(getProfilePages({ ...current, pages: nextPages }, sourceProject.profileId), activePageId)
+          : activePageId;
 
       setActivePageId(nextActivePageId);
 
@@ -253,7 +468,11 @@ export function useWorkspace() {
     setData((current) => {
       const deletedPageIds = new Set(current.pages.filter((page) => page.projectId === projectId).map((page) => page.id));
       const nextPages = current.pages.filter((page) => page.projectId !== projectId);
-      const nextActivePageId = pickFallbackPageId(nextPages, activePageId);
+      const sourceProject = current.projects.find((project) => project.id === projectId);
+      const nextActivePageId =
+        sourceProject?.profileId === current.activeProfileId
+          ? pickFallbackPageId(getProfilePages({ ...current, pages: nextPages }, current.activeProfileId), activePageId)
+          : activePageId;
 
       setActivePageId(nextActivePageId);
 
@@ -276,6 +495,7 @@ export function useWorkspace() {
     const now = timestamp();
     const folder: Folder = {
       id: createId("folder"),
+      profileId: currentProjectProfileId(data, projectId) ?? activeProfileId,
       projectId,
       name: cleanName,
       createdAt: now,
@@ -307,6 +527,7 @@ export function useWorkspace() {
           return {
             ...page,
             id: nextPageId,
+            profileId: sourceFolder.profileId,
             projectId: sourceFolder.projectId,
             folderId: nextFolderId,
             title: `${page.title || "Untitled meeting note"} Copy`,
@@ -324,13 +545,18 @@ export function useWorkspace() {
       const copiedFolder: Folder = {
         ...sourceFolder,
         id: nextFolderId,
+        profileId: sourceFolder.profileId,
         name: `${sourceFolder.name} Copy`,
         createdAt: now,
         updatedAt: now,
       };
 
       const nextPages = [...current.pages, ...copiedPages];
-      const nextActivePageId = copiedPages[0]?.id ?? pickFallbackPageId(nextPages, activePageId);
+      const nextActivePageId =
+        sourceFolder.profileId === current.activeProfileId
+          ? copiedPages[0]?.id ??
+            pickFallbackPageId(getProfilePages({ ...current, pages: nextPages }, sourceFolder.profileId), activePageId)
+          : activePageId;
 
       setActivePageId(nextActivePageId);
 
@@ -365,7 +591,11 @@ export function useWorkspace() {
     setData((current) => {
       const deletedPageIds = new Set(current.pages.filter((page) => page.folderId === folderId).map((page) => page.id));
       const nextPages = current.pages.filter((page) => page.folderId !== folderId);
-      const nextActivePageId = pickFallbackPageId(nextPages, activePageId);
+      const sourceFolder = current.folders.find((folder) => folder.id === folderId);
+      const nextActivePageId =
+        sourceFolder?.profileId === current.activeProfileId
+          ? pickFallbackPageId(getProfilePages({ ...current, pages: nextPages }, current.activeProfileId), activePageId)
+          : activePageId;
 
       setActivePageId(nextActivePageId);
 
@@ -386,6 +616,7 @@ export function useWorkspace() {
     const now = timestamp();
     const page: Page = {
       id: createId("page"),
+      profileId: currentProjectProfileId(data, projectId) ?? activeProfileId,
       projectId,
       folderId,
       title,
@@ -503,7 +734,11 @@ export function useWorkspace() {
   function deletePage(pageId: string) {
     setData((current) => {
       const nextPages = current.pages.filter((page) => page.id !== pageId);
-      const nextActivePageId = pickFallbackPageId(nextPages, activePageId);
+      const sourcePage = current.pages.find((page) => page.id === pageId);
+      const nextActivePageId =
+        sourcePage?.profileId === current.activeProfileId
+          ? pickFallbackPageId(getProfilePages({ ...current, pages: nextPages }, current.activeProfileId), activePageId)
+          : activePageId;
 
       setActivePageId(nextActivePageId);
 
@@ -517,8 +752,15 @@ export function useWorkspace() {
 
   return {
     data,
+    activeProfile,
+    activeProfileData,
+    activeProfileId,
     activePage,
     activePageId,
+    selectProfile,
+    createProfile,
+    renameProfile,
+    deleteProfile,
     selectPage,
     createProject,
     renameProject,

@@ -30,12 +30,13 @@ type WorkspaceProps = {
   activePage?: Page;
   data: WorkspaceData;
   isGridVisible: boolean;
-  sidebarWidth: number;
+  isSnapToGridEnabled: boolean;
   selectedObjectId: string | null;
   onDeletePage: (pageId: string) => void;
   onSearchByTag: (tag: string) => void;
   onSelectionChange: (objectId: string | null) => void;
   onToggleGrid: () => void;
+  onToggleSnapToGrid: () => void;
   onToolChange: (tool: CanvasTool) => void;
   onUpdatePage: (
     pageId: string,
@@ -50,12 +51,13 @@ export function Workspace({
   activePage,
   data,
   isGridVisible,
-  sidebarWidth,
+  isSnapToGridEnabled,
   selectedObjectId,
   onDeletePage,
   onSearchByTag,
   onSelectionChange,
   onToggleGrid,
+  onToggleSnapToGrid,
   onToolChange,
   onUpdatePage,
 }: WorkspaceProps) {
@@ -84,7 +86,6 @@ export function Workspace({
   const project = findProject(data, page.projectId);
   const folder = findFolder(data, page.folderId);
   const selectedObject = page.canvasObjects.find((object) => object.id === selectedObjectId) ?? null;
-  const propertiesPanelWidth = selectedObject ? 300 : 0;
   const canvasViewState = page.canvasViewState ?? defaultCanvasViewState;
   const isPanning = boardPanInteraction !== null;
 
@@ -125,6 +126,11 @@ export function Workspace({
   }
 
   function handleWorkspacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (activeTool === "Select" && event.button === 0 && !isPanBlockedTarget(event.target)) {
+      onSelectionChange(null);
+      return;
+    }
+
     if (activeTool !== "Pan" || event.button !== 0 || isPanBlockedTarget(event.target)) {
       return;
     }
@@ -214,6 +220,7 @@ export function Workspace({
         <CanvasLayer
           key={page.id}
           activeTool={activeTool}
+          isSnapToGridEnabled={isSnapToGridEnabled}
           objects={page.canvasObjects}
           viewState={canvasViewState}
           selectedObjectId={selectedObjectId}
@@ -327,9 +334,10 @@ export function Workspace({
 
       <CanvasCreationToolbar
         activeTool={activeTool}
-        centerOffsetPx={Math.round((sidebarWidth - propertiesPanelWidth) / 2)}
         isGridVisible={isGridVisible}
+        isSnapToGridEnabled={isSnapToGridEnabled}
         onToggleGrid={onToggleGrid}
+        onToggleSnapToGrid={onToggleSnapToGrid}
         onToolChange={onToolChange}
       />
     </div>

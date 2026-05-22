@@ -4,11 +4,19 @@
 
 - Next.js / React / TypeScript / Tailwind app created
 - LocalStorage persistence added
+- Profiles added as the top-level organization layer above Projects
+- Existing workspaces migrate into the default Work profile
+- Active profile persists in localStorage
+- Profile create, rename, delete, and switch controls added
+- Hydration mismatch from saved sidebar collapsed state fixed
+- Snap to Grid and sidebar collapsed preferences now load after mount and persist after hydration
 - Starter project/folder/page added
 - Project → Folder → Page structure created
 - Sidebar navigation created
 - Search added
+- Search scoped to the active profile
 - Favorites added
+- Favorites scoped to the active profile
 - Tags added
 - Note Date added
 - Updated Date added
@@ -25,6 +33,15 @@
 - Callout/blockquotes added
 - Tables added
 - Tiptap duplicate Link warning fixed
+- Table header alignment fixed for left, center, and right alignment
+- Table header left alignment now renders explicitly
+- Document text color controls added
+- Document text highlight controls added
+- Document text size controls added
+- Document text color, highlight, and size controls compacted into dropdowns/popovers
+- Document color and highlight controls now use the shared HEX-capable color picker
+- H1/H2/H3 controls consolidated into a compact text-style dropdown
+- Document formatting toolbar active states refresh from current selection/cursor where practical
 
 ## Canvas Foundation
 
@@ -53,6 +70,35 @@
 - Object clipping from the old narrow right-side canvas area fixed
 - Object creation hit area covers the full virtual board after pan/zoom
 - Number-key shortcuts added for canvas tools
+- Bottom toolbar positioning stabilized so it stays centered in the usable workspace viewport
+- Bottom toolbar no longer shifts when selected object state or the right properties panel changes
+- Click-drag creation restored for rectangles, circles, lines, and arrows
+- Drag creation previews live object size/line endpoints before pointer release
+- Click-drag creation works with pan/zoom and keeps 8px grid snapping
+- Snap to Grid added as a separate persisted canvas preference
+- Show Grid and Snap to Grid separated
+- Free movement supported when Snap to Grid is disabled
+- Line and arrow creation preview no longer shows a default-size line before dragging
+- Line and arrow creation can complete by drag-release or second click
+- Reset View now preserves zoom and resets pan only
+- Whiteboard objects render above the document block when overlapping
+- Canvas text formatting controls added for text-bearing objects
+- Rectangles and circles can retain their shape while containing editable text
+- Canvas text highlight controls added for text-bearing objects
+- Side resize handles added for rectangles, circles, and text boxes
+- Canvas object color, highlight, and text size controls compacted into dropdowns/popovers
+- Canvas stroke, fill, text color, and highlight controls now use the shared HEX-capable color picker
+- Custom HEX colors persist as recent colors in localStorage
+- Rectangle, line, and arrow stroke styles added with solid, dashed, and dotted options
+- Standalone whiteboard text boxes default to transparent fill and stroke
+- Grid and Snap moved into the bottom toolbar settings menu
+
+## Document Editor Polish
+
+- Document editor horizontal alignment controls added
+- Document editor vertical content alignment controls added
+- Document editor color, highlight, and text size controls added
+- Document vertical alignment preference now loads after mount and persists after hydration
 
 ## Sidebar Management
 
@@ -76,4 +122,4 @@
 
 ## Current Recommended Next Feature
 
-Canvas interaction QA and polish.
+Manual browser QA for profiles plus polished canvas/editor interactions, then document block lock/unlock.

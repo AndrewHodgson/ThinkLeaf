@@ -1,12 +1,23 @@
 import type { WorkspaceData } from "@/types/workspace";
 import { createDefaultCanvasViewState } from "@/lib/canvasStyle";
+import { defaultProfileId, defaultProfileName } from "@/lib/workspaceUtils";
 
 const now = "2026-05-21T12:00:00.000Z";
 
 export const sampleWorkspace: WorkspaceData = {
+  profiles: [
+    {
+      id: defaultProfileId,
+      name: defaultProfileName,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ],
+  activeProfileId: defaultProfileId,
   projects: [
     {
       id: "project-shows",
+      profileId: defaultProfileId,
       name: "Shows",
       createdAt: now,
       updatedAt: now,
@@ -15,6 +26,7 @@ export const sampleWorkspace: WorkspaceData = {
   folders: [
     {
       id: "folder-pcma-2027",
+      profileId: defaultProfileId,
       projectId: "project-shows",
       name: "PCMA Convening Leaders 2027",
       createdAt: now,
@@ -24,6 +36,7 @@ export const sampleWorkspace: WorkspaceData = {
   pages: [
     {
       id: "page-planning-meeting",
+      profileId: defaultProfileId,
       projectId: "project-shows",
       folderId: "folder-pcma-2027",
       title: "CL27 Planning Meeting - 2026-05-21",

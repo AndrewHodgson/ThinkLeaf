@@ -1,5 +1,13 @@
+export type Profile = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Project = {
   id: string;
+  profileId: string;
   name: string;
   createdAt: string;
   updatedAt: string;
@@ -7,6 +15,7 @@ export type Project = {
 
 export type Folder = {
   id: string;
+  profileId: string;
   projectId: string;
   name: string;
   createdAt: string;
@@ -15,6 +24,7 @@ export type Folder = {
 
 export type Page = {
   id: string;
+  profileId: string;
   projectId: string;
   folderId: string;
   title: string;
@@ -29,6 +39,9 @@ export type Page = {
 };
 
 export type CanvasObjectType = "rectangle" | "circle" | "textBox" | "line" | "arrow";
+export type CanvasTextAlign = "left" | "center" | "right";
+export type CanvasTextVerticalAlign = "top" | "middle" | "bottom";
+export type CanvasStrokeStyle = "solid" | "dashed" | "dotted";
 
 export type CanvasTool =
   | "Select"
@@ -57,7 +70,14 @@ export type CanvasObject = {
   strokeColor: string;
   fillColor: string;
   strokeWidth: number;
+  strokeStyle?: CanvasStrokeStyle;
   textColor: string;
+  textHighlightColor?: string;
+  textBold?: boolean;
+  textItalic?: boolean;
+  textAlign?: CanvasTextAlign;
+  textVerticalAlign?: CanvasTextVerticalAlign;
+  fontSize?: number;
   createdAt: string;
   updatedAt: string;
   // Future connector objects may add sourceObjectId, targetObjectId, sourceAnchor, and targetAnchor.
@@ -71,6 +91,8 @@ export type CanvasViewState = {
 };
 
 export type WorkspaceData = {
+  profiles: Profile[];
+  activeProfileId: string;
   projects: Project[];
   folders: Folder[];
   pages: Page[];
