@@ -122,6 +122,9 @@
 - Right properties panel added
 - Right properties panel removed and replaced with a top contextual toolbar for selected canvas objects
 - Canvas object duplicate action added to the top contextual toolbar
+- Rectangle, Circle, Line, Arrow, and Text Box creation defaults added to the top contextual toolbar when a creation tool is active and no canvas object is selected
+- Canvas creation defaults persist per tool in localStorage and apply to newly created shapes, lines, arrows, and text boxes
+- Selected canvas object controls take priority over active creation-tool defaults
 - Canvas-to-document focus handoff fixed so clicking into the page clears object selection and restores the document toolbar
 - Top toolbar polished so document formatting stays on row 1 and table/object/image tools appear on row 2
 - Explicit toolbar formatting target added for document, whiteboard text, and no active text target

@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Workspace } from "@/components/workspace/Workspace";
 import {
   createDefaultCanvasViewState,
+  defaultCanvasCreationToolDefaults,
   defaultCanvasViewState,
   defaultPenSettings,
   maxZoom,
@@ -13,7 +14,14 @@ import {
 } from "@/lib/canvasStyle";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { searchPages, sortPagesByUpdatedAt } from "@/lib/workspaceUtils";
-import type { CanvasHistoryOptions, CanvasObject, CanvasPenSettings, CanvasTool } from "@/types/workspace";
+import type {
+  CanvasCreationDefaultStyle,
+  CanvasCreationToolDefaults,
+  CanvasHistoryOptions,
+  CanvasObject,
+  CanvasPenSettings,
+  CanvasTool,
+} from "@/types/workspace";
 
 const toolShortcuts: Record<string, CanvasTool> = {
   "1": "Select",
@@ -29,6 +37,7 @@ const toolShortcuts: Record<string, CanvasTool> = {
 
 const SNAP_TO_GRID_STORAGE_KEY = "thinkleaf.snapToGrid.v1";
 const PEN_SETTINGS_STORAGE_KEY = "thinkleaf.penSettings.v1";
+const CREATION_TOOL_DEFAULTS_STORAGE_KEY = "thinkleaf.canvasCreationToolDefaults.v1";
 const CANVAS_HISTORY_LIMIT = 25;
 
 type CanvasPageHistory = {
@@ -43,6 +52,9 @@ export function ThinkleafApp() {
   const [isSnapToGridEnabled, setIsSnapToGridEnabled] = useState(true);
   const [activeTool, setActiveTool] = useState<CanvasTool>("Select");
   const [penSettings, setPenSettings] = useState<CanvasPenSettings>(defaultPenSettings);
+  const [creationToolDefaults, setCreationToolDefaults] = useState<CanvasCreationToolDefaults>(
+    defaultCanvasCreationToolDefaults,
+  );
   const [imageImportRequestId, setImageImportRequestId] = useState(0);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [hasLoadedUiPreferences, setHasLoadedUiPreferences] = useState(false);
@@ -56,6 +68,9 @@ export function ThinkleafApp() {
       setIsSidebarCollapsed(window.localStorage.getItem("thinkleaf.ui.v1") === "sidebar-collapsed");
       setIsSnapToGridEnabled(window.localStorage.getItem(SNAP_TO_GRID_STORAGE_KEY) !== "off");
       setPenSettings(normalizeStoredPenSettings(window.localStorage.getItem(PEN_SETTINGS_STORAGE_KEY)));
+      setCreationToolDefaults(
+        normalizeStoredCreationToolDefaults(window.localStorage.getItem(CREATION_TOOL_DEFAULTS_STORAGE_KEY)),
+      );
     } catch {
       // Ignore storage errors in private/incognito modes.
     } finally {
@@ -101,6 +116,18 @@ export function ThinkleafApp() {
       // Ignore storage errors in private/incognito modes.
     }
   }, [hasLoadedUiPreferences, penSettings]);
+
+  useEffect(() => {
+    if (!hasLoadedUiPreferences) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(CREATION_TOOL_DEFAULTS_STORAGE_KEY, JSON.stringify(creationToolDefaults));
+    } catch {
+      // Ignore storage errors in private/incognito modes.
+    }
+  }, [creationToolDefaults, hasLoadedUiPreferences]);
 
   const canvasViewState = workspace.activePage?.canvasViewState ?? defaultCanvasViewState;
   const activeCanvasHistory = workspace.activePage ? canvasHistoryByPage[workspace.activePage.id] : undefined;
@@ -343,6 +370,7 @@ export function ThinkleafApp() {
         <Workspace
           activeTool={activeTool}
           activePage={workspace.activePage}
+          creationToolDefaults={creationToolDefaults}
           data={workspace.activeProfileData}
           canRedoCanvas={canRedoCanvas}
           canUndoCanvas={canUndoCanvas}
@@ -352,6 +380,7 @@ export function ThinkleafApp() {
           onDeletePage={workspace.deletePage}
           onResetView={resetView}
           onRedoCanvas={redoCanvas}
+          onCreationToolDefaultsChange={setCreationToolDefaults}
           onPenSettingsChange={setPenSettings}
           onSearchByTag={(tag) => setSearchQuery(tag)}
           onUndoCanvas={undoCanvas}
@@ -439,6 +468,76 @@ function normalizeStoredPenSettings(value: string | null): CanvasPenSettings {
   } catch {
     return defaultPenSettings;
   }
+}
+
+function normalizeStoredCreationToolDefaults(value: string | null): CanvasCreationToolDefaults {
+  if (!value) {
+    return defaultCanvasCreationToolDefaults;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<Record<keyof CanvasCreationToolDefaults, CanvasCreationDefaultStyle>>;
+
+    return {
+      arrow: normalizeCreationDefaultStyle(parsed.arrow, defaultCanvasCreationToolDefaults.arrow),
+      circle: normalizeCreationDefaultStyle(parsed.circle, defaultCanvasCreationToolDefaults.circle),
+      line: normalizeCreationDefaultStyle(parsed.line, defaultCanvasCreationToolDefaults.line),
+      rectangle: normalizeCreationDefaultStyle(parsed.rectangle, defaultCanvasCreationToolDefaults.rectangle),
+      textBox: normalizeCreationDefaultStyle(parsed.textBox, defaultCanvasCreationToolDefaults.textBox),
+    };
+  } catch {
+    return defaultCanvasCreationToolDefaults;
+  }
+}
+
+function normalizeCreationDefaultStyle(
+  value: CanvasCreationDefaultStyle | undefined,
+  fallback: CanvasCreationDefaultStyle,
+): CanvasCreationDefaultStyle {
+  if (!value || typeof value !== "object") {
+    return fallback;
+  }
+
+  return {
+    ...fallback,
+    ...(isSupportedColorValue(value.fillColor) ? { fillColor: value.fillColor } : {}),
+    ...(isSupportedColorValue(value.strokeColor) ? { strokeColor: value.strokeColor } : {}),
+    ...(isSupportedColorValue(value.textColor) ? { textColor: value.textColor } : {}),
+    ...(isSupportedColorValue(value.textHighlightColor) ? { textHighlightColor: value.textHighlightColor } : {}),
+    ...(typeof value.fontSize === "number" && Number.isFinite(value.fontSize)
+      ? { fontSize: Math.min(48, Math.max(10, value.fontSize)) }
+      : {}),
+    ...(value.strokeStyle === "solid" || value.strokeStyle === "dashed" || value.strokeStyle === "dotted"
+      ? { strokeStyle: value.strokeStyle }
+      : {}),
+    ...(typeof value.strokeWidth === "number" && Number.isFinite(value.strokeWidth)
+      ? { strokeWidth: Math.min(12, Math.max(0, value.strokeWidth)) }
+      : {}),
+    ...(value.textAlign === "left" || value.textAlign === "center" || value.textAlign === "right"
+      ? { textAlign: value.textAlign }
+      : {}),
+    ...(value.textVerticalAlign === "top" ||
+    value.textVerticalAlign === "middle" ||
+    value.textVerticalAlign === "bottom"
+      ? { textVerticalAlign: value.textVerticalAlign }
+      : {}),
+    ...(typeof value.textBold === "boolean" ? { textBold: value.textBold } : {}),
+    ...(typeof value.textItalic === "boolean" ? { textItalic: value.textItalic } : {}),
+  };
+}
+
+function isSupportedColorValue(value: unknown): value is string {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  return (
+    trimmed === "transparent" ||
+    /^#[0-9a-fA-F]{6}$/.test(trimmed) ||
+    /^#[0-9a-fA-F]{3}$/.test(trimmed) ||
+    /^rgba?\(.+\)$/.test(trimmed)
+  );
 }
 
 function normalizeHexColorSetting(value: unknown) {

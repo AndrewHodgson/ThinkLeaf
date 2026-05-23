@@ -2,17 +2,29 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
+  Bold as BoldIcon,
   ChevronDown,
   Copy,
+  Highlighter,
+  Italic as ItalicIcon,
   Trash2,
+  Type,
 } from "lucide-react";
 import {
   colorPresets,
+  defaultCanvasStyle,
   defaultHighlighterColor,
   defaultHighlighterStrokeWidth,
   defaultLaserColor,
   defaultPenSettings,
   fillPresets,
+  highlightPresets,
   laserFadeDurationPresets,
   penInkDensityPresets,
   penModePresets,
@@ -20,9 +32,10 @@ import {
   penSmoothingPresets,
   strokeStylePresets,
   strokeWidthPresets,
+  textSizePresets,
 } from "@/lib/canvasStyle";
 import { ColorPicker } from "@/components/workspace/ColorPicker";
-import type { CanvasObject, CanvasPenSettings } from "@/types/workspace";
+import type { CanvasCreationDefaultStyle, CanvasObject, CanvasPenSettings, CanvasTool } from "@/types/workspace";
 
 type CanvasObjectToolbarProps = {
   object: CanvasObject;
@@ -34,6 +47,12 @@ type CanvasObjectToolbarProps = {
 type PenToolToolbarProps = {
   penSettings: CanvasPenSettings;
   onChange: (settings: CanvasPenSettings) => void;
+};
+
+type CanvasToolDefaultsToolbarProps = {
+  defaults: CanvasCreationDefaultStyle;
+  tool: CanvasTool;
+  onUpdate: (updates: CanvasCreationDefaultStyle) => void;
 };
 
 export function PenToolToolbar({ penSettings, onChange }: PenToolToolbarProps) {
@@ -90,10 +109,189 @@ export function PenToolToolbar({ penSettings, onChange }: PenToolToolbarProps) {
   );
 }
 
+export function CanvasToolDefaultsToolbar({ defaults, tool, onUpdate }: CanvasToolDefaultsToolbarProps) {
+  const isTextTool = tool === "Text Box";
+  const supportsFill = tool === "Rectangle" || tool === "Circle" || isTextTool;
+  const supportsStroke = tool === "Rectangle" || tool === "Circle" || tool === "Line" || tool === "Arrow" || isTextTool;
+  const supportsStrokeStyle = supportsStroke;
+  const strokeWidth = defaults.strokeWidth ?? defaultCanvasStyle.strokeWidth;
+  const strokeStyle = defaults.strokeStyle ?? defaultCanvasStyle.strokeStyle;
+  const textAlign = defaults.textAlign ?? defaultCanvasStyle.textAlign;
+  const textVerticalAlign = defaults.textVerticalAlign ?? defaultCanvasStyle.textVerticalAlign;
+
+  return (
+    <>
+      <div className="mr-2 min-w-24">
+        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Tool</div>
+        <div className="text-xs font-semibold text-slate-700">{tool} defaults</div>
+      </div>
+
+      {isTextTool ? (
+        <>
+          <ColorPicker
+            currentValue={defaults.textColor ?? defaultCanvasStyle.textColor}
+            icon={<Type aria-hidden="true" className="h-4 w-4" />}
+            label="Text color"
+            onSelect={(textColor) => onUpdate({ textColor })}
+            presets={colorPresets}
+          />
+          <ColorPicker
+            currentValue={defaults.textHighlightColor ?? defaultCanvasStyle.textHighlightColor}
+            icon={<Highlighter aria-hidden="true" className="h-4 w-4" />}
+            label="Highlight"
+            onSelect={(textHighlightColor) => onUpdate({ textHighlightColor })}
+            presets={highlightPresets}
+          />
+          <ToolbarDropdown
+            ariaLabel="Default text size"
+            currentLabel={`${defaults.fontSize ?? defaultCanvasStyle.fontSize}`}
+            options={textSizePresets.map((fontSize) => ({ label: `${fontSize}`, value: fontSize }))}
+            selectedValue={defaults.fontSize ?? defaultCanvasStyle.fontSize}
+            title="Text size"
+            onSelect={(fontSize) => onUpdate({ fontSize })}
+          />
+          <button
+            aria-label="Default bold text"
+            className={toolbarButtonClass(Boolean(defaults.textBold))}
+            title="Bold"
+            type="button"
+            onClick={() => onUpdate({ textBold: !defaults.textBold })}
+          >
+            <BoldIcon aria-hidden="true" className="h-4 w-4" />
+          </button>
+          <button
+            aria-label="Default italic text"
+            className={toolbarButtonClass(Boolean(defaults.textItalic))}
+            title="Italic"
+            type="button"
+            onClick={() => onUpdate({ textItalic: !defaults.textItalic })}
+          >
+            <ItalicIcon aria-hidden="true" className="h-4 w-4" />
+          </button>
+          <span className="h-6 w-px bg-slate-200" />
+          <button
+            aria-label="Default text align left"
+            className={toolbarButtonClass(textAlign === "left")}
+            title="Align left"
+            type="button"
+            onClick={() => onUpdate({ textAlign: "left" })}
+          >
+            <AlignLeft aria-hidden="true" className="h-4 w-4" />
+          </button>
+          <button
+            aria-label="Default text align center"
+            className={toolbarButtonClass(textAlign === "center")}
+            title="Align center"
+            type="button"
+            onClick={() => onUpdate({ textAlign: "center" })}
+          >
+            <AlignCenter aria-hidden="true" className="h-4 w-4" />
+          </button>
+          <button
+            aria-label="Default text align right"
+            className={toolbarButtonClass(textAlign === "right")}
+            title="Align right"
+            type="button"
+            onClick={() => onUpdate({ textAlign: "right" })}
+          >
+            <AlignRight aria-hidden="true" className="h-4 w-4" />
+          </button>
+          <button
+            aria-label="Default text align top"
+            className={toolbarButtonClass(textVerticalAlign === "top")}
+            title="Align top"
+            type="button"
+            onClick={() => onUpdate({ textVerticalAlign: "top" })}
+          >
+            <AlignVerticalJustifyStart aria-hidden="true" className="h-4 w-4" />
+          </button>
+          <button
+            aria-label="Default text align middle"
+            className={toolbarButtonClass(textVerticalAlign === "middle")}
+            title="Align middle"
+            type="button"
+            onClick={() => onUpdate({ textVerticalAlign: "middle" })}
+          >
+            <AlignVerticalJustifyCenter aria-hidden="true" className="h-4 w-4" />
+          </button>
+          <button
+            aria-label="Default text align bottom"
+            className={toolbarButtonClass(textVerticalAlign === "bottom")}
+            title="Align bottom"
+            type="button"
+            onClick={() => onUpdate({ textVerticalAlign: "bottom" })}
+          >
+            <AlignVerticalJustifyEnd aria-hidden="true" className="h-4 w-4" />
+          </button>
+          <span className="h-6 w-px bg-slate-200" />
+        </>
+      ) : null}
+
+      {supportsFill ? (
+        <ColorPicker
+          currentValue={defaults.fillColor ?? defaultCanvasStyle.fillColor}
+          label="Fill"
+          onSelect={(fillColor) => onUpdate({ fillColor })}
+          presets={fillPresets}
+        />
+      ) : null}
+
+      {supportsStroke ? (
+        <ColorPicker
+          currentValue={defaults.strokeColor ?? defaultCanvasStyle.strokeColor}
+          label="Stroke"
+          onSelect={(strokeColor) => onUpdate({ strokeColor })}
+          presets={colorPresets}
+        />
+      ) : null}
+
+      {supportsStroke ? (
+        <>
+          <SegmentLabel>Width</SegmentLabel>
+          {strokeWidthPresets.map((nextStrokeWidth) => (
+            <button
+              key={`${tool}-default-stroke-width-${nextStrokeWidth}`}
+              aria-label={`Default stroke width ${nextStrokeWidth}`}
+              className={compactButtonClass(strokeWidth === nextStrokeWidth)}
+              title={`Stroke width ${nextStrokeWidth}`}
+              type="button"
+              onClick={() => onUpdate({ strokeWidth: nextStrokeWidth })}
+            >
+              {nextStrokeWidth}
+            </button>
+          ))}
+        </>
+      ) : null}
+
+      {supportsStrokeStyle ? (
+        <>
+          <SegmentLabel>Style</SegmentLabel>
+          {strokeStylePresets.map((style) => (
+            <button
+              key={`${tool}-default-stroke-style-${style.value}`}
+              aria-label={`Default stroke style ${style.label}`}
+              className={compactButtonClass(strokeStyle === style.value, "min-w-14")}
+              type="button"
+              onClick={() => onUpdate({ strokeStyle: style.value })}
+            >
+              {style.label}
+            </button>
+          ))}
+        </>
+      ) : null}
+    </>
+  );
+}
+
 export function CanvasObjectToolbar({ object, onDelete, onDuplicate, onUpdate }: CanvasObjectToolbarProps) {
   const supportsFill = object.type === "rectangle" || object.type === "circle" || object.type === "textBox";
   const supportsStroke = object.type !== "image";
-  const supportsStrokeStyle = object.type === "rectangle" || object.type === "line" || object.type === "arrow";
+  const supportsStrokeStyle =
+    object.type === "rectangle" ||
+    object.type === "circle" ||
+    object.type === "textBox" ||
+    object.type === "line" ||
+    object.type === "arrow";
   const isPenStroke = object.type === "penStroke";
 
   function updatePenMode(penMode: CanvasPenSettings["mode"]) {

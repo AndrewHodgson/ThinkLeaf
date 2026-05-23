@@ -6,7 +6,7 @@ Run a short manual browser QA/polish pass before starting new feature work, then
 
 Keep this pass focused on confirming current behavior, fixing small regressions, and tightening obvious rough edges. Do not add new major features.
 
-The latest project sanity check found the repository structure generally clean after removing tracked `.DS_Store` and expanding local/build ignores. The remaining recommended work is hands-on browser verification with real clicks, drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching.
+The latest code-path/build check passed after adding persisted creation defaults for Rectangle, Circle, Line, Arrow, and Text Box tools. The remaining recommended work is hands-on browser verification with real clicks, drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching.
 
 ## QA Focus
 
@@ -82,6 +82,12 @@ The latest project sanity check found the repository structure generally clean a
    - Confirm existing pen strokes still load and render after the smoothing/mode update.
    - Confirm selected canvas object controls appear in the top contextual toolbar and the old right-side properties panel is gone.
    - Confirm duplicate and delete work from the top contextual toolbar.
+   - Confirm Rectangle, Circle, Line, Arrow, and Text Box defaults appear in the top contextual toolbar when the tool is active and no canvas object is selected.
+   - Confirm selected canvas objects show selected-object controls instead of active tool defaults.
+   - Confirm Rectangle/Circle fill, stroke, stroke width, and stroke style defaults persist after refresh and apply to the next new object.
+   - Confirm Line/Arrow stroke, stroke width, and stroke style defaults persist after refresh and apply to the next new object.
+   - Confirm Text Box text color, highlight, size, bold, italic, alignment, fill, and stroke defaults persist after refresh and apply to the next new object.
+   - Confirm Pen/Ink/Highlighter/Laser defaults still work independently from shape, line, arrow, and text defaults.
    - Confirm line and arrow creation previews naturally and endpoint editing still works.
    - Confirm canvas undo/redo works per page for create, delete, move, resize, style changes, whiteboard text edits, and inserted image objects.
 

@@ -1,4 +1,9 @@
-import type { CanvasObjectType, CanvasPenSettings, CanvasViewState } from "@/types/workspace";
+import type {
+  CanvasCreationToolDefaults,
+  CanvasObjectType,
+  CanvasPenSettings,
+  CanvasViewState,
+} from "@/types/workspace";
 
 export const gridSize = 8;
 export const minObjectSize = 48;
@@ -111,6 +116,44 @@ export const defaultPenSettings: CanvasPenSettings = {
   smoothing: "medium",
   strokeColor: defaultCanvasStyle.strokeColor,
   strokeWidth: defaultCanvasStyle.strokeWidth,
+};
+
+export const defaultCanvasCreationToolDefaults: CanvasCreationToolDefaults = {
+  arrow: {
+    strokeColor: defaultCanvasStyle.strokeColor,
+    strokeStyle: defaultCanvasStyle.strokeStyle,
+    strokeWidth: defaultCanvasStyle.strokeWidth,
+  },
+  circle: {
+    fillColor: defaultCanvasStyle.fillColor,
+    strokeColor: defaultCanvasStyle.strokeColor,
+    strokeStyle: defaultCanvasStyle.strokeStyle,
+    strokeWidth: defaultCanvasStyle.strokeWidth,
+  },
+  line: {
+    strokeColor: defaultCanvasStyle.strokeColor,
+    strokeStyle: defaultCanvasStyle.strokeStyle,
+    strokeWidth: defaultCanvasStyle.strokeWidth,
+  },
+  rectangle: {
+    fillColor: defaultCanvasStyle.fillColor,
+    strokeColor: defaultCanvasStyle.strokeColor,
+    strokeStyle: defaultCanvasStyle.strokeStyle,
+    strokeWidth: defaultCanvasStyle.strokeWidth,
+  },
+  textBox: {
+    fillColor: "transparent",
+    fontSize: defaultCanvasStyle.fontSize,
+    strokeColor: "transparent",
+    strokeStyle: defaultCanvasStyle.strokeStyle,
+    strokeWidth: 1,
+    textAlign: defaultCanvasStyle.textAlign,
+    textBold: defaultCanvasStyle.textBold,
+    textColor: defaultCanvasStyle.textColor,
+    textHighlightColor: defaultCanvasStyle.textHighlightColor,
+    textItalic: defaultCanvasStyle.textItalic,
+    textVerticalAlign: defaultCanvasStyle.textVerticalAlign,
+  },
 };
 
 export const defaultObjectSizes: Record<CanvasObjectType, { width: number; height: number; text?: string }> = {

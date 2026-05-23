@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type {
+  CanvasCreationToolDefaults,
   CanvasHistoryOptions,
   CanvasObject,
   CanvasObjectType,
@@ -30,6 +31,7 @@ import { createId } from "@/lib/workspaceUtils";
 
 type CanvasLayerProps = {
   activeTool: CanvasTool;
+  creationToolDefaults: CanvasCreationToolDefaults;
   isSnapToGridEnabled: boolean;
   objects: CanvasObject[];
   penSettings: CanvasPenSettings;
@@ -188,6 +190,7 @@ const laserFadeDurations = {
 
 export function CanvasLayer({
   activeTool,
+  creationToolDefaults,
   isSnapToGridEnabled,
   objects,
   penSettings,
@@ -448,6 +451,7 @@ export function CanvasLayer({
 
     const size = defaultObjectSizes[type];
     const now = new Date().toISOString();
+    const creationDefaults = getCreationDefaultsForType(type, creationToolDefaults);
     const object: CanvasObject = {
       id: createId("object"),
       type,
@@ -457,6 +461,7 @@ export function CanvasLayer({
       height: size.height,
       text: size.text,
       ...defaultCanvasStyle,
+      ...creationDefaults,
       createdAt: now,
       updatedAt: now,
     };
@@ -466,12 +471,6 @@ export function CanvasLayer({
       object.y1 = startY;
       object.x2 = startX;
       object.y2 = startY;
-    }
-
-    if (type === "textBox") {
-      object.fillColor = "transparent";
-      object.strokeColor = "transparent";
-      object.strokeWidth = 1;
     }
 
     if (type === "penStroke") {
@@ -2222,6 +2221,30 @@ function getStrokeDashArray(object: CanvasObject) {
   }
 
   return undefined;
+}
+
+function getCreationDefaultsForType(type: CanvasObjectType, defaults: CanvasCreationToolDefaults) {
+  if (type === "arrow") {
+    return defaults.arrow;
+  }
+
+  if (type === "circle") {
+    return defaults.circle;
+  }
+
+  if (type === "line") {
+    return defaults.line;
+  }
+
+  if (type === "rectangle") {
+    return defaults.rectangle;
+  }
+
+  if (type === "textBox") {
+    return defaults.textBox;
+  }
+
+  return {};
 }
 
 function isEditableTarget(target: EventTarget | null) {

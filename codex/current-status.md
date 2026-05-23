@@ -7,7 +7,7 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Profiles sit above Projects.
 - Each profile owns its own projects, folders, pages, favorites, and search results.
 - Existing pre-profile data migrates into the default Work profile.
-- Active profile, sidebar collapsed state, Snap to Grid, document vertical alignment, page content, canvas objects, images, and canvas view state persist in localStorage.
+- Active profile, sidebar collapsed state, Snap to Grid, document vertical alignment, Pen settings, canvas creation defaults, page content, canvas objects, images, and canvas view state persist in localStorage.
 
 ## Main Document
 
@@ -54,7 +54,9 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Highlighter mode renders wider semi-transparent rounded strokes over text, images, and whiteboard objects, with yellow as the default starting color.
 - Pen smoothing uses distance filtering, Ramer-Douglas-Peucker style path simplification, and curve smoothing so Medium, High, and Very High meaningfully reduce wobble; Very High aggressively straightens shaky mostly-straight strokes and softens hard turns.
 - Pen defaults include stroke color, compact stroke-width selection, smoothing, Ink Density, stroke mode, Laser color, and Laser fade duration; these settings persist in localStorage and apply immediately to newly drawn strokes while the Pen tool is active. Laser mode hides smoothing/width controls because it uses a temporary fixed-width stroke.
+- Rectangle, Circle, Line, Arrow, and Text Box creation defaults appear in the top contextual toolbar when their tool is active and no object is selected; the defaults persist in localStorage and apply to newly created objects.
 - Selected canvas object controls now appear in the top contextual toolbar instead of a right-side properties panel.
+- Selected canvas object controls take priority over active creation-tool defaults when an object is selected.
 - Canvas object duplicate and delete actions are available from the top contextual toolbar.
 - Canvas undo/redo is tracked per page for create, delete, move, resize, style changes, whiteboard text edits, and inserted image objects.
 - Rectangles and circles can contain editable text.
@@ -67,7 +69,7 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 
 Do a short manual browser QA/polish pass before adding new features.
 
-Latest code-path/build verification after the Pen/Ink/Highlighter rendering polish and project sanity check passed. Remaining verification should be hands-on browser QA with real drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching.
+Latest code-path/build verification after the persisted canvas creation defaults update passed. Remaining verification should be hands-on browser QA with real drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching.
 
 Focus the pass on:
 
@@ -80,6 +82,7 @@ Focus the pass on:
 - Trackpad two-finger pan over the board/document body and Ctrl/Cmd + wheel zoom
 - Snap to Grid and Show Grid
 - Object creation, movement, resizing, endpoint editing, styling, and deletion
+- Creation defaults for Rectangle, Circle, Line, Arrow, and Text Box: toolbar visibility, persistence after refresh, selected-object priority, and application to the next new object
 - Pen stroke width, smoothing, Ink Density, and Pen/Ink/Highlighter/Laser controls for the active Pen tool, plus selected pen/highlighter stroke controls where applicable
 - Laser Pointer mode drawing, glow, color picker persistence, fade duration persistence, tail fade, pan/zoom behavior, non-persistence after refresh, and no undo/redo history impact
 - Eraser shortcut, cursor feedback, object deletion, hover preview, and undo/redo

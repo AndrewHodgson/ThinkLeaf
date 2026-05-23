@@ -108,6 +108,31 @@ export type CanvasObject = {
   // For now, line and arrow objects remain independent and do not stick to moved objects.
 };
 
+export type CanvasCreationDefaultStyle = Partial<
+  Pick<
+    CanvasObject,
+    | "fillColor"
+    | "fontSize"
+    | "strokeColor"
+    | "strokeStyle"
+    | "strokeWidth"
+    | "textAlign"
+    | "textBold"
+    | "textColor"
+    | "textHighlightColor"
+    | "textItalic"
+    | "textVerticalAlign"
+  >
+>;
+
+export type CanvasCreationToolDefaults = {
+  arrow: CanvasCreationDefaultStyle;
+  circle: CanvasCreationDefaultStyle;
+  line: CanvasCreationDefaultStyle;
+  rectangle: CanvasCreationDefaultStyle;
+  textBox: CanvasCreationDefaultStyle;
+};
+
 export type CanvasViewState = {
   panX: number;
   panY: number;

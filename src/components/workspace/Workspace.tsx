@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   CanvasHistoryOptions,
+  CanvasCreationToolDefaults,
+  CanvasCreationDefaultStyle,
   CanvasObject,
   CanvasPenSettings,
   CanvasTool,
@@ -30,7 +32,11 @@ import { RichTextEditor, type FormattingTarget } from "@/components/workspace/Ri
 import { Calendar, Clock3, Star, Trash2 } from "lucide-react";
 import { CanvasLayer } from "@/components/workspace/CanvasLayer";
 import { CanvasCreationToolbar } from "@/components/workspace/CanvasCreationToolbar";
-import { CanvasObjectToolbar, PenToolToolbar } from "@/components/workspace/CanvasObjectToolbar";
+import {
+  CanvasObjectToolbar,
+  CanvasToolDefaultsToolbar,
+  PenToolToolbar,
+} from "@/components/workspace/CanvasObjectToolbar";
 import { getImageFilesFromClipboard, type ProcessedImage, processImageFile } from "@/lib/imageUtils";
 
 type BoardPanInteraction = {
@@ -45,11 +51,13 @@ type WorkspaceProps = {
   activePage?: Page;
   canRedoCanvas: boolean;
   canUndoCanvas: boolean;
+  creationToolDefaults: CanvasCreationToolDefaults;
   data: WorkspaceData;
   imageImportRequestId: number;
   isGridVisible: boolean;
   isSnapToGridEnabled: boolean;
   selectedObjectId: string | null;
+  onCreationToolDefaultsChange: (defaults: CanvasCreationToolDefaults) => void;
   onDeletePage: (pageId: string) => void;
   onPenSettingsChange: (settings: CanvasPenSettings) => void;
   onRedoCanvas: () => void;
@@ -79,11 +87,13 @@ export function Workspace({
   activePage,
   canRedoCanvas,
   canUndoCanvas,
+  creationToolDefaults,
   data,
   imageImportRequestId,
   isGridVisible,
   isSnapToGridEnabled,
   selectedObjectId,
+  onCreationToolDefaultsChange,
   onDeletePage,
   onPenSettingsChange,
   onRedoCanvas,
@@ -159,14 +169,21 @@ export function Workspace({
     : "document";
   const canvasViewState = page.canvasViewState ?? defaultCanvasViewState;
   const isPanning = boardPanInteraction !== null;
-  const toolbarExtraContent = activeTool === "Pen" ? (
-    <PenToolToolbar penSettings={penSettings} onChange={onPenSettingsChange} />
-  ) : selectedObject ? (
+  const activeCreationDefaultType = getCreationDefaultType(activeTool);
+  const toolbarExtraContent = selectedObject ? (
     <CanvasObjectToolbar
       object={selectedObject}
       onDelete={deleteSelectedObject}
       onDuplicate={duplicateSelectedObject}
       onUpdate={updateSelectedObject}
+    />
+  ) : activeTool === "Pen" ? (
+    <PenToolToolbar penSettings={penSettings} onChange={onPenSettingsChange} />
+  ) : activeCreationDefaultType ? (
+    <CanvasToolDefaultsToolbar
+      defaults={creationToolDefaults[activeCreationDefaultType]}
+      tool={activeTool}
+      onUpdate={(updates) => updateCreationToolDefaults(activeCreationDefaultType, updates)}
     />
   ) : null;
 
@@ -229,6 +246,19 @@ export function Workspace({
       page.canvasObjects.filter((object) => object.id !== selectedObject.id),
     );
     onSelectionChange(null);
+  }
+
+  function updateCreationToolDefaults(
+    type: keyof CanvasCreationToolDefaults,
+    updates: CanvasCreationDefaultStyle,
+  ) {
+    onCreationToolDefaultsChange({
+      ...creationToolDefaults,
+      [type]: {
+        ...creationToolDefaults[type],
+        ...updates,
+      },
+    });
   }
 
   function alignCanvasValue(value: number) {
@@ -472,6 +502,7 @@ export function Workspace({
         <CanvasLayer
           key={page.id}
           activeTool={activeTool}
+          creationToolDefaults={creationToolDefaults}
           isSnapToGridEnabled={isSnapToGridEnabled}
           objects={page.canvasObjects}
           penSettings={penSettings}
@@ -623,4 +654,16 @@ export function Workspace({
 
 function isCanvasTextObject(object: CanvasObject) {
   return object.type === "textBox" || object.text !== undefined;
+}
+
+function getCreationDefaultType(tool: CanvasTool): keyof CanvasCreationToolDefaults | null {
+  const creationDefaultTypeByTool: Partial<Record<CanvasTool, keyof CanvasCreationToolDefaults>> = {
+    Arrow: "arrow",
+    Circle: "circle",
+    Line: "line",
+    Rectangle: "rectangle",
+    "Text Box": "textBox",
+  };
+
+  return creationDefaultTypeByTool[tool] ?? null;
 }
