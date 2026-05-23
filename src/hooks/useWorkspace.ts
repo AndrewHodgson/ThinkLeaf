@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { sampleWorkspace } from "@/lib/sampleWorkspace";
-import { createDefaultCanvasViewState, defaultCanvasStyle } from "@/lib/canvasStyle";
+import { createDefaultCanvasViewState, defaultCanvasStyle, defaultPenSettings } from "@/lib/canvasStyle";
 import { createId, defaultProfileId, defaultProfileName, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
 import type { CanvasObject, Folder, Page, Profile, Project, WorkspaceData } from "@/types/workspace";
 
@@ -32,8 +32,35 @@ function normalizeCanvasObject(object: CanvasObject): CanvasObject {
     penPoints: Array.isArray(object.penPoints)
       ? object.penPoints.filter(
           (point) => Number.isFinite(point.x) && Number.isFinite(point.y),
-        )
+        ).map((point) => ({
+          x: point.x,
+          y: point.y,
+          ...(Number.isFinite(point.t) ? { t: point.t } : {}),
+        }))
       : undefined,
+    ...(object.type === "penStroke"
+      ? {
+          penMode:
+            object.penMode === "ink" || object.penMode === "uniform" || object.penMode === "highlighter"
+              ? object.penMode
+              : defaultPenSettings.mode,
+          penInkDensity:
+            object.penInkDensity === "low" ||
+            object.penInkDensity === "medium" ||
+            object.penInkDensity === "high" ||
+            object.penInkDensity === "veryHigh"
+              ? object.penInkDensity
+              : defaultPenSettings.inkDensity,
+          penSmoothing:
+            object.penSmoothing === "off" ||
+            object.penSmoothing === "light" ||
+            object.penSmoothing === "medium" ||
+            object.penSmoothing === "high" ||
+            object.penSmoothing === "veryHigh"
+              ? object.penSmoothing
+              : defaultPenSettings.smoothing,
+        }
+      : {}),
   };
 
   if ((object.type === "line" || object.type === "arrow") && object.x1 === undefined) {

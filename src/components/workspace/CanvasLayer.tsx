@@ -5,13 +5,17 @@ import type {
   CanvasHistoryOptions,
   CanvasObject,
   CanvasObjectType,
+  CanvasPenSettings,
   CanvasPoint,
   CanvasTool,
   CanvasViewState,
 } from "@/types/workspace";
 import {
   defaultCanvasStyle,
+  defaultLaserColor,
+  defaultLaserStrokeWidth,
   defaultObjectSizes,
+  defaultPenSettings,
   maxZoom,
   minObjectSize,
   minZoom,
@@ -28,6 +32,7 @@ type CanvasLayerProps = {
   activeTool: CanvasTool;
   isSnapToGridEnabled: boolean;
   objects: CanvasObject[];
+  penSettings: CanvasPenSettings;
   selectedObjectId: string | null;
   viewState: CanvasViewState;
   onChange: (objects: CanvasObject[], options?: CanvasHistoryOptions) => void;
@@ -101,6 +106,23 @@ type PenDrawInteraction = {
   moved: boolean;
 };
 
+type LaserDrawInteraction = {
+  id: string;
+  kind: "laserDraw";
+};
+
+type EraserInteraction = {
+  erasedIds: string[];
+  historyKey: string;
+  kind: "eraser";
+};
+
+type EraserCursorPoint = {
+  id: string;
+  x: number;
+  y: number;
+};
+
 type PanInteraction = {
   kind: "pan";
   pointerX: number;
@@ -117,8 +139,15 @@ type Interaction =
   | CreateInteraction
   | PendingLineInteraction
   | PenDrawInteraction
+  | LaserDrawInteraction
+  | EraserInteraction
   | PanInteraction;
 type ResizeHandle = "n" | "e" | "s" | "w" | "nw" | "ne" | "sw" | "se";
+type LaserStroke = {
+  color: string;
+  id: string;
+  points: CanvasPoint[];
+};
 
 const toolToObjectType: Partial<Record<CanvasTool, CanvasObjectType>> = {
   Rectangle: "rectangle",
@@ -128,11 +157,40 @@ const toolToObjectType: Partial<Record<CanvasTool, CanvasObjectType>> = {
   Arrow: "arrow",
   Pen: "penStroke",
 };
+const eraserCursorSize = 15;
+const laserGlowLayers = [
+  { name: "outer", opacity: 0.08, widthMultiplier: 5.2 },
+  { name: "middle", opacity: 0.14, widthMultiplier: 3.4 },
+  { name: "inner", opacity: 0.28, widthMultiplier: 1.8 },
+];
+const laserFadeDurations = {
+  long: {
+    intervalMs: 36,
+    startDelayMs: 450,
+    trimRatio: 0.085,
+  },
+  longer: {
+    intervalMs: 44,
+    startDelayMs: 650,
+    trimRatio: 0.06,
+  },
+  longest: {
+    intervalMs: 54,
+    startDelayMs: 900,
+    trimRatio: 0.04,
+  },
+  normal: {
+    intervalMs: 28,
+    startDelayMs: 280,
+    trimRatio: 0.12,
+  },
+};
 
 export function CanvasLayer({
   activeTool,
   isSnapToGridEnabled,
   objects,
+  penSettings,
   selectedObjectId,
   viewState,
   onChange,
@@ -143,8 +201,20 @@ export function CanvasLayer({
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [textEditHistoryKey, setTextEditHistoryKey] = useState<string | null>(null);
   const [interaction, setInteraction] = useState<Interaction | null>(null);
+  const [eraserCursorPoint, setEraserCursorPoint] = useState<EraserCursorPoint | null>(null);
+  const [eraserPreviewObjectIds, setEraserPreviewObjectIds] = useState<string[]>([]);
+  const [eraserTrailPoints, setEraserTrailPoints] = useState<EraserCursorPoint[]>([]);
+  const [laserStrokes, setLaserStrokes] = useState<LaserStroke[]>([]);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const eraserSessionRef = useRef<{ historyKey: string; pendingIds: Set<string> } | null>(null);
+  const laserFadeIntervalsRef = useRef<Map<string, number>>(new Map());
+  const laserFadeTimeoutsRef = useRef<number[]>([]);
+  const objectsRef = useRef(objects);
   const selectedObject = objects.find((object) => object.id === selectedObjectId) ?? null;
+
+  useEffect(() => {
+    objectsRef.current = objects;
+  }, [objects]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -174,6 +244,17 @@ export function CanvasLayer({
   }, []);
 
   useEffect(() => {
+    return () => {
+      for (const timeoutId of laserFadeTimeoutsRef.current) {
+        window.clearTimeout(timeoutId);
+      }
+      for (const intervalId of laserFadeIntervalsRef.current.values()) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (activeTool !== "Text Box" || !selectedObject) {
       return;
     }
@@ -194,11 +275,33 @@ export function CanvasLayer({
   }, [activeTool, selectedObject?.id, selectedObject?.type]);
 
   useEffect(() => {
+    function commitEraserSession() {
+      commitPendingErase();
+    }
+
+    function clearEraserSession() {
+      clearPendingErase();
+    }
+
+    window.addEventListener("pointerup", commitEraserSession);
+    window.addEventListener("pointercancel", clearEraserSession);
+
+    return () => {
+      window.removeEventListener("pointerup", commitEraserSession);
+      window.removeEventListener("pointercancel", clearEraserSession);
+    };
+  }, []);
+
+  useEffect(() => {
     clearTextEditing();
   }, [selectedObjectId]);
 
   useEffect(() => {
     setInteraction(null);
+    setEraserCursorPoint(null);
+    setEraserTrailPoints([]);
+    setEraserPreviewObjectIds([]);
+    eraserSessionRef.current = null;
     clearTextEditing();
   }, [activeTool]);
 
@@ -245,6 +348,96 @@ export function CanvasLayer({
     onSelectionChange(null);
     clearTextEditing();
     setInteraction(null);
+  }
+
+  function commitPendingErase() {
+    const eraserSession = eraserSessionRef.current;
+    if (!eraserSession) {
+      return;
+    }
+
+    const pendingIds = new Set(eraserSession.pendingIds);
+    eraserSessionRef.current = null;
+    setEraserPreviewObjectIds([]);
+    setInteraction((current) => (current?.kind === "eraser" ? null : current));
+
+    if (pendingIds.size === 0) {
+      return;
+    }
+
+    const currentObjects = objectsRef.current;
+    const nextObjects = currentObjects.filter((item) => !pendingIds.has(item.id));
+
+    if (nextObjects.length === currentObjects.length) {
+      return;
+    }
+
+    objectsRef.current = nextObjects;
+    onChange(nextObjects, { historyKey: eraserSession.historyKey });
+    onSelectionChange(null);
+    clearTextEditing();
+  }
+
+  function clearPendingErase() {
+    eraserSessionRef.current = null;
+    setEraserPreviewObjectIds([]);
+    setInteraction((current) => (current?.kind === "eraser" ? null : current));
+  }
+
+  function queueEraseObject(object: CanvasObject, historyKey: string) {
+    const eraserSession = eraserSessionRef.current;
+    if (!eraserSession || eraserSession.historyKey !== historyKey) {
+      return;
+    }
+
+    eraserSession.pendingIds.add(object.id);
+    setEraserPreviewObjectIds(Array.from(eraserSession.pendingIds));
+  }
+
+  function startObjectErase(event: React.PointerEvent<Element>, object: CanvasObject) {
+    event.stopPropagation();
+    canvasRef.current?.focus();
+
+    if (event.button !== 0) {
+      return;
+    }
+
+    startEraser(event.clientX, event.clientY, object);
+  }
+
+  function continueObjectErase(event: React.PointerEvent<Element>, object: CanvasObject) {
+    if (activeTool !== "Eraser") {
+      return;
+    }
+
+    const targetObject = updateEraserCursor(event.clientX, event.clientY) ?? object;
+
+    if (event.buttons !== 1 || !eraserSessionRef.current) {
+      return;
+    }
+
+    event.stopPropagation();
+    queueEraseObject(targetObject, eraserSessionRef.current.historyKey);
+  }
+
+  function startEraser(clientX: number, clientY: number, fallbackObject?: CanvasObject) {
+    const targetObject = updateEraserCursor(clientX, clientY) ?? fallbackObject ?? null;
+    const historyKey = createId("history");
+    eraserSessionRef.current = {
+      historyKey,
+      pendingIds: new Set(),
+    };
+    onSelectionChange(null);
+    clearTextEditing();
+    setInteraction({
+      erasedIds: [],
+      historyKey,
+      kind: "eraser",
+    });
+
+    if (targetObject) {
+      queueEraseObject(targetObject, historyKey);
+    }
   }
 
   function createObject(tool: CanvasTool, startX: number, startY: number): CanvasObject | null {
@@ -305,6 +498,32 @@ export function CanvasLayer({
     };
   }
 
+  function updateEraserCursor(clientX: number, clientY: number) {
+    if (activeTool !== "Eraser") {
+      return null;
+    }
+
+    const point = screenToWorld(clientX, clientY);
+    if (!point) {
+      return null;
+    }
+
+    const cursorPoint: EraserCursorPoint = {
+      id: createId("eraser"),
+      x: point.x,
+      y: point.y,
+    };
+    const targetObject = getEraserTargetObject(cursorPoint, objects, viewState.zoom);
+    const pendingIds = eraserSessionRef.current ? Array.from(eraserSessionRef.current.pendingIds) : [];
+    const previewIds = targetObject ? Array.from(new Set([...pendingIds, targetObject.id])) : pendingIds;
+
+    setEraserCursorPoint(cursorPoint);
+    setEraserPreviewObjectIds(previewIds);
+    setEraserTrailPoints((current) => [cursorPoint, ...current].slice(0, 4));
+
+    return targetObject;
+  }
+
   function startPan(clientX: number, clientY: number) {
     const point = screenToWorld(clientX, clientY);
     if (!point) {
@@ -350,6 +569,11 @@ export function CanvasLayer({
   }
 
   function startPenDrawing(event: React.PointerEvent<HTMLDivElement>) {
+    if (penSettings.mode === "laser") {
+      startLaserDrawing(event);
+      return;
+    }
+
     const point = screenToWorld(event.clientX, event.clientY);
     if (!point) {
       return;
@@ -363,10 +587,15 @@ export function CanvasLayer({
       y: point.y,
       width: 1,
       height: 1,
-      penPoints: [{ x: 0, y: 0 }],
+      penPoints: [{ t: event.timeStamp, x: 0, y: 0 }],
       ...defaultCanvasStyle,
       fillColor: "transparent",
       createdAt: now,
+      penInkDensity: penSettings.inkDensity,
+      penMode: penSettings.mode,
+      penSmoothing: penSettings.smoothing,
+      strokeColor: penSettings.strokeColor,
+      strokeWidth: penSettings.strokeWidth,
       updatedAt: now,
     };
     const historyKey = createId("history");
@@ -381,6 +610,75 @@ export function CanvasLayer({
       moved: false,
     });
     event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function startLaserDrawing(event: React.PointerEvent<HTMLDivElement>) {
+    const point = screenToWorld(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+
+    const laserStroke: LaserStroke = {
+      color: getLaserColor(penSettings.laserColor),
+      id: createId("laser"),
+      points: [{ t: event.timeStamp, x: point.x, y: point.y }],
+    };
+
+    setLaserStrokes((current) => [...current, laserStroke]);
+    onSelectionChange(null);
+    clearTextEditing();
+    setInteraction({
+      id: laserStroke.id,
+      kind: "laserDraw",
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function updateLaserStroke(strokeId: string, point: CanvasPoint) {
+    setLaserStrokes((current) =>
+      current.map((stroke) =>
+        stroke.id === strokeId
+          ? {
+              ...stroke,
+              points: [...stroke.points, point],
+            }
+          : stroke,
+      ),
+    );
+  }
+
+  function scheduleLaserFade(strokeId: string) {
+    const fadeDuration = laserFadeDurations[penSettings.laserFadeDuration ?? defaultPenSettings.laserFadeDuration];
+    const timeoutId = window.setTimeout(() => {
+      const intervalId = window.setInterval(() => {
+        let shouldClearInterval = false;
+
+        setLaserStrokes((current) =>
+          current.flatMap((stroke) => {
+            if (stroke.id !== strokeId) {
+              return [stroke];
+            }
+
+            if (stroke.points.length <= 2) {
+              shouldClearInterval = true;
+              return [];
+            }
+
+            const trimCount = Math.max(1, Math.ceil(stroke.points.length * fadeDuration.trimRatio));
+            return [{ ...stroke, points: stroke.points.slice(trimCount) }];
+          }),
+        );
+
+        if (shouldClearInterval) {
+          window.clearInterval(intervalId);
+          laserFadeIntervalsRef.current.delete(strokeId);
+        }
+      }, fadeDuration.intervalMs);
+
+      laserFadeIntervalsRef.current.set(strokeId, intervalId);
+    }, fadeDuration.startDelayMs);
+
+    laserFadeTimeoutsRef.current.push(timeoutId);
   }
 
   function finishPendingLine(clientX: number, clientY: number) {
@@ -441,6 +739,11 @@ export function CanvasLayer({
       return;
     }
 
+    if (activeTool === "Eraser") {
+      startEraser(event.clientX, event.clientY);
+      return;
+    }
+
     if (toolToObjectType[activeTool]) {
       startCreation(event);
       return;
@@ -453,6 +756,8 @@ export function CanvasLayer({
   }
 
   function handleCanvasPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const eraserTargetObject = updateEraserCursor(event.clientX, event.clientY);
+
     if (!interaction) {
       return;
     }
@@ -472,6 +777,22 @@ export function CanvasLayer({
       return;
     }
 
+    if (interaction.kind === "eraser") {
+      if (eraserTargetObject) {
+        queueEraseObject(eraserTargetObject, interaction.historyKey);
+      }
+      return;
+    }
+
+    if (interaction.kind === "laserDraw") {
+      if (!point) {
+        return;
+      }
+
+      updateLaserStroke(interaction.id, { t: event.timeStamp, x: point.x, y: point.y });
+      return;
+    }
+
     const object = objects.find((item) => item.id === interaction.id);
     if (!point || !object) {
       return;
@@ -481,7 +802,7 @@ export function CanvasLayer({
     const pointerY = alignToGrid(point.y);
 
     if (interaction.kind === "penDraw") {
-      const points = [...getPenAbsolutePoints(object), { x: point.x, y: point.y }];
+      const points = [...getPenAbsolutePoints(object), { t: event.timeStamp, x: point.x, y: point.y }];
       updateObject(object.id, normalizePenBounds(points), { historyKey: interaction.historyKey });
       setInteraction((current) => (current?.kind === "penDraw" ? { ...current, moved: true } : current));
       return;
@@ -620,6 +941,10 @@ export function CanvasLayer({
   }
 
   function handleCanvasPointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    if (interaction?.kind === "laserDraw") {
+      scheduleLaserFade(interaction.id);
+    }
+
     if (interaction?.kind === "penDraw") {
       const object = objects.find((item) => item.id === interaction.id);
       if (object && !interaction.moved) {
@@ -627,8 +952,8 @@ export function CanvasLayer({
         updateObject(
           object.id,
           normalizePenBounds([
-            { x: object.x, y: object.y },
-            { x: object.x + size, y: object.y + size },
+            { t: event.timeStamp, x: object.x, y: object.y },
+            { t: event.timeStamp + 16, x: object.x + size, y: object.y + size },
           ]),
           { historyKey: interaction.historyKey },
         );
@@ -663,7 +988,11 @@ export function CanvasLayer({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    setInteraction(null);
+    if (interaction?.kind === "eraser") {
+      commitPendingErase();
+    } else {
+      setInteraction(null);
+    }
   }
 
   function handleCanvasPointerCancel(event: React.PointerEvent<HTMLDivElement>) {
@@ -671,7 +1000,17 @@ export function CanvasLayer({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    setInteraction(null);
+    if (interaction?.kind === "laserDraw") {
+      scheduleLaserFade(interaction.id);
+      setInteraction(null);
+      return;
+    }
+
+    if (interaction?.kind === "eraser") {
+      clearPendingErase();
+    } else {
+      setInteraction(null);
+    }
   }
 
   function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
@@ -706,6 +1045,11 @@ export function CanvasLayer({
 
     if (activeTool === "Pan") {
       clearTextEditing();
+      return;
+    }
+
+    if (activeTool === "Eraser") {
+      startObjectErase(event, object);
       return;
     }
 
@@ -854,6 +1198,7 @@ export function CanvasLayer({
   const shouldUseCanvasHitLayer =
     activeTool !== "Pan" &&
     (activeTool === "Pen" ||
+      activeTool === "Eraser" ||
       Boolean(toolToObjectType[activeTool]) ||
       isSpacePressed ||
       interaction?.kind === "pendingLine");
@@ -866,10 +1211,21 @@ export function CanvasLayer({
         activeTool === "Pan" ? "cursor-grab" : "",
         interaction?.kind === "pan" ? "cursor-grabbing" : "",
       ].join(" ")}
-      style={{ height: virtualBoardHeight, width: virtualBoardWidth }}
+      style={{
+        cursor: activeTool === "Eraser" ? "none" : undefined,
+        height: virtualBoardHeight,
+        width: virtualBoardWidth,
+      }}
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onPointerMove={handleCanvasPointerMove}
+      onPointerLeave={() => {
+        if (!eraserSessionRef.current) {
+          setEraserCursorPoint(null);
+          setEraserTrailPoints([]);
+          setEraserPreviewObjectIds([]);
+        }
+      }}
       onPointerUp={handleCanvasPointerUp}
       onPointerCancel={handleCanvasPointerCancel}
       onWheel={handleWheel}
@@ -890,52 +1246,13 @@ export function CanvasLayer({
         }}
       >
         <svg className="absolute inset-0 h-full w-full overflow-visible">
-          {penObjects.map((object) => {
-            const isSelected = selectedObjectId === object.id;
-            const path = getPenPath(object);
-
-            return (
-              <g key={object.id}>
-                <path
-                  className="pointer-events-auto cursor-move"
-                  d={path}
-                  fill="none"
-                  opacity="0"
-                  stroke={object.strokeColor}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={Math.max(12, object.strokeWidth + 8)}
-                  onPointerDown={(event) => startPenMove(event, object)}
-                />
-                <path
-                  d={path}
-                  fill="none"
-                  stroke={object.strokeColor}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={object.strokeWidth}
-                />
-                {isSelected ? (
-                  <rect
-                    fill="none"
-                    height={Math.max(1, object.height)}
-                    pointerEvents="none"
-                    stroke="#238157"
-                    strokeDasharray="4 4"
-                    width={Math.max(1, object.width)}
-                    x={object.x}
-                    y={object.y}
-                  />
-                ) : null}
-              </g>
-            );
-          })}
           {lineObjects.map((object) => {
             const points = getLinePoints(object);
-            const isSelected = selectedObjectId === object.id;
+            const isSelected = selectedObjectId === object.id && activeTool !== "Eraser";
+            const isEraserPreviewed = activeTool === "Eraser" && eraserPreviewObjectIds.includes(object.id);
 
             return (
-              <g key={object.id}>
+              <g key={object.id} opacity={isEraserPreviewed ? 0.35 : 1}>
                 <defs>
                   {object.type === "arrow" ? (
                     <marker
@@ -951,17 +1268,26 @@ export function CanvasLayer({
                   ) : null}
                 </defs>
                 <line
-                  className="pointer-events-auto cursor-move"
+                  className="pointer-events-auto"
                   markerEnd={object.type === "arrow" ? `url(#arrow-${object.id})` : undefined}
                   stroke={isSelected ? "#238157" : object.strokeColor}
                   strokeLinecap="round"
                   strokeWidth={Math.max(8, object.strokeWidth + 6)}
+                  style={{ cursor: activeTool === "Eraser" ? "none" : "move" }}
                   x1={points.x1}
                   x2={points.x2}
                   y1={points.y1}
                   y2={points.y2}
                   opacity="0"
-                  onPointerDown={(event) => startLineMove(event, object)}
+                  onPointerDown={(event) => {
+                    if (activeTool === "Eraser") {
+                      startObjectErase(event, object);
+                      return;
+                    }
+
+                    startLineMove(event, object);
+                  }}
+                  onPointerEnter={(event) => continueObjectErase(event, object)}
                 />
                 <line
                   markerEnd={object.type === "arrow" ? `url(#arrow-${object.id})` : undefined}
@@ -980,7 +1306,7 @@ export function CanvasLayer({
         </svg>
 
         {lineObjects.map((object) => {
-          const isSelected = selectedObjectId === object.id;
+          const isSelected = selectedObjectId === object.id && activeTool !== "Eraser";
           const points = getLinePoints(object);
           const box = getLineSelectionBox(points);
 
@@ -1013,19 +1339,23 @@ export function CanvasLayer({
         {boxObjects.map((object) => {
           const isSelected = selectedObjectId === object.id;
           const isEditing = editingTextId === object.id;
+          const isEraserPreviewed = activeTool === "Eraser" && eraserPreviewObjectIds.includes(object.id);
 
           return (
             <div
               key={object.id}
               className={[
                 "pointer-events-auto absolute touch-none",
-                isEditing ? "cursor-text" : "cursor-move",
-                isSelected ? "outline outline-2 outline-leaf-500 outline-offset-2" : "",
+                activeTool === "Eraser" ? "" : isEditing ? "cursor-text" : "cursor-move",
+                isSelected && activeTool !== "Eraser" ? "outline outline-2 outline-leaf-500 outline-offset-2" : "",
               ].join(" ")}
               style={{
+                cursor: activeTool === "Eraser" ? "none" : undefined,
                 height: object.height,
                 left: object.x,
+                opacity: isEraserPreviewed ? 0.35 : 1,
                 top: object.y,
+                transition: activeTool === "Eraser" ? "opacity 120ms ease" : undefined,
                 width: object.width,
               }}
               onDoubleClick={() => {
@@ -1034,6 +1364,7 @@ export function CanvasLayer({
                   startTextEditing(object.id);
                 }
               }}
+              onPointerEnter={(event) => continueObjectErase(event, object)}
               onPointerDown={(event) => handleObjectPointerDown(event, object)}
             >
               <CanvasObjectView
@@ -1048,7 +1379,7 @@ export function CanvasLayer({
                   )
                 }
               />
-              {isSelected ? (
+              {isSelected && activeTool !== "Eraser" ? (
                 <>
                   {object.type === "rectangle" ||
                   object.type === "circle" ||
@@ -1070,7 +1401,124 @@ export function CanvasLayer({
             </div>
           );
         })}
+        <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
+          {penObjects.map((object) => {
+            const isSelected = selectedObjectId === object.id;
+            const isActivelyDrawing = interaction?.kind === "penDraw" && interaction.id === object.id;
+            const isEraserPreviewed = activeTool === "Eraser" && eraserPreviewObjectIds.includes(object.id);
+            const path = getPenPath(object);
+            const penMode = object.penMode ?? defaultPenSettings.mode;
+            const shouldRenderInk = penMode === "ink";
+            const shouldRenderHighlighter = penMode === "highlighter";
+
+            return (
+              <g key={object.id} opacity={isEraserPreviewed ? 0.35 : 1}>
+                <path
+                  className="pointer-events-auto"
+                  d={path}
+                  fill="none"
+                  opacity="0"
+                  stroke={object.strokeColor}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={Math.max(16, object.strokeWidth + 10)}
+                  style={{ cursor: activeTool === "Eraser" ? "none" : "move" }}
+                  onPointerDown={(event) => {
+                    if (activeTool === "Eraser") {
+                      startObjectErase(event, object);
+                      return;
+                    }
+
+                    startPenMove(event, object);
+                  }}
+                  onPointerEnter={(event) => continueObjectErase(event, object)}
+                />
+                {shouldRenderInk ? (
+                  getPenInkSegments(object).map((segment, index) => (
+                    <path
+                      key={`${object.id}-ink-${index}`}
+                      d={segment.path}
+                      fill="none"
+                      stroke={object.strokeColor}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={segment.width}
+                    />
+                  ))
+                ) : (
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke={object.strokeColor}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeOpacity={shouldRenderHighlighter ? 0.38 : 1}
+                    strokeWidth={object.strokeWidth}
+                    style={shouldRenderHighlighter ? { mixBlendMode: "multiply" } : undefined}
+                  />
+                )}
+                {isSelected && activeTool !== "Eraser" && !isActivelyDrawing ? (
+                  <rect
+                    fill="none"
+                    height={Math.max(1, object.height)}
+                    pointerEvents="none"
+                    stroke="#238157"
+                    strokeDasharray="4 4"
+                    width={Math.max(1, object.width)}
+                    x={object.x}
+                    y={object.y}
+                  />
+                ) : null}
+              </g>
+            );
+          })}
+        </svg>
+        {laserStrokes.length ? (
+          <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
+            {laserStrokes.map((stroke) => {
+              const path = getLaserPath(stroke.points);
+
+              if (!path) {
+                return null;
+              }
+
+              return (
+                <g key={stroke.id}>
+                  {laserGlowLayers.map((layer) => (
+                    <path
+                      key={`${stroke.id}-${layer.name}`}
+                      d={path}
+                      fill="none"
+                      opacity={layer.opacity}
+                      stroke={stroke.color}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={defaultLaserStrokeWidth * layer.widthMultiplier}
+                    />
+                  ))}
+                  <path
+                    d={path}
+                    fill="none"
+                    opacity="0.95"
+                    stroke={stroke.color}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={defaultLaserStrokeWidth}
+                  />
+                </g>
+              );
+            })}
+          </svg>
+        ) : null}
       </div>
+      {activeTool === "Eraser" && eraserCursorPoint ? (
+        <div className="pointer-events-none absolute inset-0 z-30 overflow-visible">
+          {eraserTrailPoints.slice(1).map((point, index) => (
+            <EraserCursorRing key={point.id} point={point} size={eraserCursorSize - index * 3} opacity={0.16 - index * 0.035} zoom={viewState.zoom} />
+          ))}
+          <EraserCursorRing point={eraserCursorPoint} size={eraserCursorSize} opacity={0.92} zoom={viewState.zoom} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1179,6 +1627,141 @@ function CanvasObjectView({
   );
 }
 
+function getLaserPath(points: CanvasPoint[]) {
+  if (points.length === 0) {
+    return null;
+  }
+
+  if (points.length === 1) {
+    const point = points[0];
+    return `M ${point.x} ${point.y} L ${point.x + 0.1} ${point.y + 0.1}`;
+  }
+
+  const [firstPoint, ...restPoints] = points;
+  return [`M ${firstPoint.x} ${firstPoint.y}`, ...restPoints.map((point) => `L ${point.x} ${point.y}`)].join(" ");
+}
+
+function getLaserColor(value: string | undefined) {
+  return typeof value === "string" && value.trim() ? value : defaultLaserColor;
+}
+
+function EraserCursorRing({
+  opacity,
+  point,
+  size,
+  zoom,
+}: {
+  opacity: number;
+  point: EraserCursorPoint;
+  size: number;
+  zoom: number;
+}) {
+  const scaledSize = size / zoom;
+  const borderWidth = Math.max(1.5 / zoom, 1);
+
+  return (
+    <div
+      className="absolute rounded-full bg-white/20"
+      style={{
+        border: `${borderWidth}px solid rgba(15, 23, 42, 0.88)`,
+        boxShadow: `0 0 0 ${Math.max(2 / zoom, 1)}px rgba(255, 255, 255, 0.86), 0 4px ${Math.max(
+          12 / zoom,
+          4,
+        )}px rgba(15, 23, 42, 0.18)`,
+        height: scaledSize,
+        left: objectCanvasOriginX + point.x,
+        opacity,
+        top: objectCanvasOriginY + point.y,
+        transform: "translate(-50%, -50%)",
+        width: scaledSize,
+      }}
+    />
+  );
+}
+
+function getEraserTargetObject(point: Pick<EraserCursorPoint, "x" | "y">, objects: CanvasObject[], zoom: number) {
+  const radius = eraserCursorSize / (2 * zoom);
+
+  return [...objects]
+    .reverse()
+    .find((object) => doesEraserOverlapObject(point, radius, object, zoom));
+}
+
+function doesEraserOverlapObject(
+  point: Pick<EraserCursorPoint, "x" | "y">,
+  radius: number,
+  object: CanvasObject,
+  zoom: number,
+) {
+  if (object.type === "line" || object.type === "arrow") {
+    const points = getLinePoints(object);
+    const hitPadding = Math.max(5 / zoom, object.strokeWidth / 2);
+
+    return getPointToSegmentDistance(point, { x: points.x1, y: points.y1 }, { x: points.x2, y: points.y2 }) <= radius + hitPadding;
+  }
+
+  if (object.type === "penStroke") {
+    const points = (object.penMode ?? defaultPenSettings.mode) === "ink" ? getPenInkRenderPoints(object) : getPenRenderPoints(object);
+    const hitPadding = Math.max(4 / zoom, object.strokeWidth / 2);
+
+    if (points.length < 2) {
+      const firstPoint = points[0] ?? { x: object.x, y: object.y };
+      return Math.hypot(point.x - firstPoint.x, point.y - firstPoint.y) <= radius + hitPadding;
+    }
+
+    return points.some((currentPoint, index) => {
+      const nextPoint = points[index + 1];
+      if (!nextPoint) {
+        return false;
+      }
+
+      return getPointToSegmentDistance(point, currentPoint, nextPoint) <= radius + hitPadding;
+    });
+  }
+
+  return doesCircleIntersectRect(point, radius, {
+    height: object.height,
+    width: object.width,
+    x: object.x,
+    y: object.y,
+  });
+}
+
+function doesCircleIntersectRect(
+  point: Pick<EraserCursorPoint, "x" | "y">,
+  radius: number,
+  rect: { height: number; width: number; x: number; y: number },
+) {
+  const closestX = clamp(point.x, rect.x, rect.x + rect.width);
+  const closestY = clamp(point.y, rect.y, rect.y + rect.height);
+
+  return Math.hypot(point.x - closestX, point.y - closestY) <= radius;
+}
+
+function getPointToSegmentDistance(
+  point: Pick<EraserCursorPoint, "x" | "y">,
+  startPoint: Pick<EraserCursorPoint, "x" | "y">,
+  endPoint: Pick<EraserCursorPoint, "x" | "y">,
+) {
+  const segmentX = endPoint.x - startPoint.x;
+  const segmentY = endPoint.y - startPoint.y;
+
+  if (segmentX === 0 && segmentY === 0) {
+    return Math.hypot(point.x - startPoint.x, point.y - startPoint.y);
+  }
+
+  const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY;
+  const projection = clamp(
+    ((point.x - startPoint.x) * segmentX + (point.y - startPoint.y) * segmentY) / segmentLengthSquared,
+    0,
+    1,
+  );
+  const projectedX = startPoint.x + segmentX * projection;
+  const projectedY = startPoint.y + segmentY * projection;
+
+  return Math.hypot(point.x - projectedX, point.y - projectedY);
+}
+
 function ResizeHandleButton({
   handle,
   onPointerDown,
@@ -1235,6 +1818,7 @@ function getPenAbsolutePoints(object: CanvasObject): CanvasPoint[] {
   const points = object.penPoints?.length ? object.penPoints : [{ x: 0, y: 0 }];
 
   return points.map((point) => ({
+    ...(Number.isFinite(point.t) ? { t: point.t } : {}),
     x: object.x + point.x,
     y: object.y + point.y,
   }));
@@ -1253,6 +1837,7 @@ function normalizePenBounds(points: CanvasPoint[]): Partial<CanvasObject> {
     width: Math.max(1, maxX - minX),
     height: Math.max(1, maxY - minY),
     penPoints: nextPoints.map((point) => ({
+      ...(Number.isFinite(point.t) ? { t: point.t } : {}),
       x: point.x - minX,
       y: point.y - minY,
     })),
@@ -1260,14 +1845,293 @@ function normalizePenBounds(points: CanvasPoint[]): Partial<CanvasObject> {
 }
 
 function getPenPath(object: CanvasObject) {
-  const points = getPenAbsolutePoints(object);
+  const smoothing = object.penSmoothing ?? defaultPenSettings.smoothing;
+  const points = getPenRenderPoints(object);
 
   if (points.length === 1) {
     const point = points[0];
     return `M ${point.x} ${point.y} L ${point.x + 0.1} ${point.y + 0.1}`;
   }
 
-  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  if (smoothing === "off" || points.length < 3) {
+    return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  }
+
+  const [firstPoint, ...remainingPoints] = points;
+  const lastPoint = points[points.length - 1];
+  let path = `M ${firstPoint.x} ${firstPoint.y}`;
+
+  for (let index = 0; index < remainingPoints.length - 1; index += 1) {
+    const currentPoint = remainingPoints[index];
+    const nextPoint = remainingPoints[index + 1];
+    const midPoint = {
+      x: (currentPoint.x + nextPoint.x) / 2,
+      y: (currentPoint.y + nextPoint.y) / 2,
+    };
+
+    path += ` Q ${currentPoint.x} ${currentPoint.y} ${midPoint.x} ${midPoint.y}`;
+  }
+
+  return `${path} L ${lastPoint.x} ${lastPoint.y}`;
+}
+
+function getPenInkSegments(object: CanvasObject) {
+  const points = getPenInkRenderPoints(object);
+
+  if (points.length < 2) {
+    return [{ path: getPenPath(object), width: Math.max(1, object.strokeWidth) }];
+  }
+
+  const segmentMetrics = points.slice(0, -1).map((point, index) => {
+    const nextPoint = points[index + 1];
+    const distance = Math.max(0.1, Math.hypot(nextPoint.x - point.x, nextPoint.y - point.y));
+    const deltaTime = Number.isFinite(point.t) && Number.isFinite(nextPoint.t) ? Math.max(1, nextPoint.t! - point.t!) : null;
+
+    return deltaTime ? distance / deltaTime : distance;
+  });
+  const averageMetric =
+    segmentMetrics.reduce((metricTotal, metric) => metricTotal + metric, 0) / Math.max(1, segmentMetrics.length);
+  let previousWidthFactor = 1;
+
+  return points.slice(0, -1).map((point, index) => {
+    const nextPoint = points[index + 1];
+    const previousPoint = points[index - 1];
+    const afterNextPoint = points[index + 2];
+    const startPoint = previousPoint ? getMidpoint(previousPoint, point) : point;
+    const endPoint = afterNextPoint ? getMidpoint(point, nextPoint) : nextPoint;
+    const normalizedSpeed = segmentMetrics[index] / Math.max(0.01, averageMetric);
+    const densityFactor = getInkDensityFactor(object.penInkDensity ?? defaultPenSettings.inkDensity);
+    const baseWidthFactor = clamp(1.34 - normalizedSpeed * 0.34, 0.72, 1.3);
+    const targetWidthFactor = clamp(
+      1 + (baseWidthFactor - 1) * densityFactor,
+      1 - 0.3 * densityFactor,
+      1 + 0.32 * densityFactor,
+    );
+    const smoothedWidthFactor =
+      index === 0 ? targetWidthFactor : previousWidthFactor * 0.72 + targetWidthFactor * 0.28;
+    const startTaper = clamp((index + 1) / 3, 0.82, 1);
+    const endTaper = clamp((segmentMetrics.length - index) / 3, 0.82, 1);
+
+    previousWidthFactor = smoothedWidthFactor;
+
+    return {
+      path: `M ${startPoint.x} ${startPoint.y} Q ${point.x} ${point.y} ${endPoint.x} ${endPoint.y}`,
+      width: Math.max(1, object.strokeWidth * smoothedWidthFactor * Math.min(startTaper, endTaper)),
+    };
+  });
+}
+
+function getMidpoint(point: CanvasPoint, otherPoint: CanvasPoint): CanvasPoint {
+  const midpoint: CanvasPoint = {
+    x: (point.x + otherPoint.x) / 2,
+    y: (point.y + otherPoint.y) / 2,
+  };
+
+  if (Number.isFinite(point.t) && Number.isFinite(otherPoint.t)) {
+    midpoint.t = (point.t! + otherPoint.t!) / 2;
+  }
+
+  return midpoint;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getInkDensityFactor(density: CanvasPenSettings["inkDensity"]) {
+  return {
+    high: 1.35,
+    low: 0.65,
+    medium: 1,
+    veryHigh: 1.7,
+  }[density];
+}
+
+function getPenRenderPoints(object: CanvasObject) {
+  const smoothing = object.penSmoothing ?? defaultPenSettings.smoothing;
+  const simplifiedPoints = getSimplifiedPenPoints(getPenAbsolutePoints(object), smoothing);
+
+  return getSmoothedPenPoints(simplifiedPoints, smoothing);
+}
+
+function getPenInkRenderPoints(object: CanvasObject) {
+  const smoothing = object.penSmoothing ?? defaultPenSettings.smoothing;
+  const simplifiedPoints = getSimplifiedPenPoints(getPenAbsolutePoints(object), smoothing, { preserveDetail: true });
+
+  return getSmoothedPenPoints(simplifiedPoints, smoothing, { preserveDetail: true });
+}
+
+function getSimplifiedPenPoints(
+  points: CanvasPoint[],
+  smoothing: CanvasObject["penSmoothing"],
+  options: { preserveDetail?: boolean } = {},
+) {
+  const config = getPenSmoothingConfig(smoothing);
+  const detailFactor = options.preserveDetail ? 0.45 : 1;
+  const minimumDistance = config.minimumDistance * detailFactor;
+  const pathTolerance = config.pathTolerance * detailFactor;
+
+  if ((minimumDistance <= 0 && pathTolerance <= 0) || points.length < 3) {
+    return points;
+  }
+
+  const distanceSimplifiedPoints = simplifyPenPointsByDistance(points, minimumDistance);
+
+  return simplifyPenPointsByPath(distanceSimplifiedPoints, pathTolerance);
+}
+
+function simplifyPenPointsByDistance(points: CanvasPoint[], minimumDistance: number) {
+  if (minimumDistance <= 0 || points.length < 3) {
+    return points;
+  }
+
+  const simplifiedPoints: CanvasPoint[] = [points[0]];
+
+  for (const point of points.slice(1, -1)) {
+    const previousPoint = simplifiedPoints[simplifiedPoints.length - 1];
+    const distance = Math.hypot(point.x - previousPoint.x, point.y - previousPoint.y);
+
+    if (distance >= minimumDistance) {
+      simplifiedPoints.push(point);
+    }
+  }
+
+  simplifiedPoints.push(points[points.length - 1]);
+  return simplifiedPoints;
+}
+
+function simplifyPenPointsByPath(points: CanvasPoint[], tolerance: number): CanvasPoint[] {
+  if (tolerance <= 0 || points.length < 3) {
+    return points;
+  }
+
+  const toleranceSquared = tolerance * tolerance;
+  let farthestPointIndex = 0;
+  let farthestDistanceSquared = 0;
+  const firstPoint = points[0];
+  const lastPoint = points[points.length - 1];
+
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const distanceSquared = getSquaredSegmentDistance(points[index], firstPoint, lastPoint);
+
+    if (distanceSquared > farthestDistanceSquared) {
+      farthestDistanceSquared = distanceSquared;
+      farthestPointIndex = index;
+    }
+  }
+
+  if (farthestDistanceSquared <= toleranceSquared) {
+    return [firstPoint, lastPoint];
+  }
+
+  const firstSegment = simplifyPenPointsByPath(points.slice(0, farthestPointIndex + 1), tolerance);
+  const secondSegment = simplifyPenPointsByPath(points.slice(farthestPointIndex), tolerance);
+
+  return [...firstSegment.slice(0, -1), ...secondSegment];
+}
+
+function getSquaredSegmentDistance(point: CanvasPoint, startPoint: CanvasPoint, endPoint: CanvasPoint) {
+  const segmentX = endPoint.x - startPoint.x;
+  const segmentY = endPoint.y - startPoint.y;
+
+  if (segmentX === 0 && segmentY === 0) {
+    return getSquaredDistance(point, startPoint);
+  }
+
+  const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY;
+  const projection = clamp(
+    ((point.x - startPoint.x) * segmentX + (point.y - startPoint.y) * segmentY) / segmentLengthSquared,
+    0,
+    1,
+  );
+  const projectedPoint = {
+    x: startPoint.x + segmentX * projection,
+    y: startPoint.y + segmentY * projection,
+  };
+
+  return getSquaredDistance(point, projectedPoint);
+}
+
+function getSquaredDistance(point: CanvasPoint, otherPoint: Pick<CanvasPoint, "x" | "y">) {
+  const dx = point.x - otherPoint.x;
+  const dy = point.y - otherPoint.y;
+
+  return dx * dx + dy * dy;
+}
+
+function getSmoothedPenPoints(
+  points: CanvasPoint[],
+  smoothing: CanvasObject["penSmoothing"],
+  options: { preserveDetail?: boolean } = {},
+) {
+  const baseIterations = getPenSmoothingConfig(smoothing).curveIterations;
+  const iterations = options.preserveDetail ? Math.min(2, baseIterations) : baseIterations;
+
+  if (iterations <= 0 || points.length < 3) {
+    return points;
+  }
+
+  let smoothedPoints = points;
+
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
+    const nextPoints: CanvasPoint[] = [smoothedPoints[0]];
+
+    for (let index = 0; index < smoothedPoints.length - 1; index += 1) {
+      const currentPoint = smoothedPoints[index];
+      const nextPoint = smoothedPoints[index + 1];
+
+      nextPoints.push(interpolatePenPoint(currentPoint, nextPoint, 0.25));
+      nextPoints.push(interpolatePenPoint(currentPoint, nextPoint, 0.75));
+    }
+
+    nextPoints.push(smoothedPoints[smoothedPoints.length - 1]);
+    smoothedPoints = nextPoints;
+  }
+
+  return smoothedPoints;
+}
+
+function getPenSmoothingConfig(smoothing: CanvasObject["penSmoothing"]) {
+  return {
+    high: {
+      curveIterations: 3,
+      minimumDistance: 8,
+      pathTolerance: 18,
+    },
+    light: {
+      curveIterations: 0,
+      minimumDistance: 2,
+      pathTolerance: 2.5,
+    },
+    medium: {
+      curveIterations: 1,
+      minimumDistance: 4,
+      pathTolerance: 8,
+    },
+    off: {
+      curveIterations: 0,
+      minimumDistance: 0,
+      pathTolerance: 0,
+    },
+    veryHigh: {
+      curveIterations: 4,
+      minimumDistance: 10,
+      pathTolerance: 32,
+    },
+  }[smoothing ?? defaultPenSettings.smoothing];
+}
+
+function interpolatePenPoint(startPoint: CanvasPoint, endPoint: CanvasPoint, amount: number): CanvasPoint {
+  const interpolatedPoint: CanvasPoint = {
+    x: startPoint.x + (endPoint.x - startPoint.x) * amount,
+    y: startPoint.y + (endPoint.y - startPoint.y) * amount,
+  };
+
+  if (Number.isFinite(startPoint.t) && Number.isFinite(endPoint.t)) {
+    interpolatedPoint.t = startPoint.t! + (endPoint.t! - startPoint.t!) * amount;
+  }
+
+  return interpolatedPoint;
 }
 
 function getResizeUpdates(

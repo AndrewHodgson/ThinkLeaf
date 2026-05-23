@@ -2,6 +2,7 @@
 
 import {
   Circle,
+  Eraser,
   Grid3X3,
   Hand,
   Image as ImageIcon,
@@ -118,6 +119,21 @@ export function CanvasCreationToolbar({
         >
           <Pencil aria-hidden="true" className="h-4 w-4" />
           <ShortcutBadge isActive={activeTool === "Pen"}>9</ShortcutBadge>
+        </button>
+        <button
+          aria-label="Eraser tool, shortcut 0"
+          className={[
+            "relative inline-flex h-9 w-9 items-center justify-center rounded-full border transition",
+            activeTool === "Eraser"
+              ? "border-slate-900 bg-slate-900 text-white"
+              : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
+          ].join(" ")}
+          title="Eraser (0)"
+          type="button"
+          onClick={() => onToolChange("Eraser")}
+        >
+          <Eraser aria-hidden="true" className="h-4 w-4" />
+          <ShortcutBadge isActive={activeTool === "Eraser"}>0</ShortcutBadge>
         </button>
         <span className="mx-1 h-6 w-px bg-slate-200" />
         <button

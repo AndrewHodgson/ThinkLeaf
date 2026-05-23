@@ -19,6 +19,7 @@ type ColorPickerProps = {
 export function ColorPicker({ currentValue, disabled = false, icon, label, onSelect, presets }: ColorPickerProps) {
   const pickerId = useId();
   const pickerRef = useRef<HTMLDivElement>(null);
+  const safeCurrentValue = typeof currentValue === "string" && currentValue.trim() ? currentValue : "transparent";
   const [isOpen, setIsOpen] = useState(false);
   const [hexValue, setHexValue] = useState("");
   const [recentColors, setRecentColors] = useState<string[]>(() => loadRecentColors());
@@ -103,7 +104,7 @@ export function ColorPicker({ currentValue, disabled = false, icon, label, onSel
         {icon}
         <span
           className="h-4 w-4 rounded-sm border border-slate-300"
-          style={{ background: getSwatchBackground(currentValue) }}
+          style={{ background: getSwatchBackground(safeCurrentValue) }}
         />
         <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
       </button>
@@ -115,7 +116,7 @@ export function ColorPicker({ currentValue, disabled = false, icon, label, onSel
             {presets.map((preset) => (
               <ColorSwatch
                 key={`${label}-${preset.label}`}
-                isSelected={currentValue === preset.value}
+                isSelected={safeCurrentValue === preset.value}
                 label={`${label}: ${preset.label}`}
                 value={preset.value}
                 onSelect={selectColor}
@@ -130,7 +131,7 @@ export function ColorPicker({ currentValue, disabled = false, icon, label, onSel
                 {recentColors.map((color) => (
                   <ColorSwatch
                     key={`${label}-recent-${color}`}
-                    isSelected={currentValue.toLowerCase() === color.toLowerCase()}
+                    isSelected={safeCurrentValue.toLowerCase() === color.toLowerCase()}
                     label={`${label}: ${color}`}
                     value={color}
                     onSelect={selectColor}

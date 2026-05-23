@@ -42,9 +42,24 @@ export type CanvasObjectType = "rectangle" | "circle" | "textBox" | "line" | "ar
 export type CanvasTextAlign = "left" | "center" | "right";
 export type CanvasTextVerticalAlign = "top" | "middle" | "bottom";
 export type CanvasStrokeStyle = "solid" | "dashed" | "dotted";
+export type CanvasPenSmoothing = "off" | "light" | "medium" | "high" | "veryHigh";
+export type CanvasPenMode = "uniform" | "ink" | "highlighter" | "laser";
+export type CanvasPenInkDensity = "low" | "medium" | "high" | "veryHigh";
+export type CanvasLaserFadeDuration = "normal" | "long" | "longer" | "longest";
 export type CanvasPoint = {
+  t?: number;
   x: number;
   y: number;
+};
+
+export type CanvasPenSettings = {
+  inkDensity: CanvasPenInkDensity;
+  laserColor: string;
+  laserFadeDuration: CanvasLaserFadeDuration;
+  mode: CanvasPenMode;
+  smoothing: CanvasPenSmoothing;
+  strokeColor: string;
+  strokeWidth: number;
 };
 
 export type CanvasTool =
@@ -72,6 +87,9 @@ export type CanvasObject = {
   y2?: number;
   imageDataUrl?: string;
   penPoints?: CanvasPoint[];
+  penInkDensity?: CanvasPenInkDensity;
+  penMode?: CanvasPenMode;
+  penSmoothing?: CanvasPenSmoothing;
   text?: string;
   strokeColor: string;
   fillColor: string;

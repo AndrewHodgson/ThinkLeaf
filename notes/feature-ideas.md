@@ -57,40 +57,38 @@ Do not build until the current toolbar and canvas text formatting are stable.
 
 ## Advanced Pen Tool
 
-Expand the basic freehand pen tool.
+Expand the polished freehand pen tool.
 
 ### Expected Behavior
 
 The advanced pen tool could support:
 
-- Smoother stroke rendering
 - Pressure or velocity-aware strokes, if practical
-- Additional stroke width options
 - Better stroke simplification for lower localStorage usage
-- Eraser support
+- More brush presets beyond the current Pen, Ink, and Highlighter modes
+- Advanced or partial eraser behavior
 - More precise selection/editing affordances
 
 ### Build Later
 
-Do not expand until the basic pen stroke object behavior is manually QA'd.
+Do not expand until the current pen smoothing, mode, selection, and styling behavior is manually QA'd.
 
-## Eraser Tool for Whiteboard
+## Advanced Eraser Behavior for Whiteboard
 
-Add an eraser tool for removing whiteboard content directly from the canvas.
+Basic whole-object erasing now exists for Pen, Ink, Highlighter, shapes, text boxes, lines, arrows, and images. Future work can make erasing more precise.
 
 ### Expected Behavior
 
-The eraser tool should support:
+Advanced eraser behavior could support:
 
-- Erasing freehand pen strokes
-- Deleting or removing parts of drawn content, if practical
-- Removing selected canvas objects, if that interaction feels natural
-- Working correctly with pan/zoom
-- Clear cursor feedback when active
+- Partial stroke erasing
+- Splitting strokes where the eraser crosses them
+- Adjustable eraser size
+- Clearer preview of the erase radius
 
 ### Build Later
 
-Do not build until the pen tool and canvas object behavior are stable.
+Do not build until the basic whole-object eraser and pen/highlighter behavior are stable through manual QA.
 
 ## Layers for Whiteboard Objects
 
@@ -163,21 +161,18 @@ Connectors should eventually support:
 
 Do not build until object creation, movement, resizing, snapping, and line/arrow behavior are stable through manual QA.
 
-## Laser Pointer Tool
+## Laser Pointer Enhancements
 
-Add a temporary laser pointer tool for presenting or explaining ideas on the whiteboard.
+Basic Laser Pointer mode now exists inside the Pen tool. Future work can make it more configurable for presenting or explaining ideas on the whiteboard.
 
 ### Expected Behavior
 
-The laser pointer should behave like a temporary red pen:
+Future laser pointer enhancements could support:
 
-- Draws a red freehand line while dragging
-- The line fades away after a short time
-- The line should not permanently save to the page
-- Works with pan/zoom
-- Has clear cursor feedback when active
-- Useful for presenting, explaining, or pointing at areas without marking up the board permanently
+- Adjustable fade duration
+- Optional cursor/presentation affordances
+- Clearer presenter-mode controls if Thinkleaf grows a presentation workflow
 
 ### Build Later
 
-Build after the pen tool or alongside it, since both use similar pointer-drawing behavior.
+Do not expand beyond the current temporary Laser mode until the pen, highlighter, eraser, and canvas toolbar behavior are stable through manual QA.

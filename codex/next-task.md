@@ -1,12 +1,12 @@
-# Next Codex Task: Manual QA and Polish Pass
+# Next Codex Task: Manual QA, Polish, and Maintainability Triage
 
 ## Goal
 
-Run a short manual browser QA/polish pass before starting new feature work.
+Run a short manual browser QA/polish pass before starting new feature work, then identify any low-risk maintainability cleanup needed for large canvas/editor modules.
 
 Keep this pass focused on confirming current behavior, fixing small regressions, and tightening obvious rough edges. Do not add new major features.
 
-The latest code-path QA/build pass after the whiteboard text formatting fix passed. The remaining recommended work is hands-on browser verification with real clicks, typing, image import, trackpad gestures, refreshes, and profile/page switching.
+The latest project sanity check found the repository structure generally clean after removing tracked `.DS_Store` and expanding local/build ignores. The remaining recommended work is hands-on browser verification with real clicks, drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching.
 
 ## QA Focus
 
@@ -27,7 +27,7 @@ The latest code-path QA/build pass after the whiteboard text formatting fix pass
    - Confirm custom HEX colors apply and recent colors only contain custom colors.
 
 4. Toolbar Shortcuts
-   - Confirm 1-9 tool/image/pen shortcuts work outside editable fields.
+   - Confirm 1-9 tool/image/pen shortcuts and 0 Eraser shortcut work outside editable fields.
    - Confirm + and = zoom in, - zooms out, and shortcut badges remain accurate.
    - Confirm shortcuts do not trigger inside editors, inputs, textareas, selects, or contenteditable areas.
    - Confirm Cmd/Ctrl+Z undoes canvas actions outside the main document editor.
@@ -53,7 +53,33 @@ The latest code-path QA/build pass after the whiteboard text formatting fix pass
 7. Object Editing
    - Confirm rectangles, circles, text boxes, lines, arrows, images, and pen strokes can be created, selected, moved, styled, duplicated, and deleted.
    - Confirm pen drawing ignores Snap to Grid and feels natural while drawing.
-   - Confirm pen stroke color and width controls work from the top contextual toolbar.
+   - Confirm Pen, Ink, and Highlighter do not show a selection bounding box while actively drawing.
+   - Confirm Eraser shows a compact circular cursor with a subtle movement trail and a low-opacity circle-overlap preview.
+   - Confirm Eraser shows the same low-opacity preview while actively click-drag erasing before objects are removed.
+   - Confirm active Eraser drag keeps touched objects ghosted until pointer release, then removes them in one undoable action.
+   - Confirm hovering with Eraser does not delete objects.
+   - Confirm Eraser removes whole Pen, Ink, Highlighter, shape, text box, line, arrow, and image objects by click or drag.
+   - Confirm Eraser deletions support canvas undo/redo.
+   - Confirm pen stroke color and compact width dropdown work from the top contextual toolbar.
+   - Confirm active Pen tool settings show in the top toolbar and persist after refresh.
+   - Confirm changing Pen width/mode while the Pen tool is active affects the very next new stroke.
+   - Confirm selected pen strokes can change smoothing Off/Light/Medium/High/Very High and mode Pen/Ink/Highlighter.
+   - Confirm Smoothing and Ink Density use compact dropdowns.
+   - Confirm Ink Density appears only when Ink mode is active or selected.
+   - Confirm Low, Medium, High, and Very High Ink Density progressively increase visible width variation.
+   - Confirm Highlighter defaults to yellow, uses a wider semi-transparent rounded stroke, and works over document text, images, and whiteboard objects.
+   - Confirm highlighter strokes can be selected, moved, duplicated, deleted, undone/redone, and persist after refresh.
+   - Confirm Laser Pointer mode draws temporary fixed-width glowing strokes while dragging, with tightened layered outer/middle/inner glow strokes instead of point-like blobs.
+   - Confirm Laser Pointer color can be changed, defaults to red, persists after refresh, and safely falls back to red if saved color data is missing or invalid.
+   - Confirm Laser Pointer fade duration dropdown appears only in Laser mode, persists after refresh, and Normal/Long/Longer/Longest progressively slow the trail fade.
+   - Confirm Laser Pointer strokes pan/zoom with the canvas, fade from the tail after release, do not persist after refresh, and do not affect undo/redo history.
+   - Confirm Ink mode visibly differs from Pen mode with subtle speed-responsive variable-width strokes.
+   - Confirm Ink strokes use smooth curved edges without visibly jagged segment joins.
+   - Confirm slower Ink drawing feels thicker and faster Ink drawing feels thinner without looking messy.
+   - Confirm saved Ink strokes render the same after refresh using stored point timing.
+   - Confirm Medium, High, and Very High smoothing progressively reduce wobble using path simplification, while Light preserves most hand movement.
+   - Confirm Very High strongly straightens mostly vertical/horizontal shaky strokes and softens hard turns.
+   - Confirm existing pen strokes still load and render after the smoothing/mode update.
    - Confirm selected canvas object controls appear in the top contextual toolbar and the old right-side properties panel is gone.
    - Confirm duplicate and delete work from the top contextual toolbar.
    - Confirm line and arrow creation previews naturally and endpoint editing still works.
@@ -77,7 +103,13 @@ The latest code-path QA/build pass after the whiteboard text formatting fix pass
 
 ## Future Ideas
 
-Keep future feature ideas in `notes/feature-ideas.md`. Page Types, document block lock/unlock, connectors, advanced pen behavior, eraser, layers, expanded document/cross-page history, and laser pointer are not part of this QA pass.
+Keep future feature ideas in `notes/feature-ideas.md`. Page Types, document block lock/unlock, connectors, pressure-aware pen behavior, advanced/partial erasing, layers, expanded document/cross-page history, and expanded Laser Pointer controls are not part of this QA pass.
+
+## Maintainability Watchlist
+
+- `src/components/workspace/CanvasLayer.tsx` is the main growth hotspot and should be split after manual QA confirms behavior.
+- Good future extraction targets: pen rendering helpers, pointer interaction handlers, and canvas object rendering helpers.
+- Keep any refactor behavior-preserving and covered by `npm run build`; do not combine it with new feature work.
 
 ## Verification
 

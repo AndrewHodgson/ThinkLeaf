@@ -2,5 +2,12 @@ node_modules
 .next
 out
 dist
+.vercel
+coverage
+.turbo
+.DS_Store
 .env*.local
+.env
+.env.*
+!.env.example
 *.log

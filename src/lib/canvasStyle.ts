@@ -1,4 +1,4 @@
-import type { CanvasObjectType, CanvasViewState } from "@/types/workspace";
+import type { CanvasObjectType, CanvasPenSettings, CanvasViewState } from "@/types/workspace";
 
 export const gridSize = 8;
 export const minObjectSize = 48;
@@ -66,12 +66,52 @@ export const highlightPresets = [
 ];
 
 export const strokeWidthPresets = [1, 2, 4, 6];
+export const penStrokeWidthPresets = [1, 2, 4, 6, 10, 16, 24];
+export const defaultHighlighterColor = "#facc15";
+export const defaultHighlighterStrokeWidth = 16;
+export const defaultLaserColor = "#ef4444";
+export const defaultLaserStrokeWidth = 4;
 export const strokeStylePresets = [
   { label: "Solid", value: "solid" as const },
   { label: "Dashed", value: "dashed" as const },
   { label: "Dotted", value: "dotted" as const },
 ];
+export const penSmoothingPresets = [
+  { label: "Off", value: "off" as const },
+  { label: "Light", value: "light" as const },
+  { label: "Medium", value: "medium" as const },
+  { label: "High", value: "high" as const },
+  { label: "Very High", value: "veryHigh" as const },
+];
+export const penModePresets = [
+  { label: "Pen", value: "uniform" as const },
+  { label: "Ink", value: "ink" as const },
+  { label: "Highlighter", value: "highlighter" as const },
+  { label: "Laser", value: "laser" as const },
+];
+export const penInkDensityPresets = [
+  { label: "Low", value: "low" as const },
+  { label: "Medium", value: "medium" as const },
+  { label: "High", value: "high" as const },
+  { label: "Very High", value: "veryHigh" as const },
+];
+export const laserFadeDurationPresets = [
+  { label: "Normal", value: "normal" as const },
+  { label: "Long", value: "long" as const },
+  { label: "Longer", value: "longer" as const },
+  { label: "Longest", value: "longest" as const },
+];
 export const textSizePresets = [12, 14, 16, 20, 24, 32];
+
+export const defaultPenSettings: CanvasPenSettings = {
+  inkDensity: "medium",
+  laserColor: defaultLaserColor,
+  laserFadeDuration: "normal",
+  mode: "uniform",
+  smoothing: "medium",
+  strokeColor: defaultCanvasStyle.strokeColor,
+  strokeWidth: defaultCanvasStyle.strokeWidth,
+};
 
 export const defaultObjectSizes: Record<CanvasObjectType, { width: number; height: number; text?: string }> = {
   rectangle: { width: 168, height: 104 },

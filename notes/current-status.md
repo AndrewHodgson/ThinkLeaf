@@ -29,10 +29,10 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Top contextual toolbar applies row 1 text controls to the active target only: the Tiptap document when document editing is active, or the selected whiteboard text object when a text box/text-bearing shape is selected.
 - Whiteboard text toolbar controls preserve the selected canvas object while applying formatting.
 - Clicking into the page/editor clears canvas object selection so the document toolbar can take over cleanly.
-- Bottom floating canvas toolbar contains Select, Pan, Rectangle, Circle, Text, Line, Arrow, Image, Pen, Zoom In, Zoom Out, Reset View, and a Settings menu for Grid and Snap.
+- Bottom floating canvas toolbar contains Select, Pan, Rectangle, Circle, Text, Line, Arrow, Image, Pen, Eraser, Zoom In, Zoom Out, Reset View, and a Settings menu for Grid and Snap.
 - Bottom toolbar includes Undo and Redo for canvas/page actions, positioned between Reset View and Settings.
 - Undo and Redo toolbar polish pass verified icon-only buttons, disabled/muted unavailable states, and canvas-scoped shortcuts.
-- Toolbar shortcut badges show 1-9 for tools/image/pen, + for Zoom In, and - for Zoom Out.
+- Toolbar shortcut badges show 1-9 for tools/image/pen, 0 for Eraser, + for Zoom In, and - for Zoom Out.
 - Canvas Undo uses Cmd/Ctrl+Z; Canvas Redo uses Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y.
 - Zoom In works with + and = outside editable fields; Zoom Out works with -.
 - A transient zoom percentage indicator appears near the bottom toolbar after zoom changes and Reset View.
@@ -44,13 +44,22 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 
 - Canvas supports rectangle, circle, text box, line, arrow, image, and pen stroke objects.
 - Objects can be created, selected, moved, resized, styled, deleted, and persisted per page.
-- Pen strokes can be drawn freehand, selected, moved, duplicated, deleted, styled with stroke color/width, and persisted per page.
+- Pen strokes can be drawn freehand, selected, moved, duplicated, deleted, styled with stroke color/width, smoothing, Ink Density, and Pen/Ink/Highlighter mode, and persisted per page.
+- Laser Pointer is available as a Pen tool mode; it draws temporary fixed-width glowing strokes that pan/zoom with the canvas, fade from the tail after release, and do not persist or affect canvas undo/redo history. Missing or invalid saved Laser colors fall back to red, the glow renders as tightened layered continuous strokes under the crisp laser stroke, and a persisted Laser fade duration dropdown controls how slowly the trail disappears.
+- The Eraser tool uses a compact circular Excalidraw-style cursor with a subtle movement trail, previews circle-overlapped objects at low opacity during hover and active drag, and commits pending drag erases only on pointer release.
+- Eraser deletes Pen, Ink, Highlighter, shapes, text boxes, lines, arrows, and images; it works with pan/zoom and records deletions in canvas undo/redo.
+- In-progress Pen, Ink, and Highlighter strokes draw without showing a selection bounding box while the pointer is down.
+- Pen mode renders at constant width; Ink strokes store point timing and render with subtle speed-based width variation so slower movement feels thicker and faster movement thinner.
+- Ink rendering preserves more centerline detail than Pen smoothing and uses curved variable-width chunks to avoid jagged segment joins.
+- Highlighter mode renders wider semi-transparent rounded strokes over text, images, and whiteboard objects, with yellow as the default starting color.
+- Pen smoothing uses distance filtering, Ramer-Douglas-Peucker style path simplification, and curve smoothing so Medium, High, and Very High meaningfully reduce wobble; Very High aggressively straightens shaky mostly-straight strokes and softens hard turns.
+- Pen defaults include stroke color, compact stroke-width selection, smoothing, Ink Density, stroke mode, Laser color, and Laser fade duration; these settings persist in localStorage and apply immediately to newly drawn strokes while the Pen tool is active. Laser mode hides smoothing/width controls because it uses a temporary fixed-width stroke.
 - Selected canvas object controls now appear in the top contextual toolbar instead of a right-side properties panel.
 - Canvas object duplicate and delete actions are available from the top contextual toolbar.
 - Canvas undo/redo is tracked per page for create, delete, move, resize, style changes, whiteboard text edits, and inserted image objects.
 - Rectangles and circles can contain editable text.
 - Text-bearing canvas objects support practical formatting: bold, italic, alignment, vertical alignment, text color, highlight, and size, while preserving plain text storage.
-- Shape, line, and pen stroke styling includes stroke color and stroke width; shapes and lines also support solid/dashed/dotted stroke style where applicable.
+- Shape, line, and pen stroke styling includes stroke color and stroke width; pen strokes also support smoothing, Ink Density, and Pen/Ink/Highlighter modes, while shapes and lines support solid/dashed/dotted stroke style where applicable.
 - Image objects can be imported or pasted, resized/compressed, moved, resized, deleted, and stored per page.
 - Snap to Grid is separate from Show Grid, is on by default, and applies to creation, movement, resizing, and line/arrow endpoints when enabled.
 
@@ -58,7 +67,7 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 
 Do a short manual browser QA/polish pass before adding new features.
 
-Latest code-path QA/build verification after the whiteboard text formatting target fix passed. No new regressions were found in the reviewed document formatting, whiteboard text formatting, toolbar event containment, canvas history, image object, pan/zoom/reset, profile-scoped search/favorites, or localStorage persistence paths.
+Latest code-path/build verification after the Pen/Ink/Highlighter rendering polish and project sanity check passed. Remaining verification should be hands-on browser QA with real drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching.
 
 Focus the pass on:
 
@@ -71,6 +80,9 @@ Focus the pass on:
 - Trackpad two-finger pan over the board/document body and Ctrl/Cmd + wheel zoom
 - Snap to Grid and Show Grid
 - Object creation, movement, resizing, endpoint editing, styling, and deletion
+- Pen stroke width, smoothing, Ink Density, and Pen/Ink/Highlighter/Laser controls for the active Pen tool, plus selected pen/highlighter stroke controls where applicable
+- Laser Pointer mode drawing, glow, color picker persistence, fade duration persistence, tail fade, pan/zoom behavior, non-persistence after refresh, and no undo/redo history impact
+- Eraser shortcut, cursor feedback, object deletion, hover preview, and undo/redo
 - Main document formatting
 - Whiteboard text formatting
 - localStorage persistence after refresh and page/profile switching

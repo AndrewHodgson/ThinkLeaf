@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CanvasHistoryOptions, CanvasObject, CanvasTool, Page, WorkspaceData } from "@/types/workspace";
+import type {
+  CanvasHistoryOptions,
+  CanvasObject,
+  CanvasPenSettings,
+  CanvasTool,
+  Page,
+  WorkspaceData,
+} from "@/types/workspace";
 import { createId, findFolder, findProject, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
 import {
   defaultCanvasViewState,
@@ -23,7 +30,7 @@ import { RichTextEditor, type FormattingTarget } from "@/components/workspace/Ri
 import { Calendar, Clock3, Star, Trash2 } from "lucide-react";
 import { CanvasLayer } from "@/components/workspace/CanvasLayer";
 import { CanvasCreationToolbar } from "@/components/workspace/CanvasCreationToolbar";
-import { CanvasObjectToolbar } from "@/components/workspace/CanvasObjectToolbar";
+import { CanvasObjectToolbar, PenToolToolbar } from "@/components/workspace/CanvasObjectToolbar";
 import { getImageFilesFromClipboard, type ProcessedImage, processImageFile } from "@/lib/imageUtils";
 
 type BoardPanInteraction = {
@@ -44,6 +51,7 @@ type WorkspaceProps = {
   isSnapToGridEnabled: boolean;
   selectedObjectId: string | null;
   onDeletePage: (pageId: string) => void;
+  onPenSettingsChange: (settings: CanvasPenSettings) => void;
   onRedoCanvas: () => void;
   onResetView: () => void;
   onSearchByTag: (tag: string) => void;
@@ -61,6 +69,7 @@ type WorkspaceProps = {
   ) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
+  penSettings: CanvasPenSettings;
   zoomIndicatorTick: number;
   zoomPercent: number;
 };
@@ -76,6 +85,7 @@ export function Workspace({
   isSnapToGridEnabled,
   selectedObjectId,
   onDeletePage,
+  onPenSettingsChange,
   onRedoCanvas,
   onResetView,
   onSearchByTag,
@@ -88,6 +98,7 @@ export function Workspace({
   onUpdatePage,
   onZoomIn,
   onZoomOut,
+  penSettings,
   zoomIndicatorTick,
   zoomPercent,
 }: WorkspaceProps) {
@@ -148,6 +159,16 @@ export function Workspace({
     : "document";
   const canvasViewState = page.canvasViewState ?? defaultCanvasViewState;
   const isPanning = boardPanInteraction !== null;
+  const toolbarExtraContent = activeTool === "Pen" ? (
+    <PenToolToolbar penSettings={penSettings} onChange={onPenSettingsChange} />
+  ) : selectedObject ? (
+    <CanvasObjectToolbar
+      object={selectedObject}
+      onDelete={deleteSelectedObject}
+      onDuplicate={duplicateSelectedObject}
+      onUpdate={updateSelectedObject}
+    />
+  ) : null;
 
   function confirmDelete() {
     const shouldDelete = window.confirm(`Delete "${page.title || "Untitled"}"?`);
@@ -453,6 +474,7 @@ export function Workspace({
           activeTool={activeTool}
           isSnapToGridEnabled={isSnapToGridEnabled}
           objects={page.canvasObjects}
+          penSettings={penSettings}
           viewState={canvasViewState}
           selectedObjectId={selectedObjectId}
           onChange={(canvasObjects, options) => onUpdateCanvasObjects(page.id, canvasObjects, options)}
@@ -547,16 +569,7 @@ export function Workspace({
               content={page.body}
               formattingTarget={formattingTarget}
               pageId={page.id}
-              toolbarExtraContent={
-                selectedObject ? (
-                  <CanvasObjectToolbar
-                    object={selectedObject}
-                    onDelete={deleteSelectedObject}
-                    onDuplicate={duplicateSelectedObject}
-                    onUpdate={updateSelectedObject}
-                  />
-                ) : null
-              }
+              toolbarExtraContent={toolbarExtraContent}
               toolbarPortalElement={documentToolbarElement}
               whiteboardTextObject={selectedWhiteboardTextObject}
               onChange={(body) => onUpdatePage(page.id, { body })}

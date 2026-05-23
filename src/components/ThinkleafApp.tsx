@@ -3,10 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Workspace } from "@/components/workspace/Workspace";
-import { createDefaultCanvasViewState, defaultCanvasViewState, maxZoom, minZoom, zoomStep } from "@/lib/canvasStyle";
+import {
+  createDefaultCanvasViewState,
+  defaultCanvasViewState,
+  defaultPenSettings,
+  maxZoom,
+  minZoom,
+  zoomStep,
+} from "@/lib/canvasStyle";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { searchPages, sortPagesByUpdatedAt } from "@/lib/workspaceUtils";
-import type { CanvasHistoryOptions, CanvasObject, CanvasTool } from "@/types/workspace";
+import type { CanvasHistoryOptions, CanvasObject, CanvasPenSettings, CanvasTool } from "@/types/workspace";
 
 const toolShortcuts: Record<string, CanvasTool> = {
   "1": "Select",
@@ -17,9 +24,11 @@ const toolShortcuts: Record<string, CanvasTool> = {
   "6": "Line",
   "7": "Arrow",
   "9": "Pen",
+  "0": "Eraser",
 };
 
 const SNAP_TO_GRID_STORAGE_KEY = "thinkleaf.snapToGrid.v1";
+const PEN_SETTINGS_STORAGE_KEY = "thinkleaf.penSettings.v1";
 const CANVAS_HISTORY_LIMIT = 25;
 
 type CanvasPageHistory = {
@@ -33,6 +42,7 @@ export function ThinkleafApp() {
   const [isGridVisible, setIsGridVisible] = useState(true);
   const [isSnapToGridEnabled, setIsSnapToGridEnabled] = useState(true);
   const [activeTool, setActiveTool] = useState<CanvasTool>("Select");
+  const [penSettings, setPenSettings] = useState<CanvasPenSettings>(defaultPenSettings);
   const [imageImportRequestId, setImageImportRequestId] = useState(0);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [hasLoadedUiPreferences, setHasLoadedUiPreferences] = useState(false);
@@ -45,6 +55,7 @@ export function ThinkleafApp() {
     try {
       setIsSidebarCollapsed(window.localStorage.getItem("thinkleaf.ui.v1") === "sidebar-collapsed");
       setIsSnapToGridEnabled(window.localStorage.getItem(SNAP_TO_GRID_STORAGE_KEY) !== "off");
+      setPenSettings(normalizeStoredPenSettings(window.localStorage.getItem(PEN_SETTINGS_STORAGE_KEY)));
     } catch {
       // Ignore storage errors in private/incognito modes.
     } finally {
@@ -78,6 +89,18 @@ export function ThinkleafApp() {
       // Ignore storage errors in private/incognito modes.
     }
   }, [hasLoadedUiPreferences, isSnapToGridEnabled]);
+
+  useEffect(() => {
+    if (!hasLoadedUiPreferences) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(PEN_SETTINGS_STORAGE_KEY, JSON.stringify(penSettings));
+    } catch {
+      // Ignore storage errors in private/incognito modes.
+    }
+  }, [hasLoadedUiPreferences, penSettings]);
 
   const canvasViewState = workspace.activePage?.canvasViewState ?? defaultCanvasViewState;
   const activeCanvasHistory = workspace.activePage ? canvasHistoryByPage[workspace.activePage.id] : undefined;
@@ -329,6 +352,7 @@ export function ThinkleafApp() {
           onDeletePage={workspace.deletePage}
           onResetView={resetView}
           onRedoCanvas={redoCanvas}
+          onPenSettingsChange={setPenSettings}
           onSearchByTag={(tag) => setSearchQuery(tag)}
           onUndoCanvas={undoCanvas}
           onUpdateCanvasObjects={updateCanvasObjects}
@@ -336,6 +360,7 @@ export function ThinkleafApp() {
           onSelectionChange={setSelectedObjectId}
           onToggleSnapToGrid={() => setIsSnapToGridEnabled((value) => !value)}
           onToggleGrid={() => setIsGridVisible((value) => !value)}
+          penSettings={penSettings}
           selectedObjectId={selectedObjectId}
           onToolChange={setActiveTool}
           onZoomIn={() => updateZoom(canvasViewState.zoom + zoomStep)}
@@ -366,4 +391,61 @@ function isCanvasTextEditorTarget(target: EventTarget | null) {
   }
 
   return Boolean(target.closest("[data-canvas-text-editor='true']"));
+}
+
+function normalizeStoredPenSettings(value: string | null): CanvasPenSettings {
+  if (!value) {
+    return defaultPenSettings;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<CanvasPenSettings>;
+    const strokeWidth =
+      typeof parsed.strokeWidth === "number" && Number.isFinite(parsed.strokeWidth)
+        ? Math.min(12, Math.max(1, parsed.strokeWidth))
+        : defaultPenSettings.strokeWidth;
+
+    return {
+      inkDensity:
+        parsed.inkDensity === "low" ||
+        parsed.inkDensity === "medium" ||
+        parsed.inkDensity === "high" ||
+        parsed.inkDensity === "veryHigh"
+          ? parsed.inkDensity
+          : defaultPenSettings.inkDensity,
+      laserColor: normalizeHexColorSetting(parsed.laserColor) ?? defaultPenSettings.laserColor,
+      laserFadeDuration:
+        parsed.laserFadeDuration === "normal" ||
+        parsed.laserFadeDuration === "long" ||
+        parsed.laserFadeDuration === "longer" ||
+        parsed.laserFadeDuration === "longest"
+          ? parsed.laserFadeDuration
+          : defaultPenSettings.laserFadeDuration,
+      mode:
+        parsed.mode === "ink" || parsed.mode === "uniform" || parsed.mode === "highlighter" || parsed.mode === "laser"
+          ? parsed.mode
+          : defaultPenSettings.mode,
+      smoothing:
+        parsed.smoothing === "off" ||
+        parsed.smoothing === "light" ||
+        parsed.smoothing === "medium" ||
+        parsed.smoothing === "high" ||
+        parsed.smoothing === "veryHigh"
+          ? parsed.smoothing
+          : defaultPenSettings.smoothing,
+      strokeColor: typeof parsed.strokeColor === "string" ? parsed.strokeColor : defaultPenSettings.strokeColor,
+      strokeWidth,
+    };
+  } catch {
+    return defaultPenSettings;
+  }
+}
+
+function normalizeHexColorSetting(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(trimmed) || /^#[0-9a-fA-F]{3}$/.test(trimmed) ? trimmed : null;
 }

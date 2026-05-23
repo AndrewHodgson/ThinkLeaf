@@ -71,6 +71,40 @@
 - Basic freehand Pen tool added with shortcut 9
 - Pen strokes persist per page and pan/zoom with the canvas
 - Pen strokes support selection, move, duplicate, delete, stroke color, stroke width, and canvas undo/redo
+- Pen stroke smoothing added with Off, Light, Medium, and High settings
+- Pen stroke mode added with Pen, Ink, and Highlighter options
+- Pen defaults for color, width, smoothing, and mode now persist in localStorage
+- Active Pen tool and selected pen strokes expose smoothing and mode controls in the top contextual toolbar
+- Active Pen tool width changes now update drawing defaults immediately for the next stroke
+- Pen stroke width control compacted into a dropdown for pen defaults and selected pen strokes
+- Pen smoothing tiers strengthened for smoother rendered strokes
+- Ink mode now renders deterministic spacing-based variable-width strokes while Pen mode stays constant-width
+- New Ink strokes store point timestamps and render speed-responsive variable width after refresh
+- Pen smoothing now combines stronger simplification with curve smoothing so High smoothing softens jitter and hard corners
+- Very High pen smoothing added for heavily smoothed curves and softened sharp turns
+- Pen smoothing and Ink Density controls compacted into dropdowns
+- Ink Density added with Low, Medium, High, and Very High variation levels
+- Pen smoothing reworked with Ramer-Douglas-Peucker style path simplification for stronger wobble reduction
+- Highlighter pen mode added with wider semi-transparent rounded strokes
+- Highlighter defaults to yellow and renders above text, images, and whiteboard objects
+- Laser Pointer mode added to the Pen tool with temporary fixed-width red strokes that fade from the tail after release
+- Laser Pointer strokes pan/zoom with the canvas without persisting to localStorage or entering canvas undo/redo history
+- Laser Pointer strokes now render with a subtle glow and a persisted color setting that defaults to red
+- Laser Pointer color loading now safely falls back to red when older localStorage data is missing or invalid
+- Laser Pointer glow now uses a continuous wider stroke under the crisp laser path instead of per-point glow segments
+- Laser Pointer glow now uses layered outer, middle, and inner continuous strokes for a softer glow without filters
+- Laser Pointer glow layer widths tightened while preserving existing layer opacities
+- Laser Pointer fade duration dropdown added with Normal, Long, Longer, and Longest persisted settings
+- In-progress Pen, Ink, and Highlighter strokes no longer show a selection bounding box while drawing
+- Ink mode now preserves more points and renders curved variable-width chunks to reduce jagged segment joins
+- Basic stroke-level Eraser tool added with shortcut 0
+- Eraser removes whole Pen, Ink, and Highlighter strokes by click or drag with canvas undo/redo support
+- Eraser expanded to remove all whiteboard object types with hover opacity preview and an eraser-style cursor
+- Eraser hover now previews only; deletion requires deliberate click or click-drag
+- Eraser cursor changed to a visible circular Excalidraw-style ring with a subtle movement trail
+- Eraser preview now uses circle-overlap hit testing and the cursor was reduced to half size
+- Eraser drag deletion now briefly ghosts overlapped objects before removing them
+- Eraser drag now collects pending targets and deletes them together on pointer release
 - Canvas image objects added
 - Canvas image upload/import added
 - Canvas image paste from clipboard added
