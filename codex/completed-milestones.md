@@ -76,6 +76,8 @@
 - Pen defaults for color, width, smoothing, and mode now persist in localStorage
 - Active Pen tool and selected pen strokes expose smoothing and mode controls in the top contextual toolbar
 - Active Pen tool width changes now update drawing defaults immediately for the next stroke
+- Pen toolbar regression fixed so Pen, Ink, Highlighter, and Laser Pointer defaults persist independently from shape/line defaults and do not reset while editing another Pen option
+- Pen toolbar layout polished so mode controls appear first, followed by shared color/width modifiers and then mode-specific settings
 - Pen stroke width control compacted into a dropdown for pen defaults and selected pen strokes
 - Pen smoothing tiers strengthened for smoother rendered strokes
 - Ink mode now renders deterministic spacing-based variable-width strokes while Pen mode stays constant-width
@@ -95,6 +97,8 @@
 - Laser Pointer glow now uses layered outer, middle, and inner continuous strokes for a softer glow without filters
 - Laser Pointer glow layer widths tightened while preserving existing layer opacities
 - Laser Pointer fade duration dropdown added with Normal, Long, Longer, and Longest persisted settings
+- Laser Pointer fade modes now share Normal fade-out speed while Long, Longer, and Longest only extend the hold delay before fading starts
+- Fast Laser Pointer fade mode added with a shorter hold delay while keeping Normal as the default and preserving the shared Normal fade-out speed
 - In-progress Pen, Ink, and Highlighter strokes no longer show a selection bounding box while drawing
 - Ink mode now preserves more points and renders curved variable-width chunks to reduce jagged segment joins
 - Basic stroke-level Eraser tool added with shortcut 0
@@ -125,6 +129,7 @@
 - Rectangle, Circle, Line, Arrow, and Text Box creation defaults added to the top contextual toolbar when a creation tool is active and no canvas object is selected
 - Canvas creation defaults persist per tool in localStorage and apply to newly created shapes, lines, arrows, and text boxes
 - Selected canvas object controls take priority over active creation-tool defaults
+- CanvasLayer maintainability split extracted pen/highlighter/ink rendering helpers, laser rendering helpers, eraser hit-testing helpers, geometry helpers, interaction types, and canvas object view components
 - Canvas-to-document focus handoff fixed so clicking into the page clears object selection and restores the document toolbar
 - Top toolbar polished so document formatting stays on row 1 and table/object/image tools appear on row 2
 - Explicit toolbar formatting target added for document, whiteboard text, and no active text target

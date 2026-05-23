@@ -431,7 +431,7 @@ function normalizeStoredPenSettings(value: string | null): CanvasPenSettings {
     const parsed = JSON.parse(value) as Partial<CanvasPenSettings>;
     const strokeWidth =
       typeof parsed.strokeWidth === "number" && Number.isFinite(parsed.strokeWidth)
-        ? Math.min(12, Math.max(1, parsed.strokeWidth))
+        ? Math.min(24, Math.max(1, parsed.strokeWidth))
         : defaultPenSettings.strokeWidth;
 
     return {
@@ -444,6 +444,7 @@ function normalizeStoredPenSettings(value: string | null): CanvasPenSettings {
           : defaultPenSettings.inkDensity,
       laserColor: normalizeHexColorSetting(parsed.laserColor) ?? defaultPenSettings.laserColor,
       laserFadeDuration:
+        parsed.laserFadeDuration === "fast" ||
         parsed.laserFadeDuration === "normal" ||
         parsed.laserFadeDuration === "long" ||
         parsed.laserFadeDuration === "longer" ||

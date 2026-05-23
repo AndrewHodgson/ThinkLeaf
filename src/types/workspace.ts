@@ -45,7 +45,7 @@ export type CanvasStrokeStyle = "solid" | "dashed" | "dotted";
 export type CanvasPenSmoothing = "off" | "light" | "medium" | "high" | "veryHigh";
 export type CanvasPenMode = "uniform" | "ink" | "highlighter" | "laser";
 export type CanvasPenInkDensity = "low" | "medium" | "high" | "veryHigh";
-export type CanvasLaserFadeDuration = "normal" | "long" | "longer" | "longest";
+export type CanvasLaserFadeDuration = "fast" | "normal" | "long" | "longer" | "longest";
 export type CanvasPoint = {
   t?: number;
   x: number;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
   AlignCenter,
   AlignLeft,
@@ -46,7 +46,7 @@ type CanvasObjectToolbarProps = {
 
 type PenToolToolbarProps = {
   penSettings: CanvasPenSettings;
-  onChange: (settings: CanvasPenSettings) => void;
+  onChange: Dispatch<SetStateAction<CanvasPenSettings>>;
 };
 
 type CanvasToolDefaultsToolbarProps = {
@@ -57,18 +57,27 @@ type CanvasToolDefaultsToolbarProps = {
 
 export function PenToolToolbar({ penSettings, onChange }: PenToolToolbarProps) {
   function updateMode(mode: CanvasPenSettings["mode"]) {
-    const isEnteringHighlighter = mode === "highlighter" && penSettings.mode !== "highlighter";
+    onChange((currentSettings) => {
+      const isEnteringHighlighter = mode === "highlighter" && currentSettings.mode !== "highlighter";
 
-    onChange({
-      ...penSettings,
-      mode,
-      ...(isEnteringHighlighter
-        ? {
-            strokeColor: defaultHighlighterColor,
-            strokeWidth: defaultHighlighterStrokeWidth,
-          }
-        : {}),
+      return {
+        ...currentSettings,
+        mode,
+        ...(isEnteringHighlighter
+          ? {
+              strokeColor: defaultHighlighterColor,
+              strokeWidth: defaultHighlighterStrokeWidth,
+            }
+          : {}),
+      };
     });
+  }
+
+  function updatePenDefaults(updates: Partial<CanvasPenSettings>) {
+    onChange((currentSettings) => ({
+      ...currentSettings,
+      ...updates,
+    }));
   }
 
   return (
@@ -77,33 +86,34 @@ export function PenToolToolbar({ penSettings, onChange }: PenToolToolbarProps) {
         <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Tool</div>
         <div className="text-xs font-semibold text-slate-700">Pen defaults</div>
       </div>
+      <PenModeControls allowLaserMode mode={penSettings.mode} onModeChange={updateMode} />
       {penSettings.mode === "laser" ? (
         <ColorPicker
           currentValue={getLaserColor(penSettings.laserColor)}
-          label="Laser"
-          onSelect={(laserColor) => onChange({ ...penSettings, laserColor })}
+          label="Laser Pointer"
+          onSelect={(laserColor) => updatePenDefaults({ laserColor })}
           presets={colorPresets}
         />
       ) : (
         <ColorPicker
           currentValue={penSettings.strokeColor}
           label="Stroke"
-          onSelect={(strokeColor) => onChange({ ...penSettings, strokeColor })}
+          onSelect={(strokeColor) => updatePenDefaults({ strokeColor })}
           presets={colorPresets}
         />
       )}
       <PenStrokeControls
-        allowLaserMode
         inkDensity={penSettings.inkDensity}
         laserFadeDuration={penSettings.laserFadeDuration}
         mode={penSettings.mode}
         smoothing={penSettings.smoothing}
         strokeWidth={penSettings.strokeWidth}
-        onInkDensityChange={(inkDensity) => onChange({ ...penSettings, inkDensity })}
-        onLaserFadeDurationChange={(laserFadeDuration) => onChange({ ...penSettings, laserFadeDuration })}
+        showModeControls={false}
+        onInkDensityChange={(inkDensity) => updatePenDefaults({ inkDensity })}
+        onLaserFadeDurationChange={(laserFadeDuration) => updatePenDefaults({ laserFadeDuration })}
         onModeChange={updateMode}
-        onSmoothingChange={(smoothing) => onChange({ ...penSettings, smoothing })}
-        onStrokeWidthChange={(strokeWidth) => onChange({ ...penSettings, strokeWidth })}
+        onSmoothingChange={(smoothing) => updatePenDefaults({ smoothing })}
+        onStrokeWidthChange={(strokeWidth) => updatePenDefaults({ strokeWidth })}
       />
     </>
   );
@@ -315,55 +325,73 @@ export function CanvasObjectToolbar({ object, onDelete, onDuplicate, onUpdate }:
         <div className="text-xs font-semibold capitalize text-slate-700">{getObjectLabel(object)}</div>
       </div>
 
-      {supportsFill ? (
-        <ColorPicker
-          currentValue={object.fillColor}
-          label="Fill"
-          onSelect={(fillColor) => onUpdate({ fillColor })}
-          presets={fillPresets}
-        />
-      ) : null}
-
-      {supportsStroke ? (
-        <ColorPicker
-          currentValue={object.strokeColor}
-          label="Stroke"
-          onSelect={(strokeColor) => onUpdate({ strokeColor })}
-          presets={colorPresets}
-        />
-      ) : null}
-
-      {supportsStroke ? (
-        <PenStrokeControls
-          inkDensity={object.penInkDensity ?? defaultPenSettings.inkDensity}
-          laserFadeDuration={defaultPenSettings.laserFadeDuration}
-          mode={object.penMode ?? defaultPenSettings.mode}
-          smoothing={object.penSmoothing ?? defaultPenSettings.smoothing}
-          strokeWidth={object.strokeWidth}
-          showPenControls={isPenStroke}
-          onInkDensityChange={(penInkDensity) => onUpdate({ penInkDensity })}
-          onLaserFadeDurationChange={() => undefined}
-          onModeChange={updatePenMode}
-          onSmoothingChange={(penSmoothing) => onUpdate({ penSmoothing })}
-          onStrokeWidthChange={(strokeWidth) => onUpdate({ strokeWidth })}
-        />
-      ) : null}
-      {supportsStrokeStyle ? (
+      {isPenStroke ? (
         <>
-          <SegmentLabel>Style</SegmentLabel>
-          {strokeStylePresets.map((style) => (
-            <button
-              key={style.value}
-              aria-label={`Stroke style ${style.label}`}
-              className={compactButtonClass((object.strokeStyle ?? "solid") === style.value, "min-w-14")}
-              type="button"
-              onClick={() => onUpdate({ strokeStyle: style.value })}
-            >
-              {style.label}
-            </button>
-          ))}
+          <PenModeControls mode={object.penMode ?? defaultPenSettings.mode} onModeChange={updatePenMode} />
+          <ColorPicker
+            currentValue={object.strokeColor}
+            label="Stroke"
+            onSelect={(strokeColor) => onUpdate({ strokeColor })}
+            presets={colorPresets}
+          />
+          <PenStrokeControls
+            inkDensity={object.penInkDensity ?? defaultPenSettings.inkDensity}
+            laserFadeDuration={defaultPenSettings.laserFadeDuration}
+            mode={object.penMode ?? defaultPenSettings.mode}
+            smoothing={object.penSmoothing ?? defaultPenSettings.smoothing}
+            strokeWidth={object.strokeWidth}
+            showModeControls={false}
+            onInkDensityChange={(penInkDensity) => onUpdate({ penInkDensity })}
+            onLaserFadeDurationChange={() => undefined}
+            onModeChange={updatePenMode}
+            onSmoothingChange={(penSmoothing) => onUpdate({ penSmoothing })}
+            onStrokeWidthChange={(strokeWidth) => onUpdate({ strokeWidth })}
+          />
         </>
-      ) : null}
+      ) : (
+        <>
+          {supportsFill ? (
+            <ColorPicker
+              currentValue={object.fillColor}
+              label="Fill"
+              onSelect={(fillColor) => onUpdate({ fillColor })}
+              presets={fillPresets}
+            />
+          ) : null}
+
+          {supportsStroke ? (
+            <ColorPicker
+              currentValue={object.strokeColor}
+              label="Stroke"
+              onSelect={(strokeColor) => onUpdate({ strokeColor })}
+              presets={colorPresets}
+            />
+          ) : null}
+
+          {supportsStroke ? (
+            <StrokeWidthControls
+              strokeWidth={object.strokeWidth}
+              onStrokeWidthChange={(strokeWidth) => onUpdate({ strokeWidth })}
+            />
+          ) : null}
+          {supportsStrokeStyle ? (
+            <>
+              <SegmentLabel>Style</SegmentLabel>
+              {strokeStylePresets.map((style) => (
+                <button
+                  key={style.value}
+                  aria-label={`Stroke style ${style.label}`}
+                  className={compactButtonClass((object.strokeStyle ?? "solid") === style.value, "min-w-14")}
+                  type="button"
+                  onClick={() => onUpdate({ strokeStyle: style.value })}
+                >
+                  {style.label}
+                </button>
+              ))}
+            </>
+          ) : null}
+        </>
+      )}
 
       <span className="mx-1 h-6 w-px bg-slate-200" />
       <button
@@ -394,6 +422,62 @@ export function CanvasObjectToolbar({ object, onDelete, onDuplicate, onUpdate }:
   );
 }
 
+function PenModeControls({
+  allowLaserMode = false,
+  mode,
+  onModeChange,
+}: {
+  allowLaserMode?: boolean;
+  mode: CanvasPenSettings["mode"];
+  onModeChange: (mode: CanvasPenSettings["mode"]) => void;
+}) {
+  const modePresets = allowLaserMode ? penModePresets : penModePresets.filter((preset) => preset.value !== "laser");
+
+  return (
+    <>
+      <SegmentLabel>Mode</SegmentLabel>
+      {modePresets.map((preset) => (
+        <button
+          key={preset.value}
+          aria-label={`Pen mode ${preset.label}`}
+          className={compactButtonClass(mode === preset.value, "min-w-16")}
+          title={`Pen mode ${preset.label}`}
+          type="button"
+          onClick={() => onModeChange(preset.value)}
+        >
+          {preset.label}
+        </button>
+      ))}
+    </>
+  );
+}
+
+function StrokeWidthControls({
+  strokeWidth,
+  onStrokeWidthChange,
+}: {
+  strokeWidth: number;
+  onStrokeWidthChange: (strokeWidth: number) => void;
+}) {
+  return (
+    <>
+      <SegmentLabel>Width</SegmentLabel>
+      {strokeWidthPresets.map((nextStrokeWidth) => (
+        <button
+          key={nextStrokeWidth}
+          aria-label={`Stroke width ${nextStrokeWidth}`}
+          className={compactButtonClass(strokeWidth === nextStrokeWidth)}
+          title={`Stroke width ${nextStrokeWidth}`}
+          type="button"
+          onClick={() => onStrokeWidthChange(nextStrokeWidth)}
+        >
+          {nextStrokeWidth}
+        </button>
+      ))}
+    </>
+  );
+}
+
 function PenStrokeControls({
   allowLaserMode = false,
   inkDensity,
@@ -402,6 +486,7 @@ function PenStrokeControls({
   smoothing,
   strokeWidth,
   showPenControls = true,
+  showModeControls = true,
   onInkDensityChange,
   onLaserFadeDurationChange,
   onModeChange,
@@ -414,6 +499,7 @@ function PenStrokeControls({
   mode: CanvasPenSettings["mode"];
   smoothing: CanvasPenSettings["smoothing"];
   strokeWidth: number;
+  showModeControls?: boolean;
   showPenControls?: boolean;
   onInkDensityChange: (inkDensity: CanvasPenSettings["inkDensity"]) => void;
   onLaserFadeDurationChange: (laserFadeDuration: CanvasPenSettings["laserFadeDuration"]) => void;
@@ -422,36 +508,23 @@ function PenStrokeControls({
   onStrokeWidthChange: (strokeWidth: number) => void;
 }) {
   const isLaserMode = mode === "laser";
-  const modePresets = allowLaserMode ? penModePresets : penModePresets.filter((preset) => preset.value !== "laser");
 
   return (
     <>
+      {showPenControls && showModeControls ? (
+        <PenModeControls allowLaserMode={allowLaserMode} mode={mode} onModeChange={onModeChange} />
+      ) : null}
       {!isLaserMode ? (
         <>
           <SegmentLabel>Width</SegmentLabel>
-          {showPenControls ? (
-            <ToolbarDropdown
-              ariaLabel="Pen stroke width"
-              currentLabel={`${strokeWidth}`}
-              options={penStrokeWidthPresets.map((width) => ({ label: `${width}`, value: width }))}
-              selectedValue={strokeWidth}
-              title="Pen stroke width"
-              onSelect={onStrokeWidthChange}
-            />
-          ) : (
-            strokeWidthPresets.map((nextStrokeWidth) => (
-              <button
-                key={nextStrokeWidth}
-                aria-label={`Stroke width ${nextStrokeWidth}`}
-                className={compactButtonClass(strokeWidth === nextStrokeWidth)}
-                title={`Stroke width ${nextStrokeWidth}`}
-                type="button"
-                onClick={() => onStrokeWidthChange(nextStrokeWidth)}
-              >
-                {nextStrokeWidth}
-              </button>
-            ))
-          )}
+          <ToolbarDropdown
+            ariaLabel="Pen stroke width"
+            currentLabel={`${strokeWidth}`}
+            options={penStrokeWidthPresets.map((width) => ({ label: `${width}`, value: width }))}
+            selectedValue={strokeWidth}
+            title="Pen stroke width"
+            onSelect={onStrokeWidthChange}
+          />
         </>
       ) : null}
       {showPenControls ? (
@@ -469,19 +542,6 @@ function PenStrokeControls({
               />
             </>
           ) : null}
-          <SegmentLabel>Mode</SegmentLabel>
-          {modePresets.map((preset) => (
-            <button
-              key={preset.value}
-              aria-label={`Pen mode ${preset.label}`}
-              className={compactButtonClass(mode === preset.value, "min-w-16")}
-              title={`Pen mode ${preset.label}`}
-              type="button"
-              onClick={() => onModeChange(preset.value)}
-            >
-              {preset.label}
-            </button>
-          ))}
           {isLaserMode ? (
             <>
               <SegmentLabel>Fade</SegmentLabel>

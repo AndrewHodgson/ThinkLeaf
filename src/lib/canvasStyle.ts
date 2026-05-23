@@ -92,7 +92,7 @@ export const penModePresets = [
   { label: "Pen", value: "uniform" as const },
   { label: "Ink", value: "ink" as const },
   { label: "Highlighter", value: "highlighter" as const },
-  { label: "Laser", value: "laser" as const },
+  { label: "Laser Pointer", value: "laser" as const },
 ];
 export const penInkDensityPresets = [
   { label: "Low", value: "low" as const },
@@ -101,6 +101,7 @@ export const penInkDensityPresets = [
   { label: "Very High", value: "veryHigh" as const },
 ];
 export const laserFadeDurationPresets = [
+  { label: "Fast", value: "fast" as const },
   { label: "Normal", value: "normal" as const },
   { label: "Long", value: "long" as const },
   { label: "Longer", value: "longer" as const },

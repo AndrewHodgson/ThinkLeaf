@@ -6,7 +6,7 @@ Run a short manual browser QA/polish pass before starting new feature work, then
 
 Keep this pass focused on confirming current behavior, fixing small regressions, and tightening obvious rough edges. Do not add new major features.
 
-The latest code-path/build check passed after adding persisted creation defaults for Rectangle, Circle, Line, Arrow, and Text Box tools. The remaining recommended work is hands-on browser verification with real clicks, drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching.
+The latest code-path/build check passed after adding a Fast Laser Pointer fade option while keeping Normal as the default. The remaining recommended work is hands-on browser verification with real clicks, drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching.
 
 ## QA Focus
 
@@ -71,7 +71,7 @@ The latest code-path/build check passed after adding persisted creation defaults
    - Confirm highlighter strokes can be selected, moved, duplicated, deleted, undone/redone, and persist after refresh.
    - Confirm Laser Pointer mode draws temporary fixed-width glowing strokes while dragging, with tightened layered outer/middle/inner glow strokes instead of point-like blobs.
    - Confirm Laser Pointer color can be changed, defaults to red, persists after refresh, and safely falls back to red if saved color data is missing or invalid.
-   - Confirm Laser Pointer fade duration dropdown appears only in Laser mode, persists after refresh, and Normal/Long/Longer/Longest progressively slow the trail fade.
+   - Confirm Laser Pointer fade duration dropdown appears only in Laser mode, persists after refresh, and Fast/Normal/Long/Longer/Longest progressively increase the hold delay while fading at the same speed once fade starts.
    - Confirm Laser Pointer strokes pan/zoom with the canvas, fade from the tail after release, do not persist after refresh, and do not affect undo/redo history.
    - Confirm Ink mode visibly differs from Pen mode with subtle speed-responsive variable-width strokes.
    - Confirm Ink strokes use smooth curved edges without visibly jagged segment joins.
@@ -113,8 +113,8 @@ Keep future feature ideas in `notes/feature-ideas.md`. Page Types, document bloc
 
 ## Maintainability Watchlist
 
-- `src/components/workspace/CanvasLayer.tsx` is the main growth hotspot and should be split after manual QA confirms behavior.
-- Good future extraction targets: pen rendering helpers, pointer interaction handlers, and canvas object rendering helpers.
+- `src/components/workspace/CanvasLayer.tsx` is still the main growth hotspot, but pen rendering, laser rendering, eraser hit-testing, geometry helpers, interaction types, and canvas object view components have been split out.
+- Good future extraction targets, after manual QA confirms behavior: stateful pointer interaction handlers and smaller rendering layers for lines, boxes, pen strokes, and laser strokes.
 - Keep any refactor behavior-preserving and covered by `npm run build`; do not combine it with new feature work.
 
 ## Verification

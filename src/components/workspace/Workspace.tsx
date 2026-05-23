@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type {
   CanvasHistoryOptions,
   CanvasCreationToolDefaults,
@@ -59,7 +59,7 @@ type WorkspaceProps = {
   selectedObjectId: string | null;
   onCreationToolDefaultsChange: (defaults: CanvasCreationToolDefaults) => void;
   onDeletePage: (pageId: string) => void;
-  onPenSettingsChange: (settings: CanvasPenSettings) => void;
+  onPenSettingsChange: Dispatch<SetStateAction<CanvasPenSettings>>;
   onRedoCanvas: () => void;
   onResetView: () => void;
   onSearchByTag: (tag: string) => void;
@@ -170,15 +170,17 @@ export function Workspace({
   const canvasViewState = page.canvasViewState ?? defaultCanvasViewState;
   const isPanning = boardPanInteraction !== null;
   const activeCreationDefaultType = getCreationDefaultType(activeTool);
-  const toolbarExtraContent = selectedObject ? (
+  const isSelectedPenStroke = selectedObject?.type === "penStroke";
+  const shouldShowActivePenDefaults = activeTool === "Pen" && (!selectedObject || isSelectedPenStroke);
+  const toolbarExtraContent = shouldShowActivePenDefaults ? (
+    <PenToolToolbar penSettings={penSettings} onChange={onPenSettingsChange} />
+  ) : selectedObject ? (
     <CanvasObjectToolbar
       object={selectedObject}
       onDelete={deleteSelectedObject}
       onDuplicate={duplicateSelectedObject}
       onUpdate={updateSelectedObject}
     />
-  ) : activeTool === "Pen" ? (
-    <PenToolToolbar penSettings={penSettings} onChange={onPenSettingsChange} />
   ) : activeCreationDefaultType ? (
     <CanvasToolDefaultsToolbar
       defaults={creationToolDefaults[activeCreationDefaultType]}

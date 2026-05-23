@@ -169,7 +169,7 @@ Basic Laser Pointer mode now exists inside the Pen tool. Future work can make it
 
 Future laser pointer enhancements could support:
 
-- Adjustable fade duration
+- More fade duration presets or presentation-specific trail behavior
 - Optional cursor/presentation affordances
 - Clearer presenter-mode controls if Thinkleaf grows a presentation workflow
 
