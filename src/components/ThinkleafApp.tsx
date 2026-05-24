@@ -13,7 +13,7 @@ import {
   zoomStep,
 } from "@/lib/canvasStyle";
 import { useWorkspace } from "@/hooks/useWorkspace";
-import { searchPages, sortPagesByUpdatedAt } from "@/lib/workspaceUtils";
+import { createId, searchPages, sortPagesByUpdatedAt, timestamp } from "@/lib/workspaceUtils";
 import type {
   CanvasCreationDefaultStyle,
   CanvasCreationToolDefaults,
@@ -21,6 +21,8 @@ import type {
   CanvasObject,
   CanvasPenSettings,
   CanvasTool,
+  Page,
+  PageTemplate,
 } from "@/types/workspace";
 
 const toolShortcuts: Record<string, CanvasTool> = {
@@ -38,6 +40,7 @@ const toolShortcuts: Record<string, CanvasTool> = {
 const SNAP_TO_GRID_STORAGE_KEY = "thinkleaf.snapToGrid.v1";
 const PEN_SETTINGS_STORAGE_KEY = "thinkleaf.penSettings.v1";
 const CREATION_TOOL_DEFAULTS_STORAGE_KEY = "thinkleaf.canvasCreationToolDefaults.v1";
+const PAGE_TEMPLATES_STORAGE_KEY = "thinkleaf.pageTemplates.v1";
 const CANVAS_HISTORY_LIMIT = 25;
 
 type CanvasPageHistory = {
@@ -61,6 +64,7 @@ export function ThinkleafApp() {
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [zoomIndicatorTick, setZoomIndicatorTick] = useState(0);
   const [canvasHistoryByPage, setCanvasHistoryByPage] = useState<Record<string, CanvasPageHistory>>({});
+  const [pageTemplates, setPageTemplates] = useState<PageTemplate[]>([]);
   const recordedCanvasHistoryKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -71,6 +75,7 @@ export function ThinkleafApp() {
       setCreationToolDefaults(
         normalizeStoredCreationToolDefaults(window.localStorage.getItem(CREATION_TOOL_DEFAULTS_STORAGE_KEY)),
       );
+      setPageTemplates(normalizeStoredPageTemplates(window.localStorage.getItem(PAGE_TEMPLATES_STORAGE_KEY)));
     } catch {
       // Ignore storage errors in private/incognito modes.
     } finally {
@@ -128,6 +133,18 @@ export function ThinkleafApp() {
       // Ignore storage errors in private/incognito modes.
     }
   }, [creationToolDefaults, hasLoadedUiPreferences]);
+
+  useEffect(() => {
+    if (!hasLoadedUiPreferences) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(PAGE_TEMPLATES_STORAGE_KEY, JSON.stringify(pageTemplates));
+    } catch {
+      // Ignore storage errors in private/incognito modes.
+    }
+  }, [hasLoadedUiPreferences, pageTemplates]);
 
   const canvasViewState = workspace.activePage?.canvasViewState ?? defaultCanvasViewState;
   const activeCanvasHistory = workspace.activePage ? canvasHistoryByPage[workspace.activePage.id] : undefined;
@@ -199,6 +216,17 @@ export function ThinkleafApp() {
 
   const favoritePages = useMemo(
     () => sortPagesByUpdatedAt(workspace.activeProfileData.pages.filter((page) => page.isFavorite)),
+    [workspace.activeProfileData.pages],
+  );
+  const tagSuggestions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          workspace.activeProfileData.pages.flatMap((page) =>
+            page.tags.map((tag) => tag.trim()).filter(Boolean),
+          ),
+        ),
+      ).sort((a, b) => a.localeCompare(b)),
     [workspace.activeProfileData.pages],
   );
 
@@ -330,6 +358,28 @@ export function ThinkleafApp() {
     setZoomIndicatorTick((tick) => tick + 1);
   }
 
+  function savePageAsTemplate(page: Page) {
+    const name = window.prompt("Template name", page.title || "Untitled template");
+    if (!name?.trim()) {
+      return;
+    }
+
+    const now = timestamp();
+    const template: PageTemplate = {
+      id: createId("template"),
+      name: name.trim(),
+      title: page.title || "Untitled meeting note",
+      body: page.body,
+      canvasViewState: page.canvasViewState,
+      canvasObjects: cloneCanvasObjects(page.canvasObjects),
+      tags: [...page.tags],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setPageTemplates((current) => [template, ...current].slice(0, 24));
+  }
+
   return (
     <main className="flex h-screen min-h-0 bg-slate-50 text-slate-900">
       <Sidebar
@@ -341,6 +391,7 @@ export function ThinkleafApp() {
         profiles={workspace.data.profiles}
         searchQuery={searchQuery}
         searchResults={searchResults}
+        templates={pageTemplates}
         onCreateProfile={workspace.createProfile}
         onCreateFolder={workspace.createFolder}
         onCreatePage={workspace.createPage}
@@ -356,6 +407,7 @@ export function ThinkleafApp() {
         onRenameProfile={workspace.renameProfile}
         onRenameProject={workspace.renameProject}
         onRenamePage={workspace.renamePage}
+        onSavePageAsTemplate={savePageAsTemplate}
         onToggleFavoritePage={(pageId) =>
           workspace.updatePage(pageId, {
             isFavorite: !workspace.data.pages.find((page) => page.id === pageId)?.isFavorite,
@@ -391,6 +443,7 @@ export function ThinkleafApp() {
           onToggleGrid={() => setIsGridVisible((value) => !value)}
           penSettings={penSettings}
           selectedObjectId={selectedObjectId}
+          tagSuggestions={tagSuggestions}
           onToolChange={setActiveTool}
           onZoomIn={() => updateZoom(canvasViewState.zoom + zoomStep)}
           onZoomOut={() => updateZoom(canvasViewState.zoom - zoomStep)}
@@ -489,6 +542,39 @@ function normalizeStoredCreationToolDefaults(value: string | null): CanvasCreati
   } catch {
     return defaultCanvasCreationToolDefaults;
   }
+}
+
+function normalizeStoredPageTemplates(value: string | null): PageTemplate[] {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<PageTemplate>[];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .filter((template): template is PageTemplate => Boolean(template.id && template.name))
+      .map((template) => ({
+        id: template.id,
+        name: template.name.trim() || "Untitled template",
+        title: template.title || "Untitled meeting note",
+        body: template.body || "",
+        canvasViewState: template.canvasViewState ?? createDefaultCanvasViewState(),
+        canvasObjects: Array.isArray(template.canvasObjects) ? cloneStoredCanvasObjects(template.canvasObjects) : [],
+        tags: Array.isArray(template.tags) ? template.tags.filter((tag) => typeof tag === "string") : [],
+        createdAt: template.createdAt || timestamp(),
+        updatedAt: template.updatedAt || template.createdAt || timestamp(),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function cloneStoredCanvasObjects(objects: CanvasObject[]) {
+  return objects.map((object) => ({ ...object }));
 }
 
 function normalizeCreationDefaultStyle(

@@ -21,7 +21,7 @@ export const objectCanvasOriginY = 0;
 
 export const defaultCanvasViewState: CanvasViewState = {
   panX: 0,
-  panY: 0,
+  panY: 56,
   zoom: 1,
 };
 
@@ -44,21 +44,24 @@ export const defaultCanvasStyle = {
 };
 
 export const colorPresets = [
-  { label: "Gray", value: "#64748b" },
-  { label: "Black", value: "#111827" },
-  { label: "Blue", value: "#2563eb" },
-  { label: "Green", value: "#238157" },
-  { label: "Red", value: "#dc2626" },
-  { label: "Yellow", value: "#facc15" },
+  { label: "Light gray", value: "#D9D9D9" },
+  { label: "Gray", value: "#AFAFAF" },
+  { label: "Dark gray", value: "#777777" },
+  { label: "Charcoal", value: "#3F3F3F" },
+  { label: "Black", value: "#000000" },
+  { label: "Purple", value: "#7C4DFF" },
+  { label: "Magenta", value: "#D946EF" },
+  { label: "Red", value: "#FF2D55" },
+  { label: "Orange", value: "#FF7043" },
+  { label: "Yellow", value: "#FFD400" },
+  { label: "Green", value: "#4ADE80" },
+  { label: "Cyan", value: "#4DD0E1" },
+  { label: "Blue", value: "#18A8E6" },
+  { label: "Royal blue", value: "#3478F6" },
 ];
 
 export const fillPresets = [
-  { label: "Transparent fill", value: "transparent" },
-  { label: "Gray", value: "rgba(148, 163, 184, 0.16)" },
-  { label: "Blue", value: "rgba(37, 99, 235, 0.14)" },
-  { label: "Green", value: "rgba(35, 129, 87, 0.14)" },
-  { label: "Red", value: "rgba(220, 38, 38, 0.12)" },
-  { label: "Yellow", value: "rgba(250, 204, 21, 0.22)" },
+  ...colorPresets,
 ];
 
 export const highlightPresets = [

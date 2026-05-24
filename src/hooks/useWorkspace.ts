@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { sampleWorkspace } from "@/lib/sampleWorkspace";
 import { createDefaultCanvasViewState, defaultCanvasStyle, defaultPenSettings } from "@/lib/canvasStyle";
 import { createId, defaultProfileId, defaultProfileName, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
-import type { CanvasObject, Folder, Page, Profile, Project, WorkspaceData } from "@/types/workspace";
+import type { CanvasObject, Folder, Page, PageTemplate, Profile, Project, WorkspaceData } from "@/types/workspace";
 
 const STORAGE_KEY = "thinkleaf.workspace.v1";
 
@@ -145,12 +145,24 @@ function normalizeWorkspace(data: Partial<WorkspaceData>): WorkspaceData {
   }));
   const projectProfileIds = new Map(projects.map((project) => [project.id, project.profileId]));
   const rawFolders = Array.isArray(data.folders) ? data.folders : [];
-  const folders = rawFolders.map((folder) => ({
-    ...folder,
-    profileId:
+  const foldersWithProfiles = rawFolders.map((folder) => {
+    const profileId =
       folder.profileId && profileIds.has(folder.profileId)
         ? folder.profileId
-        : projectProfileIds.get(folder.projectId) ?? activeProfileId,
+        : projectProfileIds.get(folder.projectId) ?? activeProfileId;
+
+    return {
+      ...folder,
+      profileId,
+    };
+  });
+  const foldersById = new Map(foldersWithProfiles.map((folder) => [folder.id, folder]));
+  const folders = foldersWithProfiles.map((folder) => ({
+    ...folder,
+    parentFolderId:
+      typeof folder.parentFolderId === "string" && isValidParentFolder(foldersById, folder, folder.parentFolderId)
+        ? folder.parentFolderId
+        : undefined,
   }));
   const folderProfileIds = new Map(folders.map((folder) => [folder.id, folder.profileId]));
 
@@ -194,8 +206,58 @@ function pickFallbackPageIdForProfile(data: WorkspaceData, profileId: string, pr
   return pickFallbackPageId(pages, preferredPageId ?? recentPageId ?? "");
 }
 
-function currentProjectProfileId(data: WorkspaceData, projectId: string) {
-  return data.projects.find((project) => project.id === projectId)?.profileId;
+function isValidParentFolder(foldersById: Map<string, Folder>, folder: Folder, parentFolderId: string) {
+  const parentFolder = foldersById.get(parentFolderId);
+  if (
+    !parentFolder ||
+    parentFolder.id === folder.id ||
+    parentFolder.projectId !== folder.projectId ||
+    parentFolder.profileId !== folder.profileId
+  ) {
+    return false;
+  }
+
+  const visitedFolderIds = new Set([folder.id]);
+  let currentFolder: Folder | undefined = parentFolder;
+
+  while (currentFolder) {
+    if (visitedFolderIds.has(currentFolder.id)) {
+      return false;
+    }
+
+    visitedFolderIds.add(currentFolder.id);
+    if (!currentFolder.parentFolderId) {
+      return true;
+    }
+
+    currentFolder = foldersById.get(currentFolder.parentFolderId);
+    if (
+      currentFolder &&
+      (currentFolder.projectId !== folder.projectId || currentFolder.profileId !== folder.profileId)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function getDescendantFolderIds(folders: Folder[], folderId: string) {
+  const ids = new Set<string>([folderId]);
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+
+    for (const folder of folders) {
+      if (!ids.has(folder.id) && folder.parentFolderId && ids.has(folder.parentFolderId)) {
+        ids.add(folder.id);
+        changed = true;
+      }
+    }
+  }
+
+  return ids;
 }
 
 function cloneCanvasObjects(objects: CanvasObject[]) {
@@ -472,7 +534,13 @@ export function useWorkspace() {
       return {
         ...current,
         projects: [...current.projects, copiedProject],
-        folders: [...current.folders, ...copiedFolders],
+        folders: [
+          ...current.folders,
+          ...copiedFolders.map((folder) => ({
+            ...folder,
+            parentFolderId: folder.parentFolderId ? folderIdMap.get(folder.parentFolderId) : undefined,
+          })),
+        ],
         pages: nextPages,
         recentPageIds: [...copiedPages.map((page) => page.id), ...current.recentPageIds]
           .filter((id, index, list) => list.indexOf(id) === index)
@@ -519,29 +587,45 @@ export function useWorkspace() {
     });
   }
 
-  function createFolder(projectId: string, name: string) {
+  function createFolder(projectId: string, name: string, parentFolderId?: string) {
     const cleanName = name.trim();
     if (!projectId || !cleanName) {
       return;
     }
 
-    const now = timestamp();
-    const folder: Folder = {
-      id: createId("folder"),
-      profileId: currentProjectProfileId(data, projectId) ?? activeProfileId,
-      projectId,
-      name: cleanName,
-      createdAt: now,
-      updatedAt: now,
-    };
+    setData((current) => {
+      const project = current.projects.find((item) => item.id === projectId);
+      if (!project) {
+        return current;
+      }
 
-    setData((current) => ({
-      ...current,
-      folders: [...current.folders, folder],
-      projects: current.projects.map((project) =>
-        project.id === projectId ? { ...project, updatedAt: now } : project,
-      ),
-    }));
+      const parentFolder = parentFolderId
+        ? current.folders.find(
+            (folder) =>
+              folder.id === parentFolderId &&
+              folder.projectId === projectId &&
+              folder.profileId === project.profileId,
+          )
+        : undefined;
+      const now = timestamp();
+      const folder: Folder = {
+        id: createId("folder"),
+        profileId: parentFolder?.profileId ?? project.profileId,
+        projectId,
+        parentFolderId: parentFolder?.id,
+        name: cleanName,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      return {
+        ...current,
+        folders: [...current.folders, folder],
+        projects: current.projects.map((item) =>
+          item.id === projectId ? { ...item, updatedAt: now } : item,
+        ),
+      };
+    });
   }
 
   function duplicateFolder(folderId: string) {
@@ -552,9 +636,30 @@ export function useWorkspace() {
       }
 
       const now = timestamp();
-      const nextFolderId = createId("folder");
+      const folderIdsToCopy = getDescendantFolderIds(current.folders, folderId);
+      const folderIdMap = new Map<string, string>();
+      for (const sourceId of folderIdsToCopy) {
+        folderIdMap.set(sourceId, createId("folder"));
+      }
+      const nextRootFolderId = folderIdMap.get(folderId) ?? createId("folder");
+      const copiedFolders = current.folders
+        .filter((folder) => folderIdsToCopy.has(folder.id))
+        .map((folder) => ({
+          ...folder,
+          id: folderIdMap.get(folder.id) ?? createId("folder"),
+          profileId: sourceFolder.profileId,
+          parentFolderId:
+            folder.id === folderId
+              ? sourceFolder.parentFolderId
+              : folder.parentFolderId
+                ? folderIdMap.get(folder.parentFolderId)
+                : undefined,
+          name: folder.id === folderId ? `${folder.name} Copy` : folder.name,
+          createdAt: now,
+          updatedAt: now,
+        }));
       const copiedPages = current.pages
-        .filter((page) => page.folderId === folderId)
+        .filter((page) => folderIdsToCopy.has(page.folderId))
         .map((page) => {
           const nextPageId = createId("page");
           return {
@@ -562,7 +667,7 @@ export function useWorkspace() {
             id: nextPageId,
             profileId: sourceFolder.profileId,
             projectId: sourceFolder.projectId,
-            folderId: nextFolderId,
+            folderId: folderIdMap.get(page.folderId) ?? nextRootFolderId,
             title: `${page.title || "Untitled meeting note"} Copy`,
             body: page.body,
             noteDate: page.noteDate,
@@ -575,15 +680,6 @@ export function useWorkspace() {
           };
         });
 
-      const copiedFolder: Folder = {
-        ...sourceFolder,
-        id: nextFolderId,
-        profileId: sourceFolder.profileId,
-        name: `${sourceFolder.name} Copy`,
-        createdAt: now,
-        updatedAt: now,
-      };
-
       const nextPages = [...current.pages, ...copiedPages];
       const nextActivePageId =
         sourceFolder.profileId === current.activeProfileId
@@ -595,7 +691,7 @@ export function useWorkspace() {
 
       return {
         ...current,
-        folders: [...current.folders, copiedFolder],
+        folders: [...current.folders, ...copiedFolders],
         pages: nextPages,
         recentPageIds: [...copiedPages.map((page) => page.id), ...current.recentPageIds]
           .filter((id, index, list) => list.indexOf(id) === index)
@@ -622,9 +718,12 @@ export function useWorkspace() {
 
   function deleteFolder(folderId: string) {
     setData((current) => {
-      const deletedPageIds = new Set(current.pages.filter((page) => page.folderId === folderId).map((page) => page.id));
-      const nextPages = current.pages.filter((page) => page.folderId !== folderId);
       const sourceFolder = current.folders.find((folder) => folder.id === folderId);
+      const deletedFolderIds = getDescendantFolderIds(current.folders, folderId);
+      const deletedPageIds = new Set(
+        current.pages.filter((page) => deletedFolderIds.has(page.folderId)).map((page) => page.id),
+      );
+      const nextPages = current.pages.filter((page) => !deletedFolderIds.has(page.folderId));
       const nextActivePageId =
         sourceFolder?.profileId === current.activeProfileId
           ? pickFallbackPageId(getProfilePages({ ...current, pages: nextPages }, current.activeProfileId), activePageId)
@@ -634,72 +733,88 @@ export function useWorkspace() {
 
       return {
         ...current,
-        folders: current.folders.filter((folder) => folder.id !== folderId),
+        folders: current.folders.filter((folder) => !deletedFolderIds.has(folder.id)),
         pages: nextPages,
         recentPageIds: current.recentPageIds.filter((pageId) => !deletedPageIds.has(pageId)),
       };
     });
   }
 
-  function createPage(projectId: string, folderId: string, title = "Untitled meeting note") {
+  function createPage(projectId: string, folderId: string, title = "Untitled meeting note", template?: PageTemplate) {
     if (!projectId || !folderId) {
       return;
     }
 
-    const now = timestamp();
-    const page: Page = {
-      id: createId("page"),
-      profileId: currentProjectProfileId(data, projectId) ?? activeProfileId,
-      projectId,
-      folderId,
-      title,
-      body: "",
-      noteDate: toDateInputValue(now),
-      canvasViewState: createDefaultCanvasViewState(),
-      canvasObjects: [],
-      tags: [],
-      isFavorite: false,
-      createdAt: now,
-      updatedAt: now,
-    };
+    const pageId = createId("page");
+    const cleanTitle = title.trim() || template?.title || "Untitled meeting note";
 
-    setData((current) => ({
-      ...current,
-      pages: [...current.pages, page],
-      folders: current.folders.map((folder) =>
-        folder.id === folderId ? { ...folder, updatedAt: now } : folder,
-      ),
-      projects: current.projects.map((project) =>
-        project.id === projectId ? { ...project, updatedAt: now } : project,
-      ),
-      recentPageIds: [page.id, ...current.recentPageIds.filter((id) => id !== page.id)].slice(0, 8),
-    }));
-    setActivePageId(page.id);
-  }
-
-  function duplicatePage(pageId: string) {
     setData((current) => {
-      const sourcePage = current.pages.find((page) => page.id === pageId);
-      if (!sourcePage) {
+      const project = current.projects.find((item) => item.id === projectId);
+      const folder = current.folders.find(
+        (item) => item.id === folderId && item.projectId === projectId && item.profileId === project?.profileId,
+      );
+      if (!project || !folder) {
         return current;
       }
 
       const now = timestamp();
-      const copiedPage: Page = {
-        ...sourcePage,
-        id: createId("page"),
-        title: `${sourcePage.title || "Untitled meeting note"} Copy`,
-        body: sourcePage.body,
-        noteDate: sourcePage.noteDate,
-        canvasViewState: sourcePage.canvasViewState,
-        canvasObjects: cloneCanvasObjects(sourcePage.canvasObjects),
-        tags: [...sourcePage.tags],
+      const page: Page = {
+        id: pageId,
+        profileId: folder.profileId,
+        projectId,
+        folderId,
+        title: cleanTitle,
+        body: template?.body ?? "",
+        noteDate: toDateInputValue(now),
+        canvasViewState: template?.canvasViewState ?? createDefaultCanvasViewState(),
+        canvasObjects: template ? cloneCanvasObjects(template.canvasObjects) : [],
+        tags: template ? [...template.tags] : [],
         isFavorite: false,
         createdAt: now,
         updatedAt: now,
       };
 
-      setActivePageId(copiedPage.id);
+      return {
+        ...current,
+        pages: [...current.pages, page],
+        folders: current.folders.map((item) =>
+          item.id === folderId ? { ...item, updatedAt: now } : item,
+        ),
+        projects: current.projects.map((item) =>
+          item.id === projectId ? { ...item, updatedAt: now } : item,
+        ),
+        recentPageIds: [page.id, ...current.recentPageIds.filter((id) => id !== page.id)].slice(0, 8),
+      };
+    });
+    setActivePageId(pageId);
+  }
+
+  function duplicatePage(pageId: string) {
+    const sourcePage = data.pages.find((page) => page.id === pageId);
+    if (!sourcePage) {
+      return;
+    }
+
+    const copiedPageId = createId("page");
+    const now = timestamp();
+    const copiedPage: Page = {
+      ...sourcePage,
+      id: copiedPageId,
+      title: `${sourcePage.title || "Untitled meeting note"} Copy`,
+      body: sourcePage.body,
+      noteDate: sourcePage.noteDate,
+      canvasViewState: sourcePage.canvasViewState,
+      canvasObjects: cloneCanvasObjects(sourcePage.canvasObjects),
+      tags: [...sourcePage.tags],
+      isFavorite: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setData((current) => {
+      if (!current.pages.some((page) => page.id === pageId)) {
+        return current;
+      }
 
       return {
         ...current,
@@ -707,6 +822,7 @@ export function useWorkspace() {
         recentPageIds: [copiedPage.id, ...current.recentPageIds.filter((id) => id !== copiedPage.id)].slice(0, 8),
       };
     });
+    setActivePageId(copiedPageId);
   }
 
   function updatePage(

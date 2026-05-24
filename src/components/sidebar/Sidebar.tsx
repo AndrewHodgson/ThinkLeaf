@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Page, Profile, WorkspaceData } from "@/types/workspace";
+import type { Folder as WorkspaceFolder, Page, Profile, WorkspaceData } from "@/types/workspace";
+import type { PageTemplate } from "@/types/workspace";
 import type { MouseEvent, ReactNode } from "react";
 import { PageButton } from "@/components/sidebar/PageButton";
 import {
@@ -11,6 +12,7 @@ import {
   FilePlus,
   Folder,
   FolderPlus,
+  MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -29,9 +31,10 @@ type SidebarProps = {
   profiles: Profile[];
   searchQuery: string;
   searchResults: Page[];
+  templates: PageTemplate[];
   onCreateProfile: (name: string) => void;
-  onCreateFolder: (projectId: string, name: string) => void;
-  onCreatePage: (projectId: string, folderId: string, title?: string) => void;
+  onCreateFolder: (projectId: string, name: string, parentFolderId?: string) => void;
+  onCreatePage: (projectId: string, folderId: string, title?: string, template?: PageTemplate) => void;
   onCreateProject: (name: string) => void;
   onDeleteProfile: (profileId: string) => void;
   onDuplicateFolder: (folderId: string) => void;
@@ -44,6 +47,7 @@ type SidebarProps = {
   onRenameProfile: (profileId: string, name: string) => void;
   onRenameProject: (projectId: string, name: string) => void;
   onRenamePage: (pageId: string, name: string) => void;
+  onSavePageAsTemplate: (page: Page) => void;
   onToggleFavoritePage: (pageId: string) => void;
   onSearchChange: (value: string) => void;
   onSelectProfile: (profileId: string) => void;
@@ -88,6 +92,7 @@ export function Sidebar({
   profiles,
   searchQuery,
   searchResults,
+  templates,
   onCreateProfile,
   onCreateFolder,
   onCreatePage,
@@ -103,6 +108,7 @@ export function Sidebar({
   onRenameProfile,
   onRenameProject,
   onRenamePage,
+  onSavePageAsTemplate,
   onToggleFavoritePage,
   onSearchChange,
   onSelectProfile,
@@ -112,6 +118,7 @@ export function Sidebar({
   const [isHydrated, setIsHydrated] = useState(false);
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([]);
   const [expandedFolderIds, setExpandedFolderIds] = useState<string[]>([]);
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 
   useEffect(() => {
     const state = loadSidebarState();
@@ -166,6 +173,22 @@ export function Sidebar({
     });
   }, [data.folders, data.projects]);
 
+  useEffect(() => {
+    function closeActionMenu(event: PointerEvent) {
+      if (event.target instanceof HTMLElement && event.target.closest("[data-sidebar-action-menu='true']")) {
+        return;
+      }
+
+      setOpenActionMenuId(null);
+    }
+
+    document.addEventListener("pointerdown", closeActionMenu);
+
+    return () => {
+      document.removeEventListener("pointerdown", closeActionMenu);
+    };
+  }, []);
+
   const expandedProjectSet = useMemo(() => new Set(expandedProjectIds), [expandedProjectIds]);
   const expandedFolderSet = useMemo(() => new Set(expandedFolderIds), [expandedFolderIds]);
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? profiles[0];
@@ -188,22 +211,56 @@ export function Sidebar({
     onCreateProfile(name);
   }
 
-  function promptFolder(projectId: string) {
+  function promptFolder(projectId: string, parentFolderId?: string) {
     const name = window.prompt("Folder name");
     if (!name) {
       return;
     }
 
-    onCreateFolder(projectId, name);
+    onCreateFolder(projectId, name, parentFolderId);
   }
 
   function promptPage(projectId: string, folderId: string) {
-    const title = window.prompt("Page title", "Untitled meeting note");
+    let selectedTemplate: PageTemplate | undefined;
+    const creationChoice = window.prompt("Create page:\n1. Blank Page\n2. From Template", "1");
+
+    if (creationChoice === null) {
+      return;
+    }
+
+    const normalizedChoice = creationChoice.trim().toLowerCase();
+    const shouldUseTemplate = normalizedChoice === "2" || normalizedChoice === "template" || normalizedChoice === "t";
+
+    if (shouldUseTemplate) {
+      if (!templates.length) {
+        window.alert("No templates saved yet.");
+        return;
+      }
+
+      const templateChoice = window.prompt(
+        `Choose a template:\n${templates.map((template, index) => `${index + 1}. ${template.name}`).join("\n")}`,
+        "1",
+      );
+      if (templateChoice === null) {
+        return;
+      }
+      const templateIndex = Number.parseInt(templateChoice, 10) - 1;
+      selectedTemplate = Number.isInteger(templateIndex) ? templates[templateIndex] : undefined;
+      if (!selectedTemplate) {
+        window.alert("Template not found.");
+        return;
+      }
+    } else if (normalizedChoice !== "1" && normalizedChoice !== "blank" && normalizedChoice !== "b") {
+      window.alert("Choose Blank Page or From Template.");
+      return;
+    }
+
+    const title = window.prompt("Page title", selectedTemplate?.title || "Untitled meeting note");
     if (title === null) {
       return;
     }
 
-    onCreatePage(projectId, folderId, title || "Untitled meeting note");
+    onCreatePage(projectId, folderId, title || selectedTemplate?.title || "Untitled meeting note", selectedTemplate);
   }
 
   function promptProjectRename(projectId: string, currentName: string) {
@@ -271,42 +328,208 @@ export function Sidebar({
         ].join(" ")}
         title={label}
         type="button"
-        onClick={onClick}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+        }}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpenActionMenuId(null);
+          onClick(event);
+        }}
       >
         {icon}
       </button>
     );
   }
 
-  function pageActions(page: Page) {
+  function menuActionButton(
+    label: string,
+    icon: ReactNode,
+    onClick: (event: MouseEvent<HTMLButtonElement>) => void,
+    tone: "default" | "danger" = "default",
+  ) {
+    return (
+      <button
+        className={[
+          "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs font-medium transition",
+          tone === "danger"
+            ? "text-rose-600 hover:bg-rose-50"
+            : "text-slate-600 hover:bg-slate-100",
+        ].join(" ")}
+        type="button"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpenActionMenuId(null);
+          onClick(event);
+        }}
+      >
+        <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
+        <span className="min-w-0 truncate">{label}</span>
+      </button>
+    );
+  }
+
+  function actionMenu(menuId: string, label: string, children: ReactNode) {
+    const isOpen = openActionMenuId === menuId;
+
+    return (
+      <div className="relative shrink-0" data-sidebar-action-menu="true">
+        <button
+          aria-label={label}
+          className="inline-flex h-7 w-7 items-center justify-center rounded text-slate-500 transition hover:bg-slate-100"
+          title={label}
+          type="button"
+          aria-expanded={isOpen}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setOpenActionMenuId((current) => (current === menuId ? null : menuId));
+          }}
+        >
+          <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
+        </button>
+        {isOpen ? (
+          <div
+            className="absolute right-0 top-8 z-30 grid min-w-44 gap-1 rounded-md border border-slate-200 bg-white p-1 shadow-soft"
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+          >
+            {children}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function pageActions(page: Page, menuScope: string) {
     return (
       <>
         {actionButton(
           page.isFavorite ? "Remove favorite" : "Mark favorite",
-          <Star aria-hidden="true" className={["h-3.5 w-3.5", page.isFavorite ? "fill-leaf-500 text-leaf-600" : ""].join(" ")} />,
-          (event) => {
-            event.stopPropagation();
+          <Star
+            aria-hidden="true"
+            className={["h-3.5 w-3.5", page.isFavorite ? "fill-leaf-500 text-leaf-600" : ""].join(" ")}
+          />,
+          () => {
             onToggleFavoritePage(page.id);
           },
         )}
-        {actionButton("Duplicate page", <Copy aria-hidden="true" className="h-3.5 w-3.5" />, (event) => {
-          event.stopPropagation();
-          onDuplicatePage(page.id);
-        })}
-        {actionButton("Rename page", <Pencil aria-hidden="true" className="h-3.5 w-3.5" />, (event) => {
-          event.stopPropagation();
-          promptPageRename(page.id, page.title || "Untitled");
-        })}
-        {actionButton("Delete page", <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />, (event) => {
-          event.stopPropagation();
-          const shouldDelete = window.confirm(
-            `Delete page "${page.title || "Untitled"}"? This will remove the page and its canvas objects.`,
-          );
-          if (shouldDelete) {
-            onDeletePage(page.id);
-          }
-        }, "danger")}
+        {actionMenu(
+          `${menuScope}-page-${page.id}`,
+          `Page actions for ${page.title || "Untitled"}`,
+          <>
+            {menuActionButton("Save as template", <Copy aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+              onSavePageAsTemplate(page);
+            })}
+            {menuActionButton("Duplicate", <Copy aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+              onDuplicatePage(page.id);
+            })}
+            {menuActionButton("Rename", <Pencil aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+              promptPageRename(page.id, page.title || "Untitled");
+            })}
+            {menuActionButton("Delete", <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+              const shouldDelete = window.confirm(
+                `Delete page "${page.title || "Untitled"}"? This will remove the page and its canvas objects.`,
+              );
+              if (shouldDelete) {
+                onDeletePage(page.id);
+              }
+            }, "danger")}
+          </>,
+        )}
       </>
+    );
+  }
+
+  function renderFolder(projectId: string, folder: WorkspaceFolder, depth = 0): ReactNode {
+    const childFolders = data.folders.filter(
+      (item) => item.projectId === projectId && item.parentFolderId === folder.id,
+    );
+    const pages = data.pages.filter((page) => page.folderId === folder.id);
+    const folderExpanded = expandedFolderSet.has(folder.id);
+    const hasChildren = childFolders.length > 0 || pages.length > 0;
+
+    return (
+      <div key={folder.id} className="border-l border-slate-200 pl-3" style={{ marginLeft: depth ? 8 : 0 }}>
+        <div className="group flex items-start gap-2">
+          <button
+            aria-label={`${folderExpanded ? "Collapse" : "Expand"} folder ${folder.name}`}
+            className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            title={`${folderExpanded ? "Collapse" : "Expand"} folder`}
+            type="button"
+            onClick={() => toggleFolder(folder.id)}
+          >
+            {folderExpanded ? (
+              <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
+            )}
+          </button>
+          <div className="flex min-w-0 flex-1 items-start gap-1.5 break-words text-xs font-semibold uppercase leading-4 tracking-wide text-slate-500">
+            <Folder aria-hidden="true" className="mt-px h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0">{folder.name}</span>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {actionButton(
+              `Create folder in ${folder.name}`,
+              <FolderPlus aria-hidden="true" className="h-3.5 w-3.5" />,
+              () => {
+                promptFolder(projectId, folder.id);
+              },
+            )}
+            {actionButton(
+              `Create page in ${folder.name}`,
+              <FilePlus aria-hidden="true" className="h-3.5 w-3.5" />,
+              () => {
+                promptPage(projectId, folder.id);
+              },
+            )}
+            {actionMenu(
+              `folder-${folder.id}`,
+              `Folder actions for ${folder.name}`,
+              <>
+                {menuActionButton("Duplicate", <Copy aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+                  onDuplicateFolder(folder.id);
+                })}
+                {menuActionButton("Rename", <Pencil aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+                  promptFolderRename(folder.id, folder.name);
+                })}
+                {menuActionButton("Delete", <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+                  const shouldDelete = window.confirm(
+                    `Delete folder "${folder.name}"? This will remove all nested folders and pages inside it.`,
+                  );
+                  if (shouldDelete) {
+                    onDeleteFolder(folder.id);
+                  }
+                }, "danger")}
+              </>,
+            )}
+          </div>
+        </div>
+
+        {folderExpanded ? (
+          <div className="mt-1 space-y-1">
+            {childFolders.map((childFolder) => renderFolder(projectId, childFolder, depth + 1))}
+            {pages.map((page) => (
+              <PageButton
+                key={page.id}
+                isActive={page.id === activePageId}
+                actions={pageActions(page, "project-tree")}
+                page={page}
+                compact
+                onClick={() => onSelectPage(page.id)}
+              />
+            ))}
+            {!hasChildren ? <p className="px-2 py-1 text-xs text-slate-400">No pages yet.</p> : null}
+          </div>
+        ) : null}
+      </div>
     );
   }
 
@@ -379,7 +602,7 @@ export function Sidebar({
                   <PageButton
                     key={page.id}
                     isActive={page.id === activePageId}
-                    actions={pageActions(page)}
+                    actions={pageActions(page, "search")}
                     page={page}
                     onClick={() => onSelectPage(page.id)}
                   />
@@ -472,152 +695,64 @@ export function Sidebar({
           </div>
           <div className="space-y-3">
             {data.projects.map((project) => {
-              const folders = data.folders.filter((folder) => folder.projectId === project.id);
+              const folders = data.folders.filter(
+                (folder) => folder.projectId === project.id && !folder.parentFolderId,
+              );
               const isExpanded = expandedProjectSet.has(project.id);
 
               return (
                 <div key={project.id} className="rounded-md border border-slate-200 bg-white p-2">
-                  <div className="group flex items-center justify-between gap-2">
+                  <div className="group flex items-start gap-2">
                     <button
-                      className="flex min-w-0 items-center gap-2 text-left"
+                      aria-label={`${isExpanded ? "Collapse" : "Expand"} project ${project.name}`}
+                      className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                      title={`${isExpanded ? "Collapse" : "Expand"} project`}
                       type="button"
                       onClick={() => toggleProject(project.id)}
                     >
                       {isExpanded ? (
-                        <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" />
+                        <ChevronDown aria-hidden="true" className="h-4 w-4" />
                       ) : (
-                        <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" />
+                        <ChevronRight aria-hidden="true" className="h-4 w-4" />
                       )}
-                      <div className="min-w-0 truncate text-sm font-semibold text-slate-800">{project.name}</div>
                     </button>
-                    <div className="flex items-center gap-1 opacity-100 transition md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+                    <div className="min-w-0 flex-1 break-words text-sm font-semibold leading-5 text-slate-800">
+                      {project.name}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
                       {actionButton(
                         `Create folder in ${project.name}`,
                         <FolderPlus aria-hidden="true" className="h-3.5 w-3.5" />,
-                        (event) => {
-                          event.stopPropagation();
+                        () => {
                           promptFolder(project.id);
                         },
                       )}
-                      {actionButton(
-                        `Duplicate project ${project.name}`,
-                        <Copy aria-hidden="true" className="h-3.5 w-3.5" />,
-                        (event) => {
-                          event.stopPropagation();
-                          onDuplicateProject(project.id);
-                        },
-                      )}
-                      {actionButton(
-                        `Rename project ${project.name}`,
-                        <Pencil aria-hidden="true" className="h-3.5 w-3.5" />,
-                        (event) => {
-                          event.stopPropagation();
-                          promptProjectRename(project.id, project.name);
-                        },
-                      )}
-                      {actionButton(
-                        `Delete project ${project.name}`,
-                        <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />,
-                        (event) => {
-                          event.stopPropagation();
-                          const shouldDelete = window.confirm(
-                            `Delete project "${project.name}"? This will remove all folders and pages inside the project.`,
-                          );
-                          if (shouldDelete) {
-                            onDeleteProject(project.id);
-                          }
-                        },
-                        "danger",
+                      {actionMenu(
+                        `project-${project.id}`,
+                        `Project actions for ${project.name}`,
+                        <>
+                          {menuActionButton("Duplicate", <Copy aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+                            onDuplicateProject(project.id);
+                          })}
+                          {menuActionButton("Rename", <Pencil aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+                            promptProjectRename(project.id, project.name);
+                          })}
+                          {menuActionButton("Delete", <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+                            const shouldDelete = window.confirm(
+                              `Delete project "${project.name}"? This will remove all folders and pages inside the project.`,
+                            );
+                            if (shouldDelete) {
+                              onDeleteProject(project.id);
+                            }
+                          }, "danger")}
+                        </>,
                       )}
                     </div>
                   </div>
 
                   {isExpanded ? (
                     <div className="mt-2 space-y-2">
-                      {folders.map((folder) => {
-                        const pages = data.pages.filter((page) => page.folderId === folder.id);
-                        const folderExpanded = expandedFolderSet.has(folder.id);
-
-                        return (
-                          <div key={folder.id} className="border-l border-slate-200 pl-3">
-                            <div className="group flex items-center justify-between gap-2">
-                              <button
-                                className="flex min-w-0 items-center gap-1.5 text-left"
-                                type="button"
-                                onClick={() => toggleFolder(folder.id)}
-                              >
-                                {folderExpanded ? (
-                                  <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                                ) : (
-                                  <ChevronRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                                )}
-                                <div className="flex min-w-0 items-center gap-1.5 truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                  <Folder aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                                  {folder.name}
-                                </div>
-                              </button>
-                              <div className="flex items-center gap-1 opacity-100 transition md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
-                                {actionButton(
-                                  `Create page in ${folder.name}`,
-                                  <FilePlus aria-hidden="true" className="h-3.5 w-3.5" />,
-                                  (event) => {
-                                    event.stopPropagation();
-                                    promptPage(project.id, folder.id);
-                                  },
-                                )}
-                                {actionButton(
-                                  `Duplicate folder ${folder.name}`,
-                                  <Copy aria-hidden="true" className="h-3.5 w-3.5" />,
-                                  (event) => {
-                                    event.stopPropagation();
-                                    onDuplicateFolder(folder.id);
-                                  },
-                                )}
-                                {actionButton(
-                                  `Rename folder ${folder.name}`,
-                                  <Pencil aria-hidden="true" className="h-3.5 w-3.5" />,
-                                  (event) => {
-                                    event.stopPropagation();
-                                    promptFolderRename(folder.id, folder.name);
-                                  },
-                                )}
-                                {actionButton(
-                                  `Delete folder ${folder.name}`,
-                                  <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />,
-                                  (event) => {
-                                    event.stopPropagation();
-                                    const shouldDelete = window.confirm(
-                                      `Delete folder "${folder.name}"? This will remove all pages inside the folder.`,
-                                    );
-                                    if (shouldDelete) {
-                                      onDeleteFolder(folder.id);
-                                    }
-                                  },
-                                  "danger",
-                                )}
-                              </div>
-                            </div>
-
-                            {folderExpanded ? (
-                              <div className="mt-1 space-y-1">
-                                {pages.map((page) => (
-                                  <PageButton
-                                    key={page.id}
-                                    isActive={page.id === activePageId}
-                                    actions={pageActions(page)}
-                                    page={page}
-                                    compact
-                                    onClick={() => onSelectPage(page.id)}
-                                  />
-                                ))}
-                                {!pages.length ? (
-                                  <p className="px-2 py-1 text-xs text-slate-400">No pages yet.</p>
-                                ) : null}
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
+                      {folders.map((folder) => renderFolder(project.id, folder))}
                       {!folders.length ? (
                         <p className="px-2 py-1 text-xs text-slate-400">Add a folder to start pages.</p>
                       ) : null}
@@ -642,7 +777,7 @@ export function Sidebar({
                   <PageButton
                     key={page.id}
                     isActive={page.id === activePageId}
-                    actions={pageActions(page)}
+                    actions={pageActions(page, "favorites")}
                     page={page}
                     onClick={() => onSelectPage(page.id)}
                   />

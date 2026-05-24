@@ -17,6 +17,7 @@ export type Folder = {
   id: string;
   profileId: string;
   projectId: string;
+  parentFolderId?: string;
   name: string;
   createdAt: string;
   updatedAt: string;
@@ -34,6 +35,18 @@ export type Page = {
   canvasObjects: CanvasObject[];
   tags: string[];
   isFavorite: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PageTemplate = {
+  id: string;
+  name: string;
+  title: string;
+  body: string;
+  canvasViewState: CanvasViewState;
+  canvasObjects: CanvasObject[];
+  tags: string[];
   createdAt: string;
   updatedAt: string;
 };

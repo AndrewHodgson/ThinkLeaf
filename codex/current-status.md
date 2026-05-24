@@ -7,12 +7,20 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Profiles sit above Projects.
 - Each profile owns its own projects, folders, pages, favorites, and search results.
 - Existing pre-profile data migrates into the default Work profile.
+- Folders support nesting through an optional `parentFolderId`; folders without a parent remain top-level project folders.
+- The sidebar renders nested folders recursively, with create-page, create-folder, rename, duplicate, delete, and expand/collapse actions available at each folder level; chevrons handle expand/collapse, visible plus buttons handle creation, page stars handle favorites, and three-dot menus handle row actions.
+- Deleting a folder removes all descendant folders and pages after confirmation; duplicating a folder copies descendant folders and pages with new IDs.
+- Tag suggestions are built from tags already used in the active profile and appear only after typed prefix matches, keeping tag reuse and tag search scoped to the selected profile.
+- Page templates can be saved from page row action menus and reused when creating new pages; templates persist in localStorage and copy title, body, tags, canvas objects, and canvas view state into the destination folder.
 - Active profile, sidebar collapsed state, Snap to Grid, document vertical alignment, Pen settings, canvas creation defaults, page content, canvas objects, images, and canvas view state persist in localStorage.
 
 ## Main Document
 
-- Tiptap editor supports headings, bold, italic, lists, checklists, links, tables, callouts, images, text color, highlight, text size, horizontal alignment, and document vertical alignment.
+- Tiptap editor supports headings, bold, italic, underline, indent/outdent, lists, checklists, links, tables, callouts, images, text color, highlight, text size, horizontal alignment, and document vertical alignment.
+- Indent/outdent uses list nesting for bullet, numbered, and checklist items so markers and text move together; paragraph and heading indent remains margin-based.
 - Document images can be inserted or pasted, resized/compressed, and stored as data URLs.
+- The main page header is compact, with tighter title/date/tag spacing and subtler tag pills.
+- The page header save button manually persists the current note state and shows a subtle saved confirmation; autosave still runs through localStorage.
 - Table header alignment supports left, center, and right.
 - Main document formatting controls stay visible in the top workspace toolbar, keeping the page content focused on title, metadata, tags, and body.
 - Context-specific table, whiteboard object, and image controls appear on the second toolbar row when relevant.
@@ -24,6 +32,9 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 ## Canvas and Toolbar
 
 - The workspace uses one document block inside a pannable and zoomable dotted-grid canvas.
+- The Pan tool can left-drag from the board, whiteboard objects, and the main document page; active document inputs/contenteditable areas keep editing behavior instead of starting a pan.
+- Active tool cursors remain consistent over objects: Pan keeps grab/grabbing, Pen modes keep a drawing cursor, and object move cursors are reserved for Select.
+- Reset View returns to a default page position below the top toolbar, with visual top spacing matched to the document's left padding.
 - Two-finger trackpad scroll pans the whiteboard/canvas area horizontally and vertically, including over the main document body.
 - Whiteboard objects render above the document block when overlapping.
 - Top contextual toolbar applies row 1 text controls to the active target only: the Tiptap document when document editing is active, or the selected whiteboard text object when a text box/text-bearing shape is selected.
@@ -31,6 +42,7 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Clicking into the page/editor clears canvas object selection so the document toolbar can take over cleanly.
 - Bottom floating canvas toolbar contains Select, Pan, Rectangle, Circle, Text, Line, Arrow, Image, Pen, Eraser, Zoom In, Zoom Out, Reset View, and a Settings menu for Grid and Snap.
 - Bottom toolbar includes Undo and Redo for canvas/page actions, positioned between Reset View and Settings.
+- A bottom-toolbar help button opens a shortcuts and controls dialog covering tools, zoom, undo/redo, pan/trackpad, pen/laser, and eraser behavior.
 - Undo and Redo toolbar polish pass verified icon-only buttons, disabled/muted unavailable states, and canvas-scoped shortcuts.
 - Toolbar shortcut badges show 1-9 for tools/image/pen, 0 for Eraser, + for Zoom In, and - for Zoom Out.
 - Canvas Undo uses Cmd/Ctrl+Z; Canvas Redo uses Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y.
@@ -45,6 +57,7 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 
 - Canvas supports rectangle, circle, text box, line, arrow, image, and pen stroke objects.
 - Objects can be created, selected, moved, resized, styled, deleted, and persisted per page.
+- Pen, Ink, Highlighter, and Laser Pointer pointer-downs stay in drawing mode over existing objects and the main document instead of switching to object move/select behavior.
 - Pen strokes can be drawn freehand, selected, moved, duplicated, deleted, styled with stroke color/width, smoothing, Ink Density, and Pen/Ink/Highlighter mode, and persisted per page.
 - Laser Pointer is available as a Pen tool mode; it draws temporary fixed-width glowing strokes that pan/zoom with the canvas, fade from the tail after release, and do not persist or affect canvas undo/redo history. Missing or invalid saved Laser colors fall back to red, the glow renders as tightened layered continuous strokes under the crisp laser stroke, and a persisted Laser fade duration dropdown controls how long the trail holds before fading at the shared Normal fade speed. Fade options are Fast, Normal, Long, Longer, and Longest, with Normal remaining the default.
 - The Eraser tool uses a compact circular Excalidraw-style cursor with a subtle movement trail, previews circle-overlapped objects at low opacity during hover and active drag, and commits pending drag erases only on pointer release.
@@ -61,6 +74,9 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Rectangle, Circle, Line, Arrow, and Text Box creation defaults appear in the top contextual toolbar when their tool is active and no object is selected; the defaults persist in localStorage and apply to newly created objects.
 - Selected canvas object controls now appear in the top contextual toolbar instead of a right-side properties panel.
 - Selected canvas object controls take priority over active creation-tool defaults when an object is selected.
+- Toolbar and dropdown active states use the same light green treatment as selected pages instead of black fills.
+- Normal color pickers use a two-row palette spanning grays, black, purple, magenta, red, orange, yellow, green, cyan, blue, and royal blue; the highlighter palette remains separate.
+- Sidebar project/folder/page controls are event-contained so row actions do not trigger page selection or project/folder expansion. Three-dot menus close on outside click, when another row menu opens, and after menu actions; duplicate page rows use distinct menu state so opening a page menu in the project tree does not also open it in Favorites or Search. Page Save as Template lives in the page row menu while page favorite is a direct star action.
 - Canvas object duplicate and delete actions are available from the top contextual toolbar.
 - Canvas undo/redo is tracked per page for create, delete, move, resize, style changes, whiteboard text edits, and inserted image objects.
 - Rectangles and circles can contain editable text.

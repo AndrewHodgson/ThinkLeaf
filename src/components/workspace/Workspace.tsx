@@ -29,7 +29,7 @@ import {
 } from "@/lib/canvasStyle";
 import { TagEditor } from "@/components/workspace/TagEditor";
 import { RichTextEditor, type FormattingTarget } from "@/components/workspace/RichTextEditor";
-import { Calendar, Clock3, Star, Trash2 } from "lucide-react";
+import { Calendar, Check, Clock3, Save, Star, Trash2, X } from "lucide-react";
 import { CanvasLayer } from "@/components/workspace/CanvasLayer";
 import { CanvasCreationToolbar } from "@/components/workspace/CanvasCreationToolbar";
 import {
@@ -57,6 +57,7 @@ type WorkspaceProps = {
   isGridVisible: boolean;
   isSnapToGridEnabled: boolean;
   selectedObjectId: string | null;
+  tagSuggestions: string[];
   onCreationToolDefaultsChange: (defaults: CanvasCreationToolDefaults) => void;
   onDeletePage: (pageId: string) => void;
   onPenSettingsChange: Dispatch<SetStateAction<CanvasPenSettings>>;
@@ -93,6 +94,7 @@ export function Workspace({
   isGridVisible,
   isSnapToGridEnabled,
   selectedObjectId,
+  tagSuggestions,
   onCreationToolDefaultsChange,
   onDeletePage,
   onPenSettingsChange,
@@ -118,6 +120,8 @@ export function Workspace({
   const capturedPanPointerIdRef = useRef<number | null>(null);
   const [boardPanInteraction, setBoardPanInteraction] = useState<BoardPanInteraction | null>(null);
   const [documentToolbarElement, setDocumentToolbarElement] = useState<HTMLDivElement | null>(null);
+  const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
+  const [isManualSaveVisible, setIsManualSaveVisible] = useState(false);
   const [isZoomIndicatorVisible, setIsZoomIndicatorVisible] = useState(false);
 
   useEffect(() => {
@@ -194,6 +198,12 @@ export function Workspace({
     if (shouldDelete) {
       onDeletePage(page.id);
     }
+  }
+
+  function manuallySavePage() {
+    onUpdatePage(page.id, {});
+    setIsManualSaveVisible(true);
+    window.setTimeout(() => setIsManualSaveVisible(false), 1200);
   }
 
   function updateSelectedObject(updates: Partial<NonNullable<typeof selectedObject>>) {
@@ -329,16 +339,34 @@ export function Workspace({
     }
   }
 
-  function isPanBlockedTarget(target: EventTarget | null) {
+  function isActiveTextEditingTarget(target: EventTarget | null) {
     if (!(target instanceof HTMLElement)) {
       return false;
     }
 
-    return Boolean(
-      target.closest(
-        "button, input, textarea, select, [contenteditable='true'], [data-pan-block='true']",
-      ),
-    );
+    const editable = target.closest("input, textarea, [contenteditable='true']");
+    if (!(editable instanceof HTMLElement)) {
+      return false;
+    }
+
+    const activeElement = document.activeElement;
+    return activeElement === editable || Boolean(activeElement && editable.contains(activeElement));
+  }
+
+  function isPanBlockedTarget(target: EventTarget | null, options: { allowInactiveTextEditing?: boolean } = {}) {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    if (target.closest("button, select, [data-pan-block='true']")) {
+      return true;
+    }
+
+    if (target.closest("input, textarea, [contenteditable='true']")) {
+      return !options.allowInactiveTextEditing || isActiveTextEditingTarget(target);
+    }
+
+    return false;
   }
 
   function isWheelBlockedTarget(target: EventTarget | null) {
@@ -354,16 +382,22 @@ export function Workspace({
   }
 
   function handleWorkspacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (!isPanBlockedTarget(event.target)) {
+    const isBlockedTarget = isPanBlockedTarget(event.target);
+
+    if (!isBlockedTarget) {
       event.currentTarget.focus();
     }
 
-    if (activeTool === "Select" && event.button === 0 && !isPanBlockedTarget(event.target)) {
+    if (activeTool === "Select" && event.button === 0 && !isBlockedTarget) {
       onSelectionChange(null);
       return;
     }
 
-    if (activeTool !== "Pan" || event.button !== 0 || isPanBlockedTarget(event.target)) {
+    if (
+      activeTool !== "Pan" ||
+      event.button !== 0 ||
+      isPanBlockedTarget(event.target, { allowInactiveTextEditing: true })
+    ) {
       return;
     }
 
@@ -515,8 +549,14 @@ export function Workspace({
           onSelectionChange={onSelectionChange}
         />
         <article
-          className="absolute z-10 min-h-[760px] w-[780px] cursor-auto rounded-md border border-slate-200 bg-white shadow-soft"
-          data-pan-block="true"
+          className={[
+            "absolute z-10 min-h-[760px] w-[780px] rounded-md border border-slate-200 bg-white shadow-soft",
+            activeTool === "Pan"
+              ? isPanning
+                ? "cursor-grabbing [&_*]:cursor-grabbing"
+                : "cursor-grab [&_*]:cursor-grab"
+              : "cursor-auto",
+          ].join(" ")}
           onPointerDown={() => {
             if (selectedObjectId) {
               onSelectionChange(null);
@@ -524,7 +564,7 @@ export function Workspace({
           }}
           style={{ left: documentBlockX, top: documentBlockY, width: documentBlockWidth }}
         >
-          <div className="border-b border-slate-100 px-9 py-6">
+          <div className="border-b border-slate-100 px-8 py-4">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 text-sm text-slate-500">
                 <span className="font-medium text-slate-700">{project?.name ?? "Project"}</span>
@@ -532,6 +572,22 @@ export function Workspace({
                 <span>{folder?.name ?? "Folder"}</span>
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                <button
+                  aria-label="Save note now"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  title="Save note now"
+                  type="button"
+                  onClick={manuallySavePage}
+                >
+                  {isManualSaveVisible ? (
+                    <Check aria-hidden="true" className="h-4 w-4 text-leaf-700" />
+                  ) : (
+                    <Save aria-hidden="true" className="h-4 w-4" />
+                  )}
+                </button>
+                {isManualSaveVisible ? (
+                  <span className="text-xs font-medium text-leaf-700">Saved</span>
+                ) : null}
                 <button
                   aria-label={page.isFavorite ? "Remove from favorites" : "Add to favorites"}
                   className={[
@@ -562,13 +618,13 @@ export function Workspace({
             </div>
 
             <input
-              className="mt-5 w-full border-none bg-transparent text-3xl font-semibold tracking-normal text-slate-950 outline-none placeholder:text-slate-300"
+              className="mt-3 w-full border-none bg-transparent text-2xl font-semibold tracking-normal text-slate-950 outline-none placeholder:text-slate-300"
               placeholder="Untitled meeting note"
               value={page.title}
               onChange={(event) => onUpdatePage(page.id, { title: event.target.value })}
             />
 
-            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-slate-500">
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500">
               <label className="inline-flex items-center gap-1.5">
                 <Calendar aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
                 <span>Note Date:</span>
@@ -587,8 +643,9 @@ export function Workspace({
               </div>
             </div>
 
-            <div className="mt-4 rounded-md border border-slate-100 bg-white px-3 py-2">
+            <div className="mt-3 rounded-md border border-slate-100 bg-white px-2.5 py-1.5">
               <TagEditor
+                suggestions={tagSuggestions}
                 tags={page.tags}
                 onChange={(tags) => onUpdatePage(page.id, { tags })}
                 onSearchByTag={onSearchByTag}
@@ -596,7 +653,7 @@ export function Workspace({
             </div>
           </div>
 
-          <div className="px-9 py-7">
+          <div className="px-8 py-6">
             <RichTextEditor
               key={page.id}
               content={page.body}
@@ -628,7 +685,9 @@ export function Workspace({
         onUndoCanvas={onUndoCanvas}
         onZoomIn={onZoomIn}
         onZoomOut={onZoomOut}
+        onHelpClick={() => setIsShortcutHelpOpen(true)}
       />
+      {isShortcutHelpOpen ? <ShortcutHelpDialog onClose={() => setIsShortcutHelpOpen(false)} /> : null}
       <div
         aria-live="polite"
         className={[
@@ -651,6 +710,98 @@ export function Workspace({
         }}
       />
     </div>
+  );
+}
+
+function ShortcutHelpDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/20 px-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="shortcut-help-title"
+      onPointerDown={onClose}
+    >
+      <div
+        className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-soft"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="shortcut-help-title" className="text-lg font-semibold text-slate-950">
+              Shortcuts and Controls
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">Keyboard, mouse, and trackpad commands for the workspace.</p>
+          </div>
+          <button
+            aria-label="Close shortcuts help"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+            type="button"
+            onClick={onClose}
+          >
+            <X aria-hidden="true" className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="mt-5 grid gap-4 text-sm text-slate-600 md:grid-cols-2">
+          <ShortcutSection
+            title="Tools"
+            items={[
+              ["1", "Select and move objects"],
+              ["2", "Pan / hand tool"],
+              ["3-7", "Rectangle, Circle, Text, Line, Arrow"],
+              ["8", "Import image"],
+              ["9", "Pen, Ink, Highlighter, Laser Pointer"],
+              ["0", "Eraser"],
+            ]}
+          />
+          <ShortcutSection
+            title="Canvas"
+            items={[
+              ["Space drag", "Temporary pan"],
+              ["Middle drag", "Pan"],
+              ["Trackpad scroll", "Pan the board"],
+              ["Ctrl/Cmd + wheel", "Zoom"],
+              ["+ / -", "Zoom in / out"],
+              ["Reset", "Return page to the default view"],
+            ]}
+          />
+          <ShortcutSection
+            title="History"
+            items={[
+              ["Cmd/Ctrl + Z", "Undo canvas action outside the document"],
+              ["Cmd/Ctrl + Shift + Z", "Redo canvas action"],
+              ["Cmd/Ctrl + Y", "Redo canvas action"],
+            ]}
+          />
+          <ShortcutSection
+            title="Editing"
+            items={[
+              ["Drag with Pen", "Draw over pages and objects"],
+              ["Laser Pointer", "Temporary non-persistent stroke"],
+              ["Eraser hover", "Preview objects that will be removed"],
+              ["Eraser drag", "Queue removals, commit on release"],
+              ["Double-click text", "Edit whiteboard text"],
+            ]}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShortcutSection({ items, title }: { items: Array<[string, string]>; title: string }) {
+  return (
+    <section>
+      <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">{title}</h3>
+      <dl className="mt-2 space-y-2">
+        {items.map(([shortcut, description]) => (
+          <div key={`${title}-${shortcut}`} className="grid grid-cols-[112px_1fr] gap-3">
+            <dt className="rounded-md bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">{shortcut}</dt>
+            <dd className="py-1 text-xs leading-5 text-slate-600">{description}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 

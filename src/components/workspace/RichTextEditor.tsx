@@ -2,6 +2,8 @@
 
 import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
 import { Extension, Mark, Node } from "@tiptap/core";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import type { Transaction } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { Editor, EditorContent, useEditor } from "@tiptap/react";
 import { createPortal } from "react-dom";
@@ -24,6 +26,8 @@ import {
   Columns3,
   Highlighter,
   Image as ImageIcon,
+  IndentDecrease,
+  IndentIncrease,
   Italic as ItalicIcon,
   Link2,
   List,
@@ -34,6 +38,7 @@ import {
   Table2,
   Trash2,
   Type,
+  Underline,
 } from "lucide-react";
 import { colorPresets, defaultCanvasStyle, highlightPresets, textSizePresets } from "@/lib/canvasStyle";
 import { ColorPicker } from "@/components/workspace/ColorPicker";
@@ -45,6 +50,10 @@ type DocumentVerticalAlign = "top" | "middle" | "bottom";
 export type FormattingTarget = "document" | "whiteboardText" | "none";
 
 const DOCUMENT_VERTICAL_ALIGN_STORAGE_KEY = "thinkleaf.documentVerticalAlign.v1";
+const indentStep = 24;
+const maxIndentLevel = 6;
+const activeControlClass = "border-leaf-200 bg-leaf-50 text-leaf-700";
+const activeMenuItemClass = "bg-leaf-50 text-leaf-700";
 
 const TextAlignExtension = Extension.create({
   name: "thinkleafTextAlign",
@@ -135,6 +144,43 @@ const FontSizeMark = Mark.create({
 
   renderHTML({ HTMLAttributes }) {
     return ["span", HTMLAttributes, 0];
+  },
+});
+
+const UnderlineMark = Mark.create({
+  name: "thinkleafUnderline",
+
+  parseHTML() {
+    return [{ tag: "u" }, { style: "text-decoration-line=underline" }, { style: "text-decoration=underline" }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ["span", { ...HTMLAttributes, style: "text-decoration: underline" }, 0];
+  },
+});
+
+const IndentExtension = Extension.create({
+  name: "thinkleafIndent",
+
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["paragraph", "heading"],
+        attributes: {
+          indentLevel: {
+            default: 0,
+            parseHTML: (element) => {
+              const marginLeft = Number.parseInt(element.style.marginLeft || "0", 10);
+              return Number.isFinite(marginLeft) ? Math.min(maxIndentLevel, Math.max(0, Math.round(marginLeft / indentStep))) : 0;
+            },
+            renderHTML: (attributes) => {
+              const level = typeof attributes.indentLevel === "number" ? attributes.indentLevel : 0;
+              return level > 0 ? { style: `margin-left: ${level * indentStep}px` } : {};
+            },
+          },
+        },
+      },
+    ];
   },
 });
 
@@ -247,6 +293,8 @@ export function RichTextEditor({
       TextColorMark,
       TextHighlightMark,
       FontSizeMark,
+      UnderlineMark,
+      IndentExtension,
       DocumentImageNode,
     ],
     content: normalizeEditorContent(content),
@@ -430,6 +478,47 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
     editor?.chain().focus().setMark("thinkleafFontSize", { fontSize: `${fontSize}px` }).run();
   }
 
+  function updateIndent(delta: number) {
+    if (editor?.isActive("listItem") || editor?.isActive("taskItem")) {
+      const commandName = delta > 0 ? "sinkListItem" : "liftListItem";
+      const didUpdateListItem = editor.chain().focus()[commandName]("listItem").run();
+      const didUpdateTaskItem = didUpdateListItem || editor.chain().focus()[commandName]("taskItem").run();
+
+      if (didUpdateTaskItem) {
+        return;
+      }
+    }
+
+    editor?.commands.command(({ state, tr, dispatch }) => {
+      const { from, to } = state.selection;
+      let changed = false;
+
+      state.doc.nodesBetween(from, to, (node, pos) => {
+        if (node.type.name !== "paragraph" && node.type.name !== "heading") {
+          return;
+        }
+
+        changed = updateNodeIndent(tr, node, pos, delta) || changed;
+      });
+
+      if (!changed) {
+        for (let depth = state.selection.$from.depth; depth > 0; depth -= 1) {
+          const node = state.selection.$from.node(depth);
+          if (node.type.name === "paragraph" || node.type.name === "heading") {
+            changed = updateNodeIndent(tr, node, state.selection.$from.before(depth), delta);
+            break;
+          }
+        }
+      }
+
+      if (changed && dispatch) {
+        dispatch(tr.scrollIntoView());
+      }
+
+      return changed;
+    });
+  }
+
   const currentTextColor =
     (editor?.getAttributes("thinkleafTextColor").color as string | undefined) ?? defaultCanvasStyle.textColor;
   const currentHighlight =
@@ -442,7 +531,7 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
       isUnavailable
         ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
         : isActive
-        ? "border-slate-900 bg-slate-900 text-white"
+        ? activeControlClass
         : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
     ].join(" ");
   }
@@ -491,6 +580,15 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
               onClick={() => editor?.chain().focus().toggleItalic().run()}
             >
               <ItalicIcon aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Underline"
+              className={buttonClass(editor?.isActive("thinkleafUnderline"), isEditorUnavailable)}
+              title="Underline"
+              type="button"
+              onClick={() => editor?.chain().focus().toggleMark("thinkleafUnderline").run()}
+            >
+              <Underline aria-hidden="true" className="h-4 w-4" />
             </button>
             <button
               aria-label="Link"
@@ -586,6 +684,24 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
               onClick={() => onVerticalAlignChange("bottom")}
             >
               <AlignVerticalJustifyEnd aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Outdent"
+              className={buttonClass(false, isEditorUnavailable)}
+              title="Outdent"
+              type="button"
+              onClick={() => updateIndent(-1)}
+            >
+              <IndentDecrease aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              aria-label="Indent"
+              className={buttonClass(false, isEditorUnavailable)}
+              title="Indent"
+              type="button"
+              onClick={() => updateIndent(1)}
+            >
+              <IndentIncrease aria-hidden="true" className="h-4 w-4" />
             </button>
             <span className="h-6 w-px bg-slate-200" />
             <button
@@ -824,6 +940,17 @@ function getDocumentVerticalAlignClass(verticalAlign: DocumentVerticalAlign) {
   return "items-start [&>*]:w-full";
 }
 
+function updateNodeIndent(tr: Transaction, node: ProseMirrorNode, pos: number, delta: number) {
+  const currentLevel = typeof node.attrs.indentLevel === "number" ? node.attrs.indentLevel : 0;
+  const nextLevel = Math.min(maxIndentLevel, Math.max(0, currentLevel + delta));
+  if (nextLevel === currentLevel) {
+    return false;
+  }
+
+  tr.setNodeMarkup(pos, undefined, { ...node.attrs, indentLevel: nextLevel }, node.marks);
+  return true;
+}
+
 function HeadingDropdown({ editor }: { editor: Editor | null }) {
   const currentHeading = getCurrentHeadingLevel(editor);
   const label = currentHeading ? `H${currentHeading}` : "Text";
@@ -847,7 +974,7 @@ function HeadingDropdown({ editor }: { editor: Editor | null }) {
         <button
           className={[
             "h-8 rounded px-2 text-left text-xs font-semibold transition",
-            !currentHeading ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50",
+            !currentHeading ? activeMenuItemClass : "text-slate-600 hover:bg-slate-50",
           ].join(" ")}
           type="button"
           onClick={() => editor?.chain().focus().setParagraph().run()}
@@ -859,7 +986,7 @@ function HeadingDropdown({ editor }: { editor: Editor | null }) {
             key={level}
             className={[
               "h-8 rounded px-2 text-left text-xs font-semibold transition",
-              currentHeading === level ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50",
+              currentHeading === level ? activeMenuItemClass : "text-slate-600 hover:bg-slate-50",
             ].join(" ")}
             type="button"
             onClick={() => editor?.chain().focus().setHeading({ level }).run()}
@@ -933,7 +1060,7 @@ function SizeDropdown({
               aria-label={`Text size ${fontSize}`}
               className={[
                 "h-8 rounded px-2 text-left text-xs font-semibold transition",
-                currentSize === fontSize ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50",
+                currentSize === fontSize ? activeMenuItemClass : "text-slate-600 hover:bg-slate-50",
               ].join(" ")}
               type="button"
               onClick={() => selectSize(fontSize)}

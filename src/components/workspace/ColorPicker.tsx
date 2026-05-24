@@ -112,7 +112,7 @@ export function ColorPicker({ currentValue, disabled = false, icon, label, onSel
       {isOpen ? (
         <div className="absolute left-0 top-10 z-40 w-64 rounded-md border border-slate-200 bg-white p-3 shadow-soft">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</div>
-          <div className="mt-2 grid grid-cols-6 gap-1.5">
+          <div className="mt-2 grid grid-cols-7 gap-1.5">
             {presets.map((preset) => (
               <ColorSwatch
                 key={`${label}-${preset.label}`}
@@ -127,7 +127,7 @@ export function ColorPicker({ currentValue, disabled = false, icon, label, onSel
           {recentColors.length > 0 ? (
             <>
               <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Recent</div>
-              <div className="mt-2 grid grid-cols-6 gap-1.5">
+              <div className="mt-2 grid grid-cols-7 gap-1.5">
                 {recentColors.map((color) => (
                   <ColorSwatch
                     key={`${label}-recent-${color}`}

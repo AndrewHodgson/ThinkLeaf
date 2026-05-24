@@ -5,6 +5,7 @@ import {
   Eraser,
   Grid3X3,
   Hand,
+  HelpCircle,
   Image as ImageIcon,
   Magnet,
   Redo2,
@@ -32,12 +33,15 @@ const tools: Array<{ icon: typeof MousePointer2; label: CanvasTool; shortcut: st
   { icon: ArrowRight, label: "Arrow", shortcut: "7" },
 ];
 
+const activeControlClass = "border-leaf-200 bg-leaf-50 text-leaf-700";
+
 type CanvasCreationToolbarProps = {
   activeTool: CanvasTool;
   canRedoCanvas: boolean;
   canUndoCanvas: boolean;
   isGridVisible: boolean;
   isSnapToGridEnabled: boolean;
+  onHelpClick: () => void;
   onImageUploadClick: () => void;
   onRedoCanvas: () => void;
   onResetView: () => void;
@@ -55,6 +59,7 @@ export function CanvasCreationToolbar({
   canUndoCanvas,
   isGridVisible,
   isSnapToGridEnabled,
+  onHelpClick,
   onImageUploadClick,
   onRedoCanvas,
   onResetView,
@@ -83,7 +88,7 @@ export function CanvasCreationToolbar({
               className={[
                 "relative inline-flex h-9 w-9 items-center justify-center rounded-full border transition",
                 activeTool === tool.label
-                  ? "border-slate-900 bg-slate-900 text-white"
+                  ? activeControlClass
                   : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
               ].join(" ")}
               title={`${tool.label} (${tool.shortcut})`}
@@ -110,7 +115,7 @@ export function CanvasCreationToolbar({
           className={[
             "relative inline-flex h-9 w-9 items-center justify-center rounded-full border transition",
             activeTool === "Pen"
-              ? "border-slate-900 bg-slate-900 text-white"
+              ? activeControlClass
               : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
           ].join(" ")}
           title="Pen (9)"
@@ -125,7 +130,7 @@ export function CanvasCreationToolbar({
           className={[
             "relative inline-flex h-9 w-9 items-center justify-center rounded-full border transition",
             activeTool === "Eraser"
-              ? "border-slate-900 bg-slate-900 text-white"
+              ? activeControlClass
               : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
           ].join(" ")}
           title="Eraser (0)"
@@ -193,6 +198,15 @@ export function CanvasCreationToolbar({
           <Redo2 aria-hidden="true" className="h-4 w-4" />
         </button>
         <span className="mx-1 h-6 w-px bg-slate-200" />
+        <button
+          aria-label="Open shortcuts help"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+          title="Shortcuts and controls"
+          type="button"
+          onClick={onHelpClick}
+        >
+          <HelpCircle aria-hidden="true" className="h-4 w-4" />
+        </button>
         <details className="relative">
           <summary
             aria-label="Canvas settings"
@@ -245,7 +259,7 @@ function ShortcutBadge({ children, isActive = false }: { children: string; isAct
       aria-hidden="true"
       className={[
         "pointer-events-none absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border px-1 text-[10px] font-bold leading-none shadow-sm",
-        isActive ? "border-white/30 bg-white text-slate-900" : "border-slate-200 bg-slate-50 text-slate-500",
+        isActive ? "border-leaf-200 bg-white text-leaf-700" : "border-slate-200 bg-slate-50 text-slate-500",
       ].join(" ")}
     >
       {children}
@@ -259,7 +273,7 @@ function toolbarButtonClass(isActive = false, isDisabled = false) {
     isDisabled
       ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
       : isActive
-        ? "border-slate-900 bg-slate-900 text-white"
+        ? activeControlClass
         : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
   ].join(" ");
 }

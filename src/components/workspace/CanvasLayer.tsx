@@ -408,15 +408,10 @@ export function CanvasLayer({
   }
 
   function startPan(clientX: number, clientY: number) {
-    const point = screenToWorld(clientX, clientY);
-    if (!point) {
-      return;
-    }
-
     setInteraction({
       kind: "pan",
-      pointerX: point.screenX,
-      pointerY: point.screenY,
+      pointerX: clientX,
+      pointerY: clientY,
       startPanX: viewState.panX,
       startPanY: viewState.panY,
     });
@@ -451,7 +446,7 @@ export function CanvasLayer({
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
-  function startPenDrawing(event: React.PointerEvent<HTMLDivElement>) {
+  function startPenDrawing(event: React.PointerEvent<Element>) {
     if (penSettings.mode === "laser") {
       startLaserDrawing(event);
       return;
@@ -495,7 +490,7 @@ export function CanvasLayer({
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
-  function startLaserDrawing(event: React.PointerEvent<HTMLDivElement>) {
+  function startLaserDrawing(event: React.PointerEvent<Element>) {
     const point = screenToWorld(event.clientX, event.clientY);
     if (!point) {
       return;
@@ -648,13 +643,9 @@ export function CanvasLayer({
     const point = screenToWorld(event.clientX, event.clientY);
 
     if (interaction.kind === "pan") {
-      if (!point) {
-        return;
-      }
-
       updateViewState({
-        panX: interaction.startPanX + (point.screenX - interaction.pointerX),
-        panY: interaction.startPanY + (point.screenY - interaction.pointerY),
+        panX: interaction.startPanX + event.clientX - interaction.pointerX,
+        panY: interaction.startPanY + event.clientY - interaction.pointerY,
         zoom: viewState.zoom,
       });
       return;
@@ -922,12 +913,19 @@ export function CanvasLayer({
     event.stopPropagation();
     canvasRef.current?.focus();
 
-    if (event.target instanceof HTMLTextAreaElement) {
+    if (activeTool === "Pan") {
+      clearTextEditing();
+      startPan(event.clientX, event.clientY);
+      event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
 
-    if (activeTool === "Pan") {
-      clearTextEditing();
+    if (activeTool === "Pen") {
+      startPenDrawing(event);
+      return;
+    }
+
+    if (event.target instanceof HTMLTextAreaElement) {
       return;
     }
 
@@ -997,6 +995,19 @@ export function CanvasLayer({
   function startLineMove(event: React.PointerEvent<SVGLineElement>, object: CanvasObject) {
     event.stopPropagation();
     canvasRef.current?.focus();
+
+    if (activeTool === "Pan") {
+      clearTextEditing();
+      startPan(event.clientX, event.clientY);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    if (activeTool === "Pen") {
+      startPenDrawing(event);
+      return;
+    }
+
     onSelectionChange(object.id);
     clearTextEditing();
     const point = screenToWorld(event.clientX, event.clientY);
@@ -1022,6 +1033,19 @@ export function CanvasLayer({
   function startPenMove(event: React.PointerEvent<SVGPathElement>, object: CanvasObject) {
     event.stopPropagation();
     canvasRef.current?.focus();
+
+    if (activeTool === "Pan") {
+      clearTextEditing();
+      startPan(event.clientX, event.clientY);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    if (activeTool === "Pen") {
+      startPenDrawing(event);
+      return;
+    }
+
     onSelectionChange(object.id);
     clearTextEditing();
     const point = screenToWorld(event.clientX, event.clientY);
@@ -1085,14 +1109,15 @@ export function CanvasLayer({
       Boolean(toolToObjectType[activeTool]) ||
       isSpacePressed ||
       interaction?.kind === "pendingLine");
+  const activeToolCursor = getActiveToolCursor(activeTool, interaction?.kind === "pan");
 
   return (
     <div
       ref={canvasRef}
       className={[
         "pointer-events-none absolute inset-0 z-20 touch-none overflow-visible outline-none",
-        activeTool === "Pan" ? "cursor-grab" : "",
-        interaction?.kind === "pan" ? "cursor-grabbing" : "",
+        activeTool === "Pan" ? (interaction?.kind === "pan" ? "cursor-grabbing" : "cursor-grab") : "",
+        activeTool === "Pen" ? "cursor-crosshair" : "",
       ].join(" ")}
       style={{
         cursor: activeTool === "Eraser" ? "none" : undefined,
@@ -1156,7 +1181,7 @@ export function CanvasLayer({
                   stroke={isSelected ? "#238157" : object.strokeColor}
                   strokeLinecap="round"
                   strokeWidth={Math.max(8, object.strokeWidth + 6)}
-                  style={{ cursor: activeTool === "Eraser" ? "none" : "move" }}
+                  style={{ cursor: activeTool === "Eraser" ? "none" : activeToolCursor }}
                   x1={points.x1}
                   x2={points.x2}
                   y1={points.y1}
@@ -1229,7 +1254,7 @@ export function CanvasLayer({
               key={object.id}
               className={[
                 "pointer-events-auto absolute touch-none",
-                activeTool === "Eraser" ? "" : isEditing ? "cursor-text" : "cursor-move",
+                activeTool === "Eraser" ? "" : getObjectCursorClass(activeTool, isEditing, interaction?.kind === "pan"),
                 isSelected && activeTool !== "Eraser" ? "outline outline-2 outline-leaf-500 outline-offset-2" : "",
               ].join(" ")}
               style={{
@@ -1305,7 +1330,7 @@ export function CanvasLayer({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={Math.max(16, object.strokeWidth + 10)}
-                  style={{ cursor: activeTool === "Eraser" ? "none" : "move" }}
+                  style={{ cursor: activeTool === "Eraser" ? "none" : activeToolCursor }}
                   onPointerDown={(event) => {
                     if (activeTool === "Eraser") {
                       startObjectErase(event, object);
@@ -1423,4 +1448,36 @@ function isEditableTarget(target: EventTarget | null) {
   }
 
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+}
+
+function getActiveToolCursor(activeTool: CanvasTool, isPanning: boolean) {
+  if (activeTool === "Pan") {
+    return isPanning ? "grabbing" : "grab";
+  }
+
+  if (activeTool === "Pen") {
+    return "crosshair";
+  }
+
+  if (activeTool === "Select") {
+    return "move";
+  }
+
+  return undefined;
+}
+
+function getObjectCursorClass(activeTool: CanvasTool, isEditing: boolean, isPanning: boolean) {
+  if (isEditing) {
+    return "cursor-text";
+  }
+
+  if (activeTool === "Pan") {
+    return isPanning ? "cursor-grabbing" : "cursor-grab";
+  }
+
+  if (activeTool === "Pen") {
+    return "cursor-crosshair";
+  }
+
+  return activeTool === "Select" ? "cursor-move" : "";
 }

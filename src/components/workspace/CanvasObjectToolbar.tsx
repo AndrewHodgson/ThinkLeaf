@@ -55,6 +55,9 @@ type CanvasToolDefaultsToolbarProps = {
   onUpdate: (updates: CanvasCreationDefaultStyle) => void;
 };
 
+const activeControlClass = "border-leaf-200 bg-leaf-50 text-leaf-700";
+const activeMenuItemClass = "bg-leaf-50 text-leaf-700";
+
 export function PenToolToolbar({ penSettings, onChange }: PenToolToolbarProps) {
   function updateMode(mode: CanvasPenSettings["mode"]) {
     onChange((currentSettings) => {
@@ -632,7 +635,7 @@ function ToolbarDropdown<TValue extends string | number>({
               aria-label={`${ariaLabel} ${option.label}`}
               className={[
                 "h-8 rounded px-2 text-left text-xs font-semibold transition",
-                selectedValue === option.value ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50",
+                selectedValue === option.value ? activeMenuItemClass : "text-slate-600 hover:bg-slate-50",
               ].join(" ")}
               type="button"
               onClick={() => selectValue(option.value)}
@@ -681,7 +684,7 @@ function toolbarButtonClass(isActive = false) {
   return [
     "inline-flex h-8 w-8 items-center justify-center rounded-md border transition",
     isActive
-      ? "border-slate-900 bg-slate-900 text-white"
+      ? activeControlClass
       : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
   ].join(" ");
 }
@@ -691,7 +694,7 @@ function compactButtonClass(isActive = false, extraClass = "min-w-8") {
     "inline-flex h-8 items-center justify-center rounded-md border px-2 text-xs font-semibold transition",
     extraClass,
     isActive
-      ? "border-slate-900 bg-slate-900 text-white"
+      ? activeControlClass
       : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
   ].join(" ");
 }
