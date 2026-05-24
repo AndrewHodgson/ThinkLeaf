@@ -5,7 +5,7 @@ import type {
   CanvasViewState,
 } from "@/types/workspace";
 
-export const gridSize = 8;
+export const gridSize = 22;
 export const minObjectSize = 48;
 export const minZoom = 0.5;
 export const maxZoom = 2;

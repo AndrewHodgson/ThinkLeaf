@@ -1,5 +1,6 @@
 import {
   defaultCanvasStyle,
+  gridSize,
   minObjectSize,
   objectCanvasOriginX,
   objectCanvasOriginY,
@@ -12,6 +13,8 @@ import type {
   CanvasViewState,
 } from "@/types/workspace";
 import type { ResizeInteraction } from "@/components/workspace/canvas/canvasLayerTypes";
+
+const gridDotOffset = gridSize / 2;
 
 export function screenToWorldPoint(
   bounds: DOMRect | undefined,
@@ -33,39 +36,64 @@ export function screenToWorldPoint(
   };
 }
 
+export function alignCanvasX(value: number, shouldSnap: boolean) {
+  return shouldSnap ? alignToVisibleGridDot(objectCanvasOriginX + value) - objectCanvasOriginX : value;
+}
+
+export function alignCanvasY(value: number, shouldSnap: boolean) {
+  return shouldSnap ? alignToVisibleGridDot(objectCanvasOriginY + value) - objectCanvasOriginY : value;
+}
+
+export function alignCanvasSize(value: number, shouldSnap: boolean) {
+  return shouldSnap ? snapToGrid(value) : value;
+}
+
+export function getMinimumCanvasSize(shouldSnap: boolean) {
+  return shouldSnap ? Math.ceil(minObjectSize / gridSize) * gridSize : minObjectSize;
+}
+
+function alignToVisibleGridDot(value: number) {
+  return snapToGrid(value - gridDotOffset) + gridDotOffset;
+}
+
 export function getResizeUpdates(
   interaction: ResizeInteraction,
   pointerX: number,
   pointerY: number,
   shouldSnap: boolean,
 ): Partial<CanvasObject> {
-  const alignValue = (value: number) => (shouldSnap ? snapToGrid(value) : value);
   const dx = pointerX - interaction.pointerX;
   const dy = pointerY - interaction.pointerY;
+  const minimumSize = getMinimumCanvasSize(shouldSnap);
   let x = interaction.startX;
   let y = interaction.startY;
   let width = interaction.startWidth;
   let height = interaction.startHeight;
 
   if (interaction.handle.includes("e")) {
-    width = Math.max(minObjectSize, alignValue(interaction.startWidth + dx));
+    width = Math.max(minimumSize, alignCanvasSize(interaction.startWidth + dx, shouldSnap));
   }
 
   if (interaction.handle.includes("s")) {
-    height = Math.max(minObjectSize, alignValue(interaction.startHeight + dy));
+    height = Math.max(minimumSize, alignCanvasSize(interaction.startHeight + dy, shouldSnap));
   }
 
   if (interaction.handle.includes("w")) {
-    width = Math.max(minObjectSize, alignValue(interaction.startWidth - dx));
-    x = alignValue(interaction.startX + interaction.startWidth - width);
+    width = Math.max(minimumSize, alignCanvasSize(interaction.startWidth - dx, shouldSnap));
+    x = alignCanvasX(interaction.startX + interaction.startWidth - width, shouldSnap);
   }
 
   if (interaction.handle.includes("n")) {
-    height = Math.max(minObjectSize, alignValue(interaction.startHeight - dy));
-    y = alignValue(interaction.startY + interaction.startHeight - height);
+    height = Math.max(minimumSize, alignCanvasSize(interaction.startHeight - dy, shouldSnap));
+    y = alignCanvasY(interaction.startY + interaction.startHeight - height, shouldSnap);
   }
 
-  return { height, width, x: alignValue(x), y: alignValue(y) };
+  return {
+    height: alignCanvasSize(height, shouldSnap),
+    width: alignCanvasSize(width, shouldSnap),
+    x: alignCanvasX(x, shouldSnap),
+    y: alignCanvasY(y, shouldSnap),
+  };
 }
 
 export function getLinePoints(object: CanvasObject) {
@@ -78,22 +106,25 @@ export function getLinePoints(object: CanvasObject) {
 }
 
 export function normalizeLineBounds(object: CanvasObject, shouldSnap = true): Partial<CanvasObject> {
-  const alignValue = (value: number) => (shouldSnap ? snapToGrid(value) : value);
   const points = getLinePoints(object);
-  const minX = Math.min(points.x1, points.x2);
-  const minY = Math.min(points.y1, points.y2);
-  const width = Math.max(1, Math.abs(points.x2 - points.x1));
-  const height = Math.max(1, Math.abs(points.y2 - points.y1));
+  const x1 = alignCanvasX(points.x1, shouldSnap);
+  const y1 = alignCanvasY(points.y1, shouldSnap);
+  const x2 = alignCanvasX(points.x2, shouldSnap);
+  const y2 = alignCanvasY(points.y2, shouldSnap);
+  const minX = Math.min(x1, x2);
+  const minY = Math.min(y1, y2);
+  const width = Math.max(1, Math.abs(x2 - x1));
+  const height = Math.max(1, Math.abs(y2 - y1));
 
   return {
-    x: alignValue(minX),
-    y: alignValue(minY),
-    width: alignValue(width),
-    height: alignValue(height),
-    x1: alignValue(points.x1),
-    y1: alignValue(points.y1),
-    x2: alignValue(points.x2),
-    y2: alignValue(points.y2),
+    x: minX,
+    y: minY,
+    width,
+    height,
+    x1,
+    y1,
+    x2,
+    y2,
   };
 }
 

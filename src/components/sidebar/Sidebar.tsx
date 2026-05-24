@@ -548,9 +548,11 @@ export function Sidebar({
           </button>
         </div>
         <div className="flex flex-1 flex-col items-center gap-3 py-4">
-          <div className="rounded-md border border-dashed border-slate-200 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-400">
-            TL
-          </div>
+          <img
+            alt="Thinkleaf"
+            className="h-10 w-10 object-contain"
+            src="/brand/ThinkLeaf-Vertical.svg"
+          />
         </div>
       </aside>
     );
@@ -560,10 +562,11 @@ export function Sidebar({
     <aside className="flex h-full w-[320px] shrink-0 flex-col border-r border-slate-200 bg-white">
       <div className="border-b border-slate-200 px-4 py-4">
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-lg font-semibold tracking-tight text-slate-950">Thinkleaf</div>
-            <div className="text-xs text-slate-500">Notes with room to think.</div>
-          </div>
+          <img
+            alt="Thinkleaf"
+            className="h-10 max-w-[190px] object-contain object-left"
+            src="/brand/ThinkLeaf-Horizontal.svg"
+          />
           <button
             aria-label="Collapse sidebar"
             className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"

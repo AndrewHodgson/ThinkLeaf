@@ -17,11 +17,9 @@ import {
   defaultObjectSizes,
   defaultPenSettings,
   maxZoom,
-  minObjectSize,
   minZoom,
   objectCanvasOriginX,
   objectCanvasOriginY,
-  snapToGrid,
   virtualBoardHeight,
   virtualBoardWidth,
   zoomStep,
@@ -34,9 +32,13 @@ import {
   ResizeHandleButton,
 } from "@/components/workspace/canvas/canvasObjectViews";
 import {
+  alignCanvasSize,
+  alignCanvasX,
+  alignCanvasY,
   getCreationDefaultsForType,
   getLinePoints,
   getLineSelectionBox,
+  getMinimumCanvasSize,
   getResizeUpdates,
   getStrokeDashArray,
   normalizeLineBounds,
@@ -72,6 +74,7 @@ type CanvasLayerProps = {
   viewState: CanvasViewState;
   onChange: (objects: CanvasObject[], options?: CanvasHistoryOptions) => void;
   onSelectionChange: (objectId: string | null) => void;
+  onToolChange: (tool: CanvasTool) => void;
   onViewStateChange: (viewState: CanvasViewState) => void;
 };
 
@@ -94,6 +97,7 @@ export function CanvasLayer({
   viewState,
   onChange,
   onSelectionChange,
+  onToolChange,
   onViewStateChange,
 }: CanvasLayerProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -238,8 +242,16 @@ export function CanvasLayer({
     });
   }
 
-  function alignToGrid(value: number) {
-    return isSnapToGridEnabled ? snapToGrid(value) : value;
+  function alignXToGrid(value: number) {
+    return alignCanvasX(value, isSnapToGridEnabled);
+  }
+
+  function alignYToGrid(value: number) {
+    return alignCanvasY(value, isSnapToGridEnabled);
+  }
+
+  function alignSizeToGrid(value: number) {
+    return alignCanvasSize(value, isSnapToGridEnabled);
   }
 
   function deleteObject(objectId: string, options?: CanvasHistoryOptions) {
@@ -353,8 +365,8 @@ export function CanvasLayer({
       type,
       x: startX,
       y: startY,
-      width: size.width,
-      height: size.height,
+      width: alignSizeToGrid(size.width),
+      height: alignSizeToGrid(size.height),
       text: size.text,
       ...defaultCanvasStyle,
       ...creationDefaults,
@@ -367,6 +379,8 @@ export function CanvasLayer({
       object.y1 = startY;
       object.x2 = startX;
       object.y2 = startY;
+      object.width = 1;
+      object.height = 1;
     }
 
     if (type === "penStroke") {
@@ -423,8 +437,8 @@ export function CanvasLayer({
       return;
     }
 
-    const startX = alignToGrid(point.x);
-    const startY = alignToGrid(point.y);
+    const startX = alignXToGrid(point.x);
+    const startY = alignYToGrid(point.y);
     const object = createObject(activeTool, startX, startY);
     if (!object) {
       return;
@@ -578,13 +592,15 @@ export function CanvasLayer({
           ...object,
           x1: interaction.startX,
           y1: interaction.startY,
-          x2: alignToGrid(point.x),
-          y2: alignToGrid(point.y),
+          x2: alignXToGrid(point.x),
+          y2: alignYToGrid(point.y),
         },
         isSnapToGridEnabled,
       ),
       { historyKey: interaction.historyKey },
     );
+    onSelectionChange(object.id);
+    onToolChange("Select");
     setInteraction(null);
   }
 
@@ -672,8 +688,8 @@ export function CanvasLayer({
       return;
     }
 
-    const pointerX = alignToGrid(point.x);
-    const pointerY = alignToGrid(point.y);
+    const pointerX = alignXToGrid(point.x);
+    const pointerY = alignYToGrid(point.y);
 
     if (interaction.kind === "penDraw") {
       const points = [...getPenAbsolutePoints(object), { t: event.timeStamp, x: point.x, y: point.y }];
@@ -716,8 +732,8 @@ export function CanvasLayer({
       updateObject(
         object.id,
         {
-          x: alignToGrid(pointerX - interaction.offsetX),
-          y: alignToGrid(pointerY - interaction.offsetY),
+          x: alignXToGrid(pointerX - interaction.offsetX),
+          y: alignYToGrid(pointerY - interaction.offsetY),
         },
         { historyKey: interaction.historyKey },
       );
@@ -734,8 +750,8 @@ export function CanvasLayer({
     }
 
     if (interaction.kind === "lineMove") {
-      const dx = alignToGrid(pointerX - interaction.pointerX);
-      const dy = alignToGrid(pointerY - interaction.pointerY);
+      const dx = alignSizeToGrid(pointerX - interaction.pointerX);
+      const dy = alignSizeToGrid(pointerY - interaction.pointerY);
       updateObject(
         object.id,
         normalizeLineBounds(
@@ -797,16 +813,17 @@ export function CanvasLayer({
 
     const x = Math.min(interaction.startX, pointerX);
     const y = Math.min(interaction.startY, pointerY);
-    const width = Math.max(minObjectSize, Math.abs(pointerX - interaction.startX));
-    const height = Math.max(minObjectSize, Math.abs(pointerY - interaction.startY));
+    const minimumSize = getMinimumCanvasSize(isSnapToGridEnabled);
+    const width = Math.max(minimumSize, Math.abs(pointerX - interaction.startX));
+    const height = Math.max(minimumSize, Math.abs(pointerY - interaction.startY));
 
     updateObject(
       object.id,
       {
-        x: alignToGrid(x),
-        y: alignToGrid(y),
-        width: alignToGrid(width),
-        height: alignToGrid(height),
+        x: alignXToGrid(x),
+        y: alignYToGrid(y),
+        width: alignSizeToGrid(width),
+        height: alignSizeToGrid(height),
       },
       { historyKey: interaction.historyKey },
     );
@@ -855,6 +872,13 @@ export function CanvasLayer({
 
       if (object?.type === "textBox") {
         startTextEditing(object.id);
+      } else if (
+        object?.type === "rectangle" ||
+        object?.type === "circle" ||
+        object?.type === "line" ||
+        object?.type === "arrow"
+      ) {
+        onToolChange("Select");
       }
     }
 
@@ -982,8 +1006,8 @@ export function CanvasLayer({
       kind: "resize",
       handle,
       id: object.id,
-      pointerX: point.x,
-      pointerY: point.y,
+      pointerX: alignXToGrid(point.x),
+      pointerY: alignYToGrid(point.y),
       startHeight: object.height,
       startWidth: object.width,
       startX: object.x,
@@ -1008,6 +1032,10 @@ export function CanvasLayer({
       return;
     }
 
+    if (activeTool !== "Select") {
+      return;
+    }
+
     onSelectionChange(object.id);
     clearTextEditing();
     const point = screenToWorld(event.clientX, event.clientY);
@@ -1021,13 +1049,14 @@ export function CanvasLayer({
       historyKey: createId("history"),
       kind: "lineMove",
       id: object.id,
-      pointerX: point.x,
-      pointerY: point.y,
+      pointerX: alignXToGrid(point.x),
+      pointerY: alignYToGrid(point.y),
       startX1: points.x1,
       startX2: points.x2,
       startY1: points.y1,
       startY2: points.y2,
     });
+    event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function startPenMove(event: React.PointerEvent<SVGPathElement>, object: CanvasObject) {
@@ -1070,6 +1099,11 @@ export function CanvasLayer({
     endpoint: "start" | "end",
   ) {
     event.stopPropagation();
+
+    if (activeTool !== "Select") {
+      return;
+    }
+
     onSelectionChange(object.id);
     clearTextEditing();
     setInteraction({ endpoint, historyKey: createId("history"), id: object.id, kind: "endpoint" });

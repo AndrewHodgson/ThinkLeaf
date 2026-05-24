@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Thinkleaf",
   description: "Notes with room to think.",
+  icons: {
+    icon: "/brand/favicon.svg",
+  },
 };
 
 export default function RootLayout({

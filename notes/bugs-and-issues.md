@@ -1,6 +1,6 @@
 # Bugs and Issues
 
-## 2026-05-22 Manual QA Startup Blocker
+## 2026-05-24 Manual QA Startup Blocker
 
 Status: Open
 
@@ -8,10 +8,9 @@ Status: Open
 
 Observed:
 
-- Running `npm run dev` inside the sandbox fails with `listen EPERM: operation not permitted 0.0.0.0:3000`.
-- Running `npm run dev` with elevated local permissions reports an existing server on port 3000 with PID `43951`.
-- The attempted second dev server briefly selected port 3001, then exited with `Another next dev server is already running`.
-- Local `curl` to `localhost:3001` could not connect after that second server exited.
+- `lsof -nP -iTCP:3000 -sTCP:LISTEN` reports an existing `node` process on port 3000 with PID `11683`.
+- Local `curl -I http://localhost:3000` could not connect from this QC session even though the listener is present.
+- The existing `.next/dev/logs/next-development.log` contains older runtime errors from prior edits, but recent entries after the latest code/build pass do not show fresh application errors.
 
 Impact:
 
@@ -20,10 +19,26 @@ Impact:
 
 Recommended follow-up:
 
-- In the user's local terminal/browser, use the existing `localhost:3000` session for manual QA, or stop PID `43951` and restart with `npm run dev` before repeating startup checks.
+- In the user's local terminal/browser, use the existing `localhost:3000` session for manual QA if it is reachable there, or stop PID `11683` and restart with `npm run dev -- -p 3000` before repeating startup checks.
 
 Notes:
 
 - `npm run build` passes.
 - No current code/build regression was found during code-path review.
-- The existing `.next/dev/logs/next-development.log` contains older browser/runtime errors from prior edits; those were not confirmed as current issues in this session.
+
+## 2026-05-24 Public Folder Hygiene
+
+Status: Open
+
+`public/` currently includes files that are not needed by the running app:
+
+- `public/.DS_Store`
+- `public/brand/ThinkLeaf Logo Working.ai`
+
+Impact:
+
+- Files under `public/` can be served by the app, so source/design artifacts and OS metadata should not live there long-term.
+
+Recommended follow-up:
+
+- Move source design files outside `public/` and remove OS metadata files when safe to do so.

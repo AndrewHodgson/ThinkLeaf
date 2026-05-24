@@ -11,13 +11,14 @@ import type {
   Page,
   WorkspaceData,
 } from "@/types/workspace";
-import { createId, findFolder, findProject, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
+import { createId, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
 import {
   defaultCanvasViewState,
   defaultCanvasStyle,
   documentBlockX,
   documentBlockWidth,
   documentBlockY,
+  gridSize,
   objectCanvasOriginX,
   objectCanvasOriginY,
   snapToGrid,
@@ -29,8 +30,9 @@ import {
 } from "@/lib/canvasStyle";
 import { TagEditor } from "@/components/workspace/TagEditor";
 import { RichTextEditor, type FormattingTarget } from "@/components/workspace/RichTextEditor";
-import { Calendar, Check, Clock3, Save, Star, Trash2, X } from "lucide-react";
+import { Check, Clock3, Save, Star, Trash2, X } from "lucide-react";
 import { CanvasLayer } from "@/components/workspace/CanvasLayer";
+import { alignCanvasSize, alignCanvasX, alignCanvasY } from "@/components/workspace/canvas/canvasGeometry";
 import { CanvasCreationToolbar } from "@/components/workspace/CanvasCreationToolbar";
 import {
   CanvasObjectToolbar,
@@ -162,8 +164,7 @@ export function Workspace({
   }
 
   const page = activePage;
-  const project = findProject(data, page.projectId);
-  const folder = findFolder(data, page.folderId);
+  const breadcrumbPath = getBreadcrumbPath(data, page);
   const selectedObject = page.canvasObjects.find((object) => object.id === selectedObjectId) ?? null;
   const selectedWhiteboardTextObject = selectedObject && isCanvasTextObject(selectedObject) ? selectedObject : null;
   const formattingTarget: FormattingTarget = selectedWhiteboardTextObject
@@ -273,10 +274,6 @@ export function Workspace({
     });
   }
 
-  function alignCanvasValue(value: number) {
-    return isSnapToGridEnabled ? snapToGrid(value) : value;
-  }
-
   function getVisibleCanvasInsertPoint(width: number, height: number) {
     const bounds = workspaceRef.current?.getBoundingClientRect();
     const screenX = bounds ? bounds.width / 2 : 640;
@@ -285,8 +282,8 @@ export function Workspace({
     const y = (screenY - canvasViewState.panY) / canvasViewState.zoom - objectCanvasOriginY - height / 2;
 
     return {
-      x: alignCanvasValue(x),
-      y: alignCanvasValue(y),
+      x: alignCanvasX(x, isSnapToGridEnabled),
+      y: alignCanvasY(y, isSnapToGridEnabled),
     };
   }
 
@@ -303,8 +300,8 @@ export function Workspace({
       type: "image",
       x: position.x,
       y: position.y,
-      width: alignCanvasValue(width),
-      height: alignCanvasValue(height),
+      width: alignCanvasSize(width, isSnapToGridEnabled),
+      height: alignCanvasSize(height, isSnapToGridEnabled),
       imageDataUrl: image.dataUrl,
       ...defaultCanvasStyle,
       fillColor: "transparent",
@@ -334,6 +331,7 @@ export function Workspace({
 
       onUpdateCanvasObjects(page.id, [...page.canvasObjects, ...importedObjects]);
       onSelectionChange(importedObjects[importedObjects.length - 1].id);
+      onToolChange("Select");
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Could not import that image.");
     }
@@ -520,7 +518,7 @@ export function Workspace({
         isGridVisible
           ? {
               backgroundPosition: `${canvasViewState.panX}px ${canvasViewState.panY}px`,
-              backgroundSize: `${22 * canvasViewState.zoom}px ${22 * canvasViewState.zoom}px`,
+              backgroundSize: `${gridSize * canvasViewState.zoom}px ${gridSize * canvasViewState.zoom}px`,
             }
           : undefined
       }
@@ -547,6 +545,7 @@ export function Workspace({
           onChange={(canvasObjects, options) => onUpdateCanvasObjects(page.id, canvasObjects, options)}
           onViewStateChange={(viewState) => onUpdatePage(page.id, { canvasViewState: viewState })}
           onSelectionChange={onSelectionChange}
+          onToolChange={onToolChange}
         />
         <article
           className={[
@@ -567,9 +566,12 @@ export function Workspace({
           <div className="border-b border-slate-100 px-8 py-4">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 text-sm text-slate-500">
-                <span className="font-medium text-slate-700">{project?.name ?? "Project"}</span>
-                <span className="mx-2 text-slate-300">/</span>
-                <span>{folder?.name ?? "Folder"}</span>
+                {breadcrumbPath.map((item, index) => (
+                  <span key={`${item}-${index}`}>
+                    {index > 0 ? <span className="mx-2 text-slate-300">/</span> : null}
+                    <span className={index === 0 ? "font-medium text-slate-700" : undefined}>{item}</span>
+                  </span>
+                ))}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <button
@@ -626,11 +628,12 @@ export function Workspace({
 
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500">
               <label className="inline-flex items-center gap-1.5">
-                <Calendar aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
                 <span>Note Date:</span>
                 <input
                   className="w-[112px] border-none bg-transparent font-medium text-slate-700 outline-none"
-                  type="date"
+                  inputMode="numeric"
+                  placeholder="YYYY-MM-DD"
+                  type="text"
                   value={page.noteDate}
                   onChange={(event) => onUpdatePage(page.id, { noteDate: event.target.value })}
                 />
@@ -807,6 +810,23 @@ function ShortcutSection({ items, title }: { items: Array<[string, string]>; tit
 
 function isCanvasTextObject(object: CanvasObject) {
   return object.type === "textBox" || object.text !== undefined;
+}
+
+function getBreadcrumbPath(data: WorkspaceData, page: Page) {
+  const profile = data.profiles.find((item) => item.id === page.profileId);
+  const project = data.projects.find((item) => item.id === page.projectId);
+  const foldersById = new Map(data.folders.map((item) => [item.id, item]));
+  const folderNames: string[] = [];
+  const visitedFolderIds = new Set<string>();
+  let folder = foldersById.get(page.folderId);
+
+  while (folder && !visitedFolderIds.has(folder.id)) {
+    folderNames.unshift(folder.name);
+    visitedFolderIds.add(folder.id);
+    folder = folder.parentFolderId ? foldersById.get(folder.parentFolderId) : undefined;
+  }
+
+  return [profile?.name ?? "Profile", project?.name ?? "Project", ...folderNames, page.title || "Untitled"];
 }
 
 function getCreationDefaultType(tool: CanvasTool): keyof CanvasCreationToolDefaults | null {

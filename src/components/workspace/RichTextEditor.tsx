@@ -3,7 +3,7 @@
 import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
 import { Extension, Mark, Node } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import type { Transaction } from "@tiptap/pm/state";
+import { Plugin, type Transaction } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { Editor, EditorContent, useEditor } from "@tiptap/react";
 import { createPortal } from "react-dom";
@@ -184,6 +184,27 @@ const IndentExtension = Extension.create({
   },
 });
 
+const ListTextIndentCleanupExtension = Extension.create({
+  name: "thinkleafListTextIndentCleanup",
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        appendTransaction(transactions, _oldState, newState) {
+          if (!transactions.some((transaction) => transaction.docChanged)) {
+            return null;
+          }
+
+          const tr = newState.tr;
+          const changed = clearListTextIndentMarks(tr, newState.doc);
+
+          return changed ? tr : null;
+        },
+      }),
+    ];
+  },
+});
+
 const DocumentImageNode = Node.create({
   name: "thinkleafImage",
   group: "block",
@@ -295,6 +316,7 @@ export function RichTextEditor({
       FontSizeMark,
       UnderlineMark,
       IndentExtension,
+      ListTextIndentCleanupExtension,
       DocumentImageNode,
     ],
     content: normalizeEditorContent(content),
@@ -479,17 +501,25 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
   }
 
   function updateIndent(delta: number) {
-    if (editor?.isActive("listItem") || editor?.isActive("taskItem")) {
-      const commandName = delta > 0 ? "sinkListItem" : "liftListItem";
-      const didUpdateListItem = editor.chain().focus()[commandName]("listItem").run();
-      const didUpdateTaskItem = didUpdateListItem || editor.chain().focus()[commandName]("taskItem").run();
-
-      if (didUpdateTaskItem) {
-        return;
-      }
+    if (!editor) {
+      return;
     }
 
-    editor?.commands.command(({ state, tr, dispatch }) => {
+    editor.commands.focus();
+
+    const commandName = delta > 0 ? "sinkListItem" : "liftListItem";
+    const activeListItemName = getActiveListItemName(editor);
+    const listItemNames: Array<"listItem" | "taskItem"> = activeListItemName
+      ? [activeListItemName, activeListItemName === "taskItem" ? "listItem" : "taskItem"]
+      : ["listItem", "taskItem"];
+    const didUpdateListItem = listItemNames.some((listItemName) => runListItemCommand(editor, commandName, listItemName));
+
+    if (didUpdateListItem || activeListItemName) {
+      clearListTextIndents(editor);
+      return;
+    }
+
+    editor.commands.command(({ state, tr, dispatch }) => {
       const { from, to } = state.selection;
       let changed = false;
 
@@ -690,6 +720,8 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
               className={buttonClass(false, isEditorUnavailable)}
               title="Outdent"
               type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onPointerDown={(event) => event.preventDefault()}
               onClick={() => updateIndent(-1)}
             >
               <IndentDecrease aria-hidden="true" className="h-4 w-4" />
@@ -699,6 +731,8 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
               className={buttonClass(false, isEditorUnavailable)}
               title="Indent"
               type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onPointerDown={(event) => event.preventDefault()}
               onClick={() => updateIndent(1)}
             >
               <IndentIncrease aria-hidden="true" className="h-4 w-4" />
@@ -949,6 +983,71 @@ function updateNodeIndent(tr: Transaction, node: ProseMirrorNode, pos: number, d
 
   tr.setNodeMarkup(pos, undefined, { ...node.attrs, indentLevel: nextLevel }, node.marks);
   return true;
+}
+
+function clearListTextIndents(editor: Editor) {
+  editor.commands.command(({ state, tr, dispatch }) => {
+    const changed = clearListTextIndentMarks(tr, state.doc);
+
+    if (changed && dispatch) {
+      dispatch(tr);
+    }
+
+    return changed;
+  });
+}
+
+function clearListTextIndentMarks(tr: Transaction, doc: ProseMirrorNode) {
+  let changed = false;
+
+  doc.descendants((node, pos, parent) => {
+    if (node.type.name !== "paragraph" && node.type.name !== "heading") {
+      return;
+    }
+
+    if (parent?.type.name !== "listItem" && parent?.type.name !== "taskItem") {
+      return;
+    }
+
+    const currentLevel = typeof node.attrs.indentLevel === "number" ? node.attrs.indentLevel : 0;
+    if (currentLevel === 0) {
+      return;
+    }
+
+    tr.setNodeMarkup(pos, undefined, { ...node.attrs, indentLevel: 0 }, node.marks);
+    changed = true;
+  });
+
+  return changed;
+}
+
+function runListItemCommand(
+  editor: Editor,
+  commandName: "sinkListItem" | "liftListItem",
+  listItemName: "listItem" | "taskItem",
+) {
+  if (!editor.state.schema.nodes[listItemName]) {
+    return false;
+  }
+
+  return commandName === "sinkListItem"
+    ? editor.commands.sinkListItem(listItemName)
+    : editor.commands.liftListItem(listItemName);
+}
+
+function getActiveListItemName(editor: Editor) {
+  const { $from, $to } = editor.state.selection;
+
+  for (const position of [$from, $to]) {
+    for (let depth = position.depth; depth > 0; depth -= 1) {
+      const nodeName = position.node(depth).type.name;
+      if (nodeName === "listItem" || nodeName === "taskItem") {
+        return nodeName as "listItem" | "taskItem";
+      }
+    }
+  }
+
+  return null;
 }
 
 function HeadingDropdown({ editor }: { editor: Editor | null }) {

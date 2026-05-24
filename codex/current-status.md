@@ -8,7 +8,9 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Each profile owns its own projects, folders, pages, favorites, and search results.
 - Existing pre-profile data migrates into the default Work profile.
 - Folders support nesting through an optional `parentFolderId`; folders without a parent remain top-level project folders.
+- Page breadcrumbs show the full active path from profile to project to nested folders to page.
 - The sidebar renders nested folders recursively, with create-page, create-folder, rename, duplicate, delete, and expand/collapse actions available at each folder level; chevrons handle expand/collapse, visible plus buttons handle creation, page stars handle favorites, and three-dot menus handle row actions.
+- Sidebar branding uses the Thinkleaf horizontal logo when expanded and the vertical logo when collapsed; the app favicon uses the brand favicon asset.
 - Deleting a folder removes all descendant folders and pages after confirmation; duplicating a folder copies descendant folders and pages with new IDs.
 - Tag suggestions are built from tags already used in the active profile and appear only after typed prefix matches, keeping tag reuse and tag search scoped to the selected profile.
 - Page templates can be saved from page row action menus and reused when creating new pages; templates persist in localStorage and copy title, body, tags, canvas objects, and canvas view state into the destination folder.
@@ -17,7 +19,10 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 ## Main Document
 
 - Tiptap editor supports headings, bold, italic, underline, indent/outdent, lists, checklists, links, tables, callouts, images, text color, highlight, text size, horizontal alignment, and document vertical alignment.
-- Indent/outdent uses list nesting for bullet, numbered, and checklist items so markers and text move together; paragraph and heading indent remains margin-based.
+- Ordered lists use decimal markers at level 1, lower-alpha markers at level 2, and lower-roman markers at level 3.
+- Indent/outdent uses Tiptap list nesting for bullet, numbered, and checklist items so markers and text move together; old paragraph-indent styling inside list items is cleaned up in the editor, while paragraph and heading indent remains margin-based outside lists.
+- Checklist rows align checkboxes with their text.
+- Note Date remains editable as a text date field without a calendar icon/widget.
 - Document images can be inserted or pasted, resized/compressed, and stored as data URLs.
 - The main page header is compact, with tighter title/date/tag spacing and subtler tag pills.
 - The page header save button manually persists the current note state and shows a subtle saved confirmation; autosave still runs through localStorage.
@@ -79,6 +84,8 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Sidebar project/folder/page controls are event-contained so row actions do not trigger page selection or project/folder expansion. Three-dot menus close on outside click, when another row menu opens, and after menu actions; duplicate page rows use distinct menu state so opening a page menu in the project tree does not also open it in Favorites or Search. Page Save as Template lives in the page row menu while page favorite is a direct star action.
 - Canvas object duplicate and delete actions are available from the top contextual toolbar.
 - Canvas undo/redo is tracked per page for create, delete, move, resize, style changes, whiteboard text edits, and inserted image objects.
+- Line and arrow endpoint handles are larger and easier to hit; with Select active, endpoint handles move one endpoint and the line/arrow body hit area moves the whole line/arrow.
+- Rectangles and circles snap placement and size to the visible dot centers when Snap to Grid is enabled; lines and arrows snap endpoints to the same visible dot centers while still allowing any angle.
 - Rectangles and circles can contain editable text.
 - Text-bearing canvas objects support practical formatting: bold, italic, alignment, vertical alignment, text color, highlight, and size, while preserving plain text storage.
 - Shape, line, and pen stroke styling includes stroke color and stroke width; pen strokes also support smoothing, Ink Density, and Pen/Ink/Highlighter modes, while shapes and lines support solid/dashed/dotted stroke style where applicable.
@@ -87,25 +94,12 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 
 ## Current Recommended Next
 
-Do a short manual browser QA/polish pass before adding new features.
+Latest full QC code-path/build review on 2026-05-24 passed `npm run build` and did not find a safe, obvious runtime code fix to make without browser reproduction.
 
-Latest code-path/build verification after adding the Fast Laser Pointer fade option passed. Remaining verification should be hands-on browser QA with real drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching.
+Remaining verification should be hands-on browser QA with real drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching. The local startup check is still blocked by an existing `node` listener on port 3000 that was not reachable by `curl` from this session; see `notes/bugs-and-issues.md`.
 
-Focus the pass on:
+Recommended next work:
 
-- Profiles
-- Image insert and paste
-- Color picker popovers, custom HEX, and recent colors
-- Toolbar shortcuts and shortcut badges
-- Canvas undo/redo buttons and shortcuts
-- Pan, zoom, Reset View, and the zoom percentage indicator
-- Trackpad two-finger pan over the board/document body and Ctrl/Cmd + wheel zoom
-- Snap to Grid and Show Grid
-- Object creation, movement, resizing, endpoint editing, styling, and deletion
-- Creation defaults for Rectangle, Circle, Line, Arrow, and Text Box: toolbar visibility, persistence after refresh, selected-object priority, and application to the next new object
-- Pen stroke width, smoothing, Ink Density, and Pen/Ink/Highlighter/Laser controls for the active Pen tool, plus selected pen/highlighter stroke controls where applicable
-- Laser Pointer mode drawing, glow, color picker persistence, fade duration persistence, tail fade, pan/zoom behavior, non-persistence after refresh, and no undo/redo history impact
-- Eraser shortcut, cursor feedback, object deletion, hover preview, and undo/redo
-- Main document formatting
-- Whiteboard text formatting
-- localStorage persistence after refresh and page/profile switching
+- Repeat startup/browser QA after restarting the port 3000 dev server cleanly.
+- Remove public-folder source/OS metadata artifacts when safe.
+- Do a behavior-preserving maintainability pass on the largest workspace modules after manual QA confirms current behavior.

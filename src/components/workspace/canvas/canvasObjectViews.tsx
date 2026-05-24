@@ -192,8 +192,8 @@ export function EndpointHandle({
   return (
     <button
       aria-label={`Move ${endpoint} endpoint`}
-      className="absolute h-5 w-5 rounded-full border border-leaf-600 bg-white shadow-sm"
-      style={{ left: point.x - 10, top: point.y - 10 }}
+      className="pointer-events-auto absolute h-7 w-7 rounded-full border border-leaf-600 bg-white shadow-sm ring-4 ring-white/70"
+      style={{ left: point.x - 14, top: point.y - 14 }}
       title="Move endpoint"
       type="button"
       onPointerDown={(event) => onStart(event, object, endpoint)}

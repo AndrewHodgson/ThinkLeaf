@@ -85,7 +85,7 @@ textarea {
 
 .thinkleaf-editor ul,
 .thinkleaf-editor ol {
-  padding-left: 1.35rem;
+  padding-left: 1.55rem;
 }
 
 .thinkleaf-editor ul {
@@ -96,28 +96,48 @@ textarea {
   list-style: decimal;
 }
 
+.thinkleaf-editor ol ol {
+  list-style: lower-alpha;
+}
+
+.thinkleaf-editor ol ol ol {
+  list-style: lower-roman;
+}
+
 .thinkleaf-editor li {
-  padding-left: 0.15rem;
+  padding-left: 0;
 }
 
 .thinkleaf-editor ul[data-type="taskList"] {
   list-style: none;
-  padding-left: 0;
+  padding-left: 0.15rem;
+}
+
+.thinkleaf-editor ul[data-type="taskList"] ul[data-type="taskList"] {
+  padding-left: 1.55rem;
 }
 
 .thinkleaf-editor ul[data-type="taskList"] li {
   align-items: flex-start;
   display: flex;
-  gap: 0.65rem;
+  gap: 0.55rem;
   padding-left: 0;
 }
 
 .thinkleaf-editor ul[data-type="taskList"] li > label {
-  margin-top: 0.28rem;
+  align-items: center;
+  display: inline-flex;
+  height: 1.75rem;
+  margin-top: 0;
 }
 
 .thinkleaf-editor ul[data-type="taskList"] input {
   accent-color: #238157;
+  margin: 0;
+}
+
+.thinkleaf-editor ul[data-type="taskList"] li > div {
+  min-width: 0;
 }
 
 .thinkleaf-editor a {
