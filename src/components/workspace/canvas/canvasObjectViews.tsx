@@ -6,7 +6,7 @@ import {
   objectCanvasOriginX,
   objectCanvasOriginY,
 } from "@/lib/canvasStyle";
-import type { CanvasObject } from "@/types/workspace";
+import type { CanvasConnectorAnchor, CanvasObject } from "@/types/workspace";
 import type { EraserCursorPoint, ResizeHandle } from "@/components/workspace/canvas/canvasLayerTypes";
 
 export function CanvasObjectView({
@@ -96,6 +96,26 @@ export function CanvasObjectView({
     );
   }
 
+  if (object.type === "diamond") {
+    return (
+      <div className="relative h-full w-full">
+        <svg aria-hidden="true" className="absolute inset-0 h-full w-full overflow-visible">
+          <polygon
+            fill={object.fillColor}
+            points={`${object.width / 2},0 ${object.width},${object.height / 2} ${object.width / 2},${object.height} 0,${object.height / 2}`}
+            stroke={object.strokeColor}
+            strokeDasharray={object.strokeStyle === "dashed" ? "8 6" : object.strokeStyle === "dotted" ? "0 6" : undefined}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={object.strokeWidth}
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+        <div className="absolute inset-[12%]">{renderTextContent()}</div>
+      </div>
+    );
+  }
+
   if (object.type === "image") {
     return (
       <div className="h-full w-full overflow-hidden rounded-md border border-slate-200 bg-white" style={sharedStyle}>
@@ -175,6 +195,33 @@ export function ResizeHandleButton({
       type="button"
       onPointerDown={onPointerDown}
     />
+  );
+}
+
+export function FlowchartConnectorHandle({
+  anchor,
+  onPointerDown,
+}: {
+  anchor: CanvasConnectorAnchor;
+  onPointerDown: (event: PointerEvent<HTMLButtonElement>, anchor: CanvasConnectorAnchor) => void;
+}) {
+  const position = {
+    bottom: "-bottom-9 left-1/2 -translate-x-1/2",
+    left: "-left-9 top-1/2 -translate-y-1/2",
+    right: "-right-9 top-1/2 -translate-y-1/2",
+    top: "-top-9 left-1/2 -translate-x-1/2",
+  }[anchor];
+
+  return (
+    <button
+      aria-label={`Add connected shape ${anchor}`}
+      className={`absolute flex h-6 w-6 items-center justify-center rounded-full border border-leaf-600 bg-white text-sm font-bold leading-none text-leaf-700 shadow-sm ring-4 ring-white/80 transition hover:bg-leaf-50 ${position}`}
+      title="Add connected shape"
+      type="button"
+      onPointerDown={(event) => onPointerDown(event, anchor)}
+    >
+      +
+    </button>
   );
 }
 

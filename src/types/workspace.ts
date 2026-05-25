@@ -51,10 +51,26 @@ export type PageTemplate = {
   updatedAt: string;
 };
 
-export type CanvasObjectType = "rectangle" | "circle" | "textBox" | "line" | "arrow" | "image" | "penStroke";
+export type CanvasObjectType =
+  | "rectangle"
+  | "circle"
+  | "diamond"
+  | "textBox"
+  | "line"
+  | "arrow"
+  | "image"
+  | "penStroke";
+export type CanvasShapeType = "rectangle" | "circle" | "diamond";
 export type CanvasTextAlign = "left" | "center" | "right";
 export type CanvasTextVerticalAlign = "top" | "middle" | "bottom";
 export type CanvasStrokeStyle = "solid" | "dashed" | "dotted";
+export type CanvasConnectorAnchor = "top" | "right" | "bottom" | "left";
+export type CanvasConnectorStyle = "straight" | "elbow" | "curve";
+export type CanvasConnectorArrowDirection = "none" | "forward" | "backward" | "both";
+export type CanvasConnectorStart = {
+  sourceAnchor: CanvasConnectorAnchor;
+  sourceObjectId: string;
+};
 export type CanvasPenSmoothing = "off" | "light" | "medium" | "high" | "veryHigh";
 export type CanvasPenMode = "uniform" | "ink" | "highlighter" | "laser";
 export type CanvasPenInkDensity = "low" | "medium" | "high" | "veryHigh";
@@ -78,8 +94,7 @@ export type CanvasPenSettings = {
 export type CanvasTool =
   | "Select"
   | "Pan"
-  | "Rectangle"
-  | "Circle"
+  | "Shape"
   | "Pen"
   | "Text Box"
   | "Line"
@@ -104,6 +119,8 @@ export type CanvasObject = {
   penMode?: CanvasPenMode;
   penSmoothing?: CanvasPenSmoothing;
   text?: string;
+  connectorLabel?: string;
+  shapeLabel?: string;
   strokeColor: string;
   fillColor: string;
   strokeWidth: number;
@@ -115,10 +132,14 @@ export type CanvasObject = {
   textAlign?: CanvasTextAlign;
   textVerticalAlign?: CanvasTextVerticalAlign;
   fontSize?: number;
+  sourceObjectId?: string;
+  targetObjectId?: string;
+  sourceAnchor?: CanvasConnectorAnchor;
+  targetAnchor?: CanvasConnectorAnchor;
+  connectorStyle?: CanvasConnectorStyle;
+  arrowDirection?: CanvasConnectorArrowDirection;
   createdAt: string;
   updatedAt: string;
-  // Future connector objects may add sourceObjectId, targetObjectId, sourceAnchor, and targetAnchor.
-  // For now, line and arrow objects remain independent and do not stick to moved objects.
 };
 
 export type CanvasCreationDefaultStyle = Partial<
@@ -141,6 +162,7 @@ export type CanvasCreationDefaultStyle = Partial<
 export type CanvasCreationToolDefaults = {
   arrow: CanvasCreationDefaultStyle;
   circle: CanvasCreationDefaultStyle;
+  diamond: CanvasCreationDefaultStyle;
   line: CanvasCreationDefaultStyle;
   rectangle: CanvasCreationDefaultStyle;
   textBox: CanvasCreationDefaultStyle;

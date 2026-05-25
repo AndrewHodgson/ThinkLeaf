@@ -2,12 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import type {
+  CanvasConnectorAnchor,
+  CanvasConnectorStart,
   CanvasCreationToolDefaults,
   CanvasHistoryOptions,
   CanvasObject,
   CanvasObjectType,
   CanvasPenSettings,
   CanvasPoint,
+  CanvasShapeType,
   CanvasTool,
   CanvasViewState,
 } from "@/types/workspace";
@@ -29,6 +32,7 @@ import {
   CanvasObjectView,
   EndpointHandle,
   EraserCursorRing,
+  FlowchartConnectorHandle,
   ResizeHandleButton,
 } from "@/components/workspace/canvas/canvasObjectViews";
 import {
@@ -36,13 +40,20 @@ import {
   alignCanvasX,
   alignCanvasY,
   getCreationDefaultsForType,
-  getLinePoints,
+  getArrowDirection,
+  getConnectorAnchorPoint,
+  getLineRenderSegments,
+  getLineRenderPoints,
+  getLineLabelPoint,
   getLineSelectionBox,
   getMinimumCanvasSize,
+  getOppositeConnectorAnchor,
   getResizeUpdates,
   getStrokeDashArray,
   normalizeLineBounds,
+  removeObjectsAndConnectedLines,
   screenToWorldPoint,
+  syncConnectedLines,
 } from "@/components/workspace/canvas/canvasGeometry";
 import { eraserCursorSize, getEraserTargetObject } from "@/components/workspace/canvas/eraserHitTesting";
 import {
@@ -66,21 +77,24 @@ import type {
 
 type CanvasLayerProps = {
   activeTool: CanvasTool;
+  activeShapeType: CanvasShapeType;
   creationToolDefaults: CanvasCreationToolDefaults;
   isSnapToGridEnabled: boolean;
+  isFlowchartConnectorArrowEnabled: boolean;
   objects: CanvasObject[];
+  pendingConnectorStart: CanvasConnectorStart | null;
   penSettings: CanvasPenSettings;
   selectedObjectId: string | null;
   viewState: CanvasViewState;
   onChange: (objects: CanvasObject[], options?: CanvasHistoryOptions) => void;
+  onConnectorStartChange: (connectorStart: CanvasConnectorStart | null) => void;
   onSelectionChange: (objectId: string | null) => void;
+  onShapeTypeChange: (shapeType: CanvasShapeType) => void;
   onToolChange: (tool: CanvasTool) => void;
   onViewStateChange: (viewState: CanvasViewState) => void;
 };
 
 const toolToObjectType: Partial<Record<CanvasTool, CanvasObjectType>> = {
-  Rectangle: "rectangle",
-  Circle: "circle",
   "Text Box": "textBox",
   Line: "line",
   Arrow: "arrow",
@@ -89,14 +103,19 @@ const toolToObjectType: Partial<Record<CanvasTool, CanvasObjectType>> = {
 
 export function CanvasLayer({
   activeTool,
+  activeShapeType,
   creationToolDefaults,
+  isFlowchartConnectorArrowEnabled,
   isSnapToGridEnabled,
   objects,
+  pendingConnectorStart,
   penSettings,
   selectedObjectId,
   viewState,
   onChange,
+  onConnectorStartChange,
   onSelectionChange,
+  onShapeTypeChange,
   onToolChange,
   onViewStateChange,
 }: CanvasLayerProps) {
@@ -162,7 +181,7 @@ export function CanvasLayer({
       return;
     }
 
-    if (selectedObject.type !== "rectangle" && selectedObject.type !== "circle") {
+    if (!isFlowchartShape(selectedObject)) {
       return;
     }
 
@@ -210,18 +229,21 @@ export function CanvasLayer({
 
   function updateObject(objectId: string, updates: Partial<CanvasObject>, options?: CanvasHistoryOptions) {
     const now = new Date().toISOString();
-    onChange(
-      objects.map((object) =>
-        object.id === objectId
-          ? {
-              ...object,
-              ...updates,
-              updatedAt: now,
-            }
-          : object,
-      ),
-      options,
+    const changedObject = objects.find((object) => object.id === objectId);
+    const nextObjects = objects.map((object) =>
+      object.id === objectId
+        ? {
+            ...object,
+            ...updates,
+            updatedAt: now,
+          }
+        : object,
     );
+    const shouldSyncConnectors =
+      Boolean(changedObject && changedObject.type !== "line" && changedObject.type !== "arrow") &&
+      ("x" in updates || "y" in updates || "width" in updates || "height" in updates);
+
+    onChange(shouldSyncConnectors ? syncConnectedLines(nextObjects, new Set([objectId])) : nextObjects, options);
   }
 
   function startTextEditing(objectId: string) {
@@ -255,7 +277,7 @@ export function CanvasLayer({
   }
 
   function deleteObject(objectId: string, options?: CanvasHistoryOptions) {
-    onChange(objects.filter((object) => object.id !== objectId), options);
+    onChange(removeObjectsAndConnectedLines(objects, new Set([objectId])), options);
     onSelectionChange(null);
     clearTextEditing();
     setInteraction(null);
@@ -277,7 +299,7 @@ export function CanvasLayer({
     }
 
     const currentObjects = objectsRef.current;
-    const nextObjects = currentObjects.filter((item) => !pendingIds.has(item.id));
+    const nextObjects = removeObjectsAndConnectedLines(currentObjects, pendingIds);
 
     if (nextObjects.length === currentObjects.length) {
       return;
@@ -352,7 +374,7 @@ export function CanvasLayer({
   }
 
   function createObject(tool: CanvasTool, startX: number, startY: number): CanvasObject | null {
-    const type = toolToObjectType[tool];
+    const type = tool === "Shape" ? activeShapeType : toolToObjectType[tool];
     if (!type) {
       return null;
     }
@@ -389,6 +411,134 @@ export function CanvasLayer({
     }
 
     return object;
+  }
+
+  function createFlowchartConnectorObject({
+    sourceObject,
+    targetObject,
+    sourceAnchor,
+    targetAnchor,
+  }: {
+    sourceObject: CanvasObject;
+    targetObject: CanvasObject;
+    sourceAnchor: CanvasConnectorAnchor;
+    targetAnchor: CanvasConnectorAnchor;
+  }) {
+    const now = new Date().toISOString();
+    const sourcePoint = getConnectorAnchorPoint(sourceObject, sourceAnchor);
+    const targetPoint = getConnectorAnchorPoint(targetObject, targetAnchor);
+    const connectorDefaults = getCreationDefaultsForType("arrow", creationToolDefaults);
+
+    return {
+      id: createId("object"),
+      type: "arrow",
+      x: Math.min(sourcePoint.x, targetPoint.x),
+      y: Math.min(sourcePoint.y, targetPoint.y),
+      width: Math.max(1, Math.abs(targetPoint.x - sourcePoint.x)),
+      height: Math.max(1, Math.abs(targetPoint.y - sourcePoint.y)),
+      x1: sourcePoint.x,
+      y1: sourcePoint.y,
+      x2: targetPoint.x,
+      y2: targetPoint.y,
+      sourceObjectId: sourceObject.id,
+      targetObjectId: targetObject.id,
+      sourceAnchor,
+      targetAnchor,
+      connectorStyle: "straight",
+      arrowDirection: isFlowchartConnectorArrowEnabled ? "forward" : "none",
+      ...defaultCanvasStyle,
+      ...connectorDefaults,
+      fillColor: "transparent",
+      createdAt: now,
+      updatedAt: now,
+    } satisfies CanvasObject;
+  }
+
+  function createFlowchartShape(sourceObject: CanvasObject, sourceAnchor: CanvasConnectorAnchor) {
+    if (!isFlowchartShape(sourceObject)) {
+      return;
+    }
+
+    const targetType = sourceObject.type;
+    const targetAnchor = getOppositeConnectorAnchor(sourceAnchor);
+    const width = sourceObject.width;
+    const height = sourceObject.height;
+    const gap = alignSizeToGrid(110);
+    const sourceCenterX = sourceObject.x + sourceObject.width / 2;
+    const sourceCenterY = sourceObject.y + sourceObject.height / 2;
+    let x = sourceObject.x;
+    let y = sourceObject.y;
+
+    if (sourceAnchor === "top") {
+      x = sourceCenterX - width / 2;
+      y = sourceObject.y - gap - height;
+    } else if (sourceAnchor === "right") {
+      x = sourceObject.x + sourceObject.width + gap;
+      y = sourceCenterY - height / 2;
+    } else if (sourceAnchor === "bottom") {
+      x = sourceCenterX - width / 2;
+      y = sourceObject.y + sourceObject.height + gap;
+    } else {
+      x = sourceObject.x - gap - width;
+      y = sourceCenterY - height / 2;
+    }
+
+    const now = new Date().toISOString();
+    const creationDefaults = getCreationDefaultsForType(targetType, creationToolDefaults);
+    const targetObject: CanvasObject = {
+      id: createId("object"),
+      type: targetType,
+      x: alignXToGrid(x),
+      y: alignYToGrid(y),
+      width,
+      height,
+      ...defaultCanvasStyle,
+      ...creationDefaults,
+      ...getSourceShapeStyle(sourceObject),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const connectorObject = createFlowchartConnectorObject({
+      sourceObject,
+      targetObject,
+      sourceAnchor,
+      targetAnchor,
+    });
+    const historyKey = createId("history");
+
+    onChange(syncConnectedLines([...objects, connectorObject, targetObject]), { historyKey });
+    onSelectionChange(targetObject.id);
+    clearTextEditing();
+    setInteraction(null);
+    onToolChange("Select");
+  }
+
+  function createConnectorToExistingShape(targetObject: CanvasObject) {
+    if (!pendingConnectorStart || !isFlowchartShape(targetObject)) {
+      return;
+    }
+
+    const sourceObject = objects.find((object) => object.id === pendingConnectorStart.sourceObjectId);
+    if (!isFlowchartShape(sourceObject) || sourceObject.id === targetObject.id) {
+      onConnectorStartChange(null);
+      return;
+    }
+
+    const targetAnchor = getBestTargetAnchor(sourceObject, targetObject);
+    const connectorObject = createFlowchartConnectorObject({
+      sourceObject,
+      targetObject,
+      sourceAnchor: pendingConnectorStart.sourceAnchor,
+      targetAnchor,
+    });
+    const historyKey = createId("history");
+
+    onChange(syncConnectedLines([...objects, connectorObject]), { historyKey });
+    onSelectionChange(connectorObject.id);
+    onConnectorStartChange(null);
+    clearTextEditing();
+    setInteraction(null);
+    onToolChange("Select");
   }
 
   function screenToWorld(clientX: number, clientY: number) {
@@ -447,6 +597,9 @@ export function CanvasLayer({
     const historyKey = createId("history");
     onChange([...objects, object], { historyKey });
     onSelectionChange(object.id);
+    if (isFlowchartShape(object)) {
+      onShapeTypeChange(object.type);
+    }
     clearTextEditing();
     setInteraction({
       historyKey,
@@ -638,12 +791,17 @@ export function CanvasLayer({
       return;
     }
 
-    if (toolToObjectType[activeTool]) {
+    if (activeTool === "Shape" || toolToObjectType[activeTool]) {
       startCreation(event);
       return;
     }
 
     if (activeTool === "Select") {
+      if (pendingConnectorStart) {
+        onConnectorStartChange(null);
+        return;
+      }
+
       onSelectionChange(null);
       setInteraction(null);
     }
@@ -873,8 +1031,7 @@ export function CanvasLayer({
       if (object?.type === "textBox") {
         startTextEditing(object.id);
       } else if (
-        object?.type === "rectangle" ||
-        object?.type === "circle" ||
+        isFlowchartShape(object) ||
         object?.type === "line" ||
         object?.type === "arrow"
       ) {
@@ -958,6 +1115,11 @@ export function CanvasLayer({
       return;
     }
 
+    if (activeTool === "Select" && pendingConnectorStart) {
+      createConnectorToExistingShape(object);
+      return;
+    }
+
     if (shouldPan(event)) {
       clearTextEditing();
       startPan(event.clientX, event.clientY);
@@ -967,7 +1129,7 @@ export function CanvasLayer({
 
     onSelectionChange(object.id);
 
-    if (activeTool === "Text Box" && (object.type === "rectangle" || object.type === "circle")) {
+    if (activeTool === "Text Box" && isFlowchartShape(object)) {
       clearTextEditing();
       return;
     }
@@ -1016,7 +1178,22 @@ export function CanvasLayer({
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
-  function startLineMove(event: React.PointerEvent<SVGLineElement>, object: CanvasObject) {
+  function handleFlowchartConnectorPointerDown(
+    event: React.PointerEvent<HTMLButtonElement>,
+    object: CanvasObject,
+    anchor: CanvasConnectorAnchor,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (activeTool !== "Select") {
+      return;
+    }
+
+    createFlowchartShape(object, anchor);
+  }
+
+  function startLineMove(event: React.PointerEvent<SVGLineElement | SVGPathElement | SVGPolylineElement>, object: CanvasObject) {
     event.stopPropagation();
     canvasRef.current?.focus();
 
@@ -1039,7 +1216,7 @@ export function CanvasLayer({
     onSelectionChange(object.id);
     clearTextEditing();
     const point = screenToWorld(event.clientX, event.clientY);
-    const points = getLinePoints(object);
+    const points = getLineRenderPoints(object, objects);
 
     if (!point) {
       return;
@@ -1140,7 +1317,9 @@ export function CanvasLayer({
     activeTool !== "Pan" &&
     (activeTool === "Pen" ||
       activeTool === "Eraser" ||
+      activeTool === "Shape" ||
       Boolean(toolToObjectType[activeTool]) ||
+      Boolean(pendingConnectorStart) ||
       isSpacePressed ||
       interaction?.kind === "pendingLine");
   const activeToolCursor = getActiveToolCursor(activeTool, interaction?.kind === "pan");
@@ -1189,19 +1368,24 @@ export function CanvasLayer({
       >
         <svg className="absolute inset-0 h-full w-full overflow-visible">
           {lineObjects.map((object) => {
-            const points = getLinePoints(object);
+            const segments = getLineRenderSegments(object, objects);
+            const arrowDirection = getArrowDirection(object);
+            const markerStart =
+              arrowDirection === "backward" || arrowDirection === "both" ? `url(#arrow-${object.id})` : undefined;
+            const markerEnd =
+              arrowDirection === "forward" || arrowDirection === "both" ? `url(#arrow-${object.id})` : undefined;
             const isSelected = selectedObjectId === object.id && activeTool !== "Eraser";
             const isEraserPreviewed = activeTool === "Eraser" && eraserPreviewObjectIds.includes(object.id);
 
             return (
               <g key={object.id} opacity={isEraserPreviewed ? 0.35 : 1}>
                 <defs>
-                  {object.type === "arrow" ? (
+                  {arrowDirection !== "none" ? (
                     <marker
                       id={`arrow-${object.id}`}
                       markerHeight="8"
                       markerWidth="8"
-                      orient="auto"
+                      orient="auto-start-reverse"
                       refX="7"
                       refY="4"
                     >
@@ -1209,17 +1393,17 @@ export function CanvasLayer({
                     </marker>
                   ) : null}
                 </defs>
-                <line
+                <path
                   className="pointer-events-auto"
-                  markerEnd={object.type === "arrow" ? `url(#arrow-${object.id})` : undefined}
+                  d={segments.pathData}
+                  markerEnd={markerEnd}
+                  markerStart={markerStart}
                   stroke={isSelected ? "#238157" : object.strokeColor}
+                  fill="none"
                   strokeLinecap="round"
+                  strokeLinejoin="round"
                   strokeWidth={Math.max(8, object.strokeWidth + 6)}
                   style={{ cursor: activeTool === "Eraser" ? "none" : activeToolCursor }}
-                  x1={points.x1}
-                  x2={points.x2}
-                  y1={points.y1}
-                  y2={points.y2}
                   opacity="0"
                   onPointerDown={(event) => {
                     if (activeTool === "Eraser") {
@@ -1231,17 +1415,24 @@ export function CanvasLayer({
                   }}
                   onPointerEnter={(event) => continueObjectErase(event, object)}
                 />
-                <line
-                  markerEnd={object.type === "arrow" ? `url(#arrow-${object.id})` : undefined}
+                <path
+                  d={segments.pathData}
+                  markerEnd={markerEnd}
+                  markerStart={markerStart}
                   stroke={isSelected ? "#238157" : object.strokeColor}
                   strokeDasharray={getStrokeDashArray(object)}
+                  fill="none"
                   strokeLinecap="round"
+                  strokeLinejoin="round"
                   strokeWidth={object.strokeWidth}
-                  x1={points.x1}
-                  x2={points.x2}
-                  y1={points.y1}
-                  y2={points.y2}
                 />
+                {object.connectorLabel?.trim() ? (
+                  <ConnectorLabel
+                    isSelected={isSelected}
+                    label={object.connectorLabel}
+                    point={getLineLabelPoint(object, objects)}
+                  />
+                ) : null}
               </g>
             );
           })}
@@ -1249,7 +1440,7 @@ export function CanvasLayer({
 
         {lineObjects.map((object) => {
           const isSelected = selectedObjectId === object.id && activeTool !== "Eraser";
-          const points = getLinePoints(object);
+          const points = getLineRenderPoints(object, objects);
           const box = getLineSelectionBox(points);
 
           if (!isSelected) {
@@ -1321,10 +1512,12 @@ export function CanvasLayer({
                   )
                 }
               />
+              {isFlowchartShape(object) && object.shapeLabel?.trim() ? (
+                <ShapeLabel label={object.shapeLabel} />
+              ) : null}
               {isSelected && activeTool !== "Eraser" ? (
                 <>
-                  {object.type === "rectangle" ||
-                  object.type === "circle" ||
+                  {isFlowchartShape(object) ||
                   object.type === "textBox" ||
                   object.type === "image" ? (
                     <>
@@ -1336,6 +1529,28 @@ export function CanvasLayer({
                       <ResizeHandleButton handle="ne" onPointerDown={(event) => startResize(event, object, "ne")} />
                       <ResizeHandleButton handle="sw" onPointerDown={(event) => startResize(event, object, "sw")} />
                       <ResizeHandleButton handle="se" onPointerDown={(event) => startResize(event, object, "se")} />
+                    </>
+                  ) : null}
+                  {activeTool === "Select" &&
+                  !isEditing &&
+                  isFlowchartShape(object) ? (
+                    <>
+                      <FlowchartConnectorHandle
+                        anchor="top"
+                        onPointerDown={(event, anchor) => handleFlowchartConnectorPointerDown(event, object, anchor)}
+                      />
+                      <FlowchartConnectorHandle
+                        anchor="right"
+                        onPointerDown={(event, anchor) => handleFlowchartConnectorPointerDown(event, object, anchor)}
+                      />
+                      <FlowchartConnectorHandle
+                        anchor="bottom"
+                        onPointerDown={(event, anchor) => handleFlowchartConnectorPointerDown(event, object, anchor)}
+                      />
+                      <FlowchartConnectorHandle
+                        anchor="left"
+                        onPointerDown={(event, anchor) => handleFlowchartConnectorPointerDown(event, object, anchor)}
+                      />
                     </>
                   ) : null}
                 </>
@@ -1482,6 +1697,80 @@ function isEditableTarget(target: EventTarget | null) {
   }
 
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+}
+
+function isFlowchartShape(object: CanvasObject | null | undefined): object is CanvasObject & { type: CanvasShapeType } {
+  return object?.type === "rectangle" || object?.type === "circle" || object?.type === "diamond";
+}
+
+function getSourceShapeStyle(sourceObject: CanvasObject): Partial<CanvasObject> {
+  return {
+    fillColor: sourceObject.fillColor,
+    fontSize: sourceObject.fontSize,
+    strokeColor: sourceObject.strokeColor,
+    strokeStyle: sourceObject.strokeStyle,
+    strokeWidth: sourceObject.strokeWidth,
+    textAlign: sourceObject.textAlign,
+    textBold: sourceObject.textBold,
+    textColor: sourceObject.textColor,
+    textHighlightColor: sourceObject.textHighlightColor,
+    textItalic: sourceObject.textItalic,
+    textVerticalAlign: sourceObject.textVerticalAlign,
+  };
+}
+
+function getBestTargetAnchor(sourceObject: CanvasObject, targetObject: CanvasObject): CanvasConnectorAnchor {
+  const sourceCenterX = sourceObject.x + sourceObject.width / 2;
+  const sourceCenterY = sourceObject.y + sourceObject.height / 2;
+  const targetCenterX = targetObject.x + targetObject.width / 2;
+  const targetCenterY = targetObject.y + targetObject.height / 2;
+  const dx = targetCenterX - sourceCenterX;
+  const dy = targetCenterY - sourceCenterY;
+
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0 ? "left" : "right";
+  }
+
+  return dy >= 0 ? "top" : "bottom";
+}
+
+function ConnectorLabel({
+  isSelected,
+  label,
+  point,
+}: {
+  isSelected: boolean;
+  label: string;
+  point: { x: number; y: number };
+}) {
+  return (
+    <foreignObject
+      height="32"
+      pointerEvents="none"
+      width="160"
+      x={point.x - 80}
+      y={point.y - 16}
+    >
+      <div className="flex h-full w-full items-center justify-center">
+        <span
+          className={[
+            "max-w-36 truncate rounded bg-white/90 px-1.5 py-0.5 text-center text-xs font-semibold shadow-sm",
+            isSelected ? "text-leaf-700 ring-1 ring-leaf-200" : "text-slate-700",
+          ].join(" ")}
+        >
+          {label}
+        </span>
+      </div>
+    </foreignObject>
+  );
+}
+
+function ShapeLabel({ label }: { label: string }) {
+  return (
+    <div className="pointer-events-none absolute left-1/2 top-0 max-w-[180px] -translate-x-1/2 -translate-y-[calc(100%+8px)] truncate rounded bg-white/90 px-1.5 py-0.5 text-xs font-semibold text-slate-700 shadow-sm">
+      {label}
+    </div>
+  );
 }
 
 function getActiveToolCursor(activeTool: CanvasTool, isPanning: boolean) {

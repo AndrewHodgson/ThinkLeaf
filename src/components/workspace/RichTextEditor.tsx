@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
 import { Extension, Mark, Node } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, type Transaction } from "@tiptap/pm/state";
+import { CellSelection, selectedRect } from "@tiptap/pm/tables";
 import type { EditorView } from "@tiptap/pm/view";
 import { Editor, EditorContent, useEditor } from "@tiptap/react";
 import { createPortal } from "react-dom";
@@ -23,19 +24,30 @@ import {
   AlignVerticalJustifyCenter,
   AlignVerticalJustifyEnd,
   AlignVerticalJustifyStart,
+  BetweenHorizontalEnd,
+  BetweenHorizontalStart,
+  BetweenVerticalEnd,
+  BetweenVerticalStart,
   Columns3,
   Highlighter,
   Image as ImageIcon,
   IndentDecrease,
   IndentIncrease,
   Italic as ItalicIcon,
+  LayoutPanelLeft,
+  LayoutPanelTop,
   Link2,
   List,
   ListChecks,
   ListOrdered,
+  PaintBucket,
   Quote,
   Rows3,
   Table2,
+  TableCellsMerge,
+  TableCellsSplit,
+  TableColumnsSplit,
+  TableRowsSplit,
   Trash2,
   Type,
   Underline,
@@ -54,6 +66,7 @@ const indentStep = 24;
 const maxIndentLevel = 6;
 const activeControlClass = "border-leaf-200 bg-leaf-50 text-leaf-700";
 const activeMenuItemClass = "bg-leaf-50 text-leaf-700";
+const tableCellBackgroundPresets = [{ label: "No fill", value: "transparent" }, ...colorPresets];
 
 const TextAlignExtension = Extension.create({
   name: "thinkleafTextAlign",
@@ -77,6 +90,38 @@ const TextAlignExtension = Extension.create({
         },
       },
     ];
+  },
+});
+
+const TableCellWithBackground = TableCell.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      backgroundColor: {
+        default: null,
+        parseHTML: (element) => element.style.backgroundColor || null,
+        renderHTML: (attributes) =>
+          attributes.backgroundColor
+            ? { style: `background-color: ${attributes.backgroundColor}` }
+            : {},
+      },
+    };
+  },
+});
+
+const TableHeaderWithBackground = TableHeader.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      backgroundColor: {
+        default: null,
+        parseHTML: (element) => element.style.backgroundColor || null,
+        renderHTML: (attributes) =>
+          attributes.backgroundColor
+            ? { style: `background-color: ${attributes.backgroundColor}` }
+            : {},
+      },
+    };
   },
 });
 
@@ -306,10 +351,11 @@ export function RichTextEditor({
       }),
       Table.configure({
         resizable: false,
+        allowTableNodeSelection: true,
       }),
       TableRow,
-      TableHeader,
-      TableCell,
+      TableHeaderWithBackground,
+      TableCellWithBackground,
       TextAlignExtension,
       TextColorMark,
       TextHighlightMark,
@@ -554,6 +600,8 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
   const currentHighlight =
     (editor?.getAttributes("thinkleafTextHighlight").backgroundColor as string | undefined) ?? "transparent";
   const currentFontSize = getCurrentDocumentFontSize(editor);
+  const currentCellBackground = getCurrentTableCellBackground(editor);
+  const tableSelectionMode = getTableSelectionMode(editor);
 
   function buttonClass(isActive = false, isUnavailable = false) {
     return [
@@ -568,8 +616,16 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
 
   const isEditorUnavailable = !editor;
   const isInTable = Boolean(editor?.isActive("table"));
-  const canAddColumn = Boolean(editor?.can().addColumnAfter());
-  const canAddRow = Boolean(editor?.can().addRowAfter());
+  const canAddColumnBefore = Boolean(editor?.can().addColumnBefore());
+  const canAddColumnAfter = Boolean(editor?.can().addColumnAfter());
+  const canAddRowBefore = Boolean(editor?.can().addRowBefore());
+  const canAddRowAfter = Boolean(editor?.can().addRowAfter());
+  const canDeleteColumn = Boolean(editor?.can().deleteColumn());
+  const canDeleteRow = Boolean(editor?.can().deleteRow());
+  const canMergeCells = Boolean(editor?.can().mergeCells());
+  const canSplitCell = Boolean(editor?.can().splitCell());
+  const canToggleHeaderColumn = Boolean(editor?.can().toggleHeaderColumn());
+  const canToggleHeaderRow = Boolean(editor?.can().toggleHeaderRow());
   const canDeleteTable = isInTable;
 
   return (
@@ -794,52 +850,292 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
           {extraContent}
         </div>
       ) : formattingTarget === "document" && isInTable ? (
-        <div className="mt-2 flex min-h-8 flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Table</span>
-          <button
-            aria-label="Add column"
-            className={buttonClass(false, !canAddColumn)}
-            title="Add column"
-            type="button"
-            onClick={() => {
-              if (canAddColumn) {
-                editor?.chain().focus().addColumnAfter().run();
-              }
-            }}
-          >
-            <Columns3 aria-hidden="true" className="h-4 w-4" />
-          </button>
-          <button
-            aria-label="Add row"
-            className={buttonClass(false, !canAddRow)}
-            title="Add row"
-            type="button"
-            onClick={() => {
-              if (canAddRow) {
-                editor?.chain().focus().addRowAfter().run();
-              }
-            }}
-          >
-            <Rows3 aria-hidden="true" className="h-4 w-4" />
-          </button>
-          <button
-            aria-label="Delete table"
-            className={buttonClass(false, !canDeleteTable)}
-            title="Delete table"
-            type="button"
-            onClick={() => {
-              if (canDeleteTable) {
-                editor?.chain().focus().deleteTable().run();
-              }
-            }}
-          >
-            <Trash2 aria-hidden="true" className="h-4 w-4" />
-          </button>
-        </div>
+        <TableControls
+          buttonClass={buttonClass}
+          canAddColumnAfter={canAddColumnAfter}
+          canAddColumnBefore={canAddColumnBefore}
+          canAddRowAfter={canAddRowAfter}
+          canAddRowBefore={canAddRowBefore}
+          canDeleteColumn={canDeleteColumn}
+          canDeleteRow={canDeleteRow}
+          canDeleteTable={canDeleteTable}
+          canMergeCells={canMergeCells}
+          canSplitCell={canSplitCell}
+          canToggleHeaderColumn={canToggleHeaderColumn}
+          canToggleHeaderRow={canToggleHeaderRow}
+          cellBackground={currentCellBackground}
+          editor={editor}
+          selectionMode={tableSelectionMode}
+        />
       ) : null}
     </div>
   );
 });
+
+type TableSelectionMode = "cell" | "row" | "column" | null;
+
+function TableControls({
+  buttonClass,
+  canAddColumnAfter,
+  canAddColumnBefore,
+  canAddRowAfter,
+  canAddRowBefore,
+  canDeleteColumn,
+  canDeleteRow,
+  canDeleteTable,
+  canMergeCells,
+  canSplitCell,
+  canToggleHeaderColumn,
+  canToggleHeaderRow,
+  cellBackground,
+  editor,
+  selectionMode,
+}: {
+  buttonClass: (isActive?: boolean, isUnavailable?: boolean) => string;
+  canAddColumnAfter: boolean;
+  canAddColumnBefore: boolean;
+  canAddRowAfter: boolean;
+  canAddRowBefore: boolean;
+  canDeleteColumn: boolean;
+  canDeleteRow: boolean;
+  canDeleteTable: boolean;
+  canMergeCells: boolean;
+  canSplitCell: boolean;
+  canToggleHeaderColumn: boolean;
+  canToggleHeaderRow: boolean;
+  cellBackground: string;
+  editor: Editor | null;
+  selectionMode: TableSelectionMode;
+}) {
+  function setCellBackground(backgroundColor: string) {
+    editor
+      ?.chain()
+      .focus()
+      .setCellAttribute("backgroundColor", backgroundColor === "transparent" ? null : backgroundColor)
+      .run();
+  }
+
+  return (
+    <div className="mt-2 flex min-h-8 flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
+      <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Table</span>
+      <TableButton
+        ariaLabel="Select cell"
+        isActive={selectionMode === "cell"}
+        isUnavailable={!editor}
+        title="Select cell"
+        buttonClass={buttonClass}
+        onClick={() => selectTableArea(editor, "cell")}
+      >
+        <Table2 aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+      <TableButton
+        ariaLabel="Select row"
+        isActive={selectionMode === "row"}
+        isUnavailable={!editor}
+        title="Select row"
+        buttonClass={buttonClass}
+        onClick={() => selectTableArea(editor, "row")}
+      >
+        <TableRowsSplit aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+      <TableButton
+        ariaLabel="Select column"
+        isActive={selectionMode === "column"}
+        isUnavailable={!editor}
+        title="Select column"
+        buttonClass={buttonClass}
+        onClick={() => selectTableArea(editor, "column")}
+      >
+        <TableColumnsSplit aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+      <span className="h-6 w-px bg-slate-200" />
+      <ColorPicker
+        currentValue={cellBackground}
+        disabled={!editor}
+        icon={<PaintBucket aria-hidden="true" className="h-4 w-4" />}
+        label="Cell background"
+        onSelect={setCellBackground}
+        presets={tableCellBackgroundPresets}
+      />
+      <TableButton
+        ariaLabel="Merge selected cells"
+        isUnavailable={!canMergeCells}
+        title="Merge selected cells"
+        buttonClass={buttonClass}
+        onClick={() => {
+          if (canMergeCells) {
+            editor?.chain().focus().mergeCells().run();
+          }
+        }}
+      >
+        <TableCellsMerge aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+      <TableButton
+        ariaLabel="Split cell"
+        isUnavailable={!canSplitCell}
+        title="Split cell"
+        buttonClass={buttonClass}
+        onClick={() => {
+          if (canSplitCell) {
+            editor?.chain().focus().splitCell().run();
+          }
+        }}
+      >
+        <TableCellsSplit aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+      <span className="h-6 w-px bg-slate-200" />
+      <TableButton
+        ariaLabel="Insert row above"
+        isUnavailable={!canAddRowBefore}
+        title="Insert row above"
+        buttonClass={buttonClass}
+        onClick={() => {
+          if (canAddRowBefore) {
+            editor?.chain().focus().addRowBefore().run();
+          }
+        }}
+      >
+        <BetweenHorizontalStart aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+      <TableButton
+        ariaLabel="Insert row below"
+        isUnavailable={!canAddRowAfter}
+        title="Insert row below"
+        buttonClass={buttonClass}
+        onClick={() => {
+          if (canAddRowAfter) {
+            editor?.chain().focus().addRowAfter().run();
+          }
+        }}
+      >
+        <BetweenHorizontalEnd aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+      <TableButton
+        ariaLabel="Insert column left"
+        isUnavailable={!canAddColumnBefore}
+        title="Insert column left"
+        buttonClass={buttonClass}
+        onClick={() => {
+          if (canAddColumnBefore) {
+            editor?.chain().focus().addColumnBefore().run();
+          }
+        }}
+      >
+        <BetweenVerticalStart aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+      <TableButton
+        ariaLabel="Insert column right"
+        isUnavailable={!canAddColumnAfter}
+        title="Insert column right"
+        buttonClass={buttonClass}
+        onClick={() => {
+          if (canAddColumnAfter) {
+            editor?.chain().focus().addColumnAfter().run();
+          }
+        }}
+      >
+        <BetweenVerticalEnd aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+      <span className="h-6 w-px bg-slate-200" />
+      <TableButton
+        ariaLabel="Delete row"
+        isUnavailable={!canDeleteRow}
+        title="Delete row"
+        buttonClass={buttonClass}
+        onClick={() => {
+          if (canDeleteRow) {
+            editor?.chain().focus().deleteRow().run();
+          }
+        }}
+      >
+        <Rows3 aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+      <TableButton
+        ariaLabel="Delete column"
+        isUnavailable={!canDeleteColumn}
+        title="Delete column"
+        buttonClass={buttonClass}
+        onClick={() => {
+          if (canDeleteColumn) {
+            editor?.chain().focus().deleteColumn().run();
+          }
+        }}
+      >
+        <Columns3 aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+      <TableButton
+        ariaLabel="Toggle header row"
+        isUnavailable={!canToggleHeaderRow}
+        title="Toggle header row"
+        buttonClass={buttonClass}
+        onClick={() => {
+          if (canToggleHeaderRow) {
+            editor?.chain().focus().toggleHeaderRow().run();
+          }
+        }}
+      >
+        <LayoutPanelTop aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+      <TableButton
+        ariaLabel="Toggle header column"
+        isUnavailable={!canToggleHeaderColumn}
+        title="Toggle header column"
+        buttonClass={buttonClass}
+        onClick={() => {
+          if (canToggleHeaderColumn) {
+            editor?.chain().focus().toggleHeaderColumn().run();
+          }
+        }}
+      >
+        <LayoutPanelLeft aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+      <TableButton
+        ariaLabel="Delete table"
+        isUnavailable={!canDeleteTable}
+        title="Delete table"
+        buttonClass={buttonClass}
+        onClick={() => {
+          if (canDeleteTable) {
+            editor?.chain().focus().deleteTable().run();
+          }
+        }}
+      >
+        <Trash2 aria-hidden="true" className="h-4 w-4" />
+      </TableButton>
+    </div>
+  );
+}
+
+function TableButton({
+  ariaLabel,
+  buttonClass,
+  children,
+  isActive = false,
+  isUnavailable = false,
+  onClick,
+  title,
+}: {
+  ariaLabel: string;
+  buttonClass: (isActive?: boolean, isUnavailable?: boolean) => string;
+  children: ReactNode;
+  isActive?: boolean;
+  isUnavailable?: boolean;
+  onClick: () => void;
+  title: string;
+}) {
+  return (
+    <button
+      aria-label={ariaLabel}
+      className={buttonClass(isActive, isUnavailable)}
+      title={title}
+      type="button"
+      onClick={onClick}
+      onMouseDown={(event) => event.preventDefault()}
+    >
+      {children}
+    </button>
+  );
+}
 
 function WhiteboardTextFormattingControls({
   buttonClass,
@@ -1048,6 +1344,70 @@ function getActiveListItemName(editor: Editor) {
   }
 
   return null;
+}
+
+function selectTableArea(editor: Editor | null, mode: Exclude<TableSelectionMode, null>) {
+  if (!editor) {
+    return;
+  }
+
+  editor.commands.command(({ state, tr, dispatch }) => {
+    try {
+      const rect = selectedRect(state);
+      const { map, table, tableStart } = rect;
+      let anchorCell = tableStart + map.positionAt(rect.top, rect.left, table);
+      let headCell = anchorCell;
+
+      if (mode === "row") {
+        anchorCell = tableStart + map.positionAt(rect.top, 0, table);
+        headCell = tableStart + map.positionAt(rect.bottom - 1, map.width - 1, table);
+      } else if (mode === "column") {
+        anchorCell = tableStart + map.positionAt(0, rect.left, table);
+        headCell = tableStart + map.positionAt(map.height - 1, rect.right - 1, table);
+      }
+
+      if (dispatch) {
+        dispatch(tr.setSelection(CellSelection.create(tr.doc, anchorCell, headCell)).scrollIntoView());
+      }
+
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function getTableSelectionMode(editor: Editor | null): TableSelectionMode {
+  const selection = editor?.state.selection;
+  if (!(selection instanceof CellSelection) || !editor) {
+    return null;
+  }
+
+  try {
+    const rect = selectedRect(editor.state);
+    const isFullRow = rect.left === 0 && rect.right === rect.map.width;
+    const isFullColumn = rect.top === 0 && rect.bottom === rect.map.height;
+    const isSingleCell = rect.right - rect.left === 1 && rect.bottom - rect.top === 1;
+
+    if (isFullRow && !isFullColumn) {
+      return "row";
+    }
+
+    if (isFullColumn && !isFullRow) {
+      return "column";
+    }
+
+    return isSingleCell ? "cell" : null;
+  } catch {
+    return null;
+  }
+}
+
+function getCurrentTableCellBackground(editor: Editor | null) {
+  const cellBackground = editor?.getAttributes("tableCell").backgroundColor as string | null | undefined;
+  const headerBackground = editor?.getAttributes("tableHeader").backgroundColor as string | null | undefined;
+
+  return cellBackground ?? headerBackground ?? "transparent";
 }
 
 function HeadingDropdown({ editor }: { editor: Editor | null }) {

@@ -134,6 +134,12 @@ export const defaultCanvasCreationToolDefaults: CanvasCreationToolDefaults = {
     strokeStyle: defaultCanvasStyle.strokeStyle,
     strokeWidth: defaultCanvasStyle.strokeWidth,
   },
+  diamond: {
+    fillColor: defaultCanvasStyle.fillColor,
+    strokeColor: defaultCanvasStyle.strokeColor,
+    strokeStyle: defaultCanvasStyle.strokeStyle,
+    strokeWidth: defaultCanvasStyle.strokeWidth,
+  },
   line: {
     strokeColor: defaultCanvasStyle.strokeColor,
     strokeStyle: defaultCanvasStyle.strokeStyle,
@@ -163,6 +169,7 @@ export const defaultCanvasCreationToolDefaults: CanvasCreationToolDefaults = {
 export const defaultObjectSizes: Record<CanvasObjectType, { width: number; height: number; text?: string }> = {
   rectangle: { width: 168, height: 104 },
   circle: { width: 124, height: 124 },
+  diamond: { width: 148, height: 112 },
   textBox: { width: 220, height: 92, text: "Text box" },
   line: { width: 184, height: 32 },
   arrow: { width: 192, height: 32 },

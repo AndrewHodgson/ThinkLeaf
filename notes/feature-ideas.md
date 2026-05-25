@@ -143,23 +143,22 @@ The setting should support:
 
 Consider after the current manual QA/polish pass confirms toolbar, canvas, and editor stability.
 
-## Simple Connectors
+## Advanced Connectors
 
-Add lightweight connectors between whiteboard objects.
+Basic plus-handle flowchart connectors for rectangles, circles, and diamonds now exist, with same-shape plus creation, shape type conversion, straight, anchor-aware elbow, curve connector styles, editable anchors, optional connector labels, optional shape labels, and editable arrow direction. Future work can expand connectors after the simple anchored behavior is manually QA'd.
 
 ### Expected Behavior
 
-Connectors should eventually support:
+Future connector enhancements could support:
 
-- Connecting shapes or text boxes
-- Moving endpoints with objects
-- Basic arrow styling
-- Persistence per page
-- Working correctly with pan/zoom and Snap to Grid
+- Drag-to-connect between existing objects
+- Text box connector anchors
+- Smarter elbow routing around objects
+- Better duplicate behavior for selected connected subgraphs
 
 ### Build Later
 
-Do not build until object creation, movement, resizing, snapping, and line/arrow behavior are stable through manual QA.
+Do not expand beyond the current simple shape plus-handle flow until object creation, movement, resizing, snapping, and line/arrow behavior are stable through manual QA.
 
 ## Laser Pointer Enhancements
 

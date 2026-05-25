@@ -2,11 +2,14 @@
 
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type {
+  CanvasConnectorAnchor,
+  CanvasConnectorStart,
   CanvasHistoryOptions,
   CanvasCreationToolDefaults,
   CanvasCreationDefaultStyle,
   CanvasObject,
   CanvasPenSettings,
+  CanvasShapeType,
   CanvasTool,
   Page,
   WorkspaceData,
@@ -32,7 +35,13 @@ import { TagEditor } from "@/components/workspace/TagEditor";
 import { RichTextEditor, type FormattingTarget } from "@/components/workspace/RichTextEditor";
 import { Check, Clock3, Save, Star, Trash2, X } from "lucide-react";
 import { CanvasLayer } from "@/components/workspace/CanvasLayer";
-import { alignCanvasSize, alignCanvasX, alignCanvasY } from "@/components/workspace/canvas/canvasGeometry";
+import {
+  alignCanvasSize,
+  alignCanvasX,
+  alignCanvasY,
+  removeObjectsAndConnectedLines,
+  syncConnectedLines,
+} from "@/components/workspace/canvas/canvasGeometry";
 import { CanvasCreationToolbar } from "@/components/workspace/CanvasCreationToolbar";
 import {
   CanvasObjectToolbar,
@@ -50,6 +59,7 @@ type BoardPanInteraction = {
 
 type WorkspaceProps = {
   activeTool: CanvasTool;
+  activeShapeType: CanvasShapeType;
   activePage?: Page;
   canRedoCanvas: boolean;
   canUndoCanvas: boolean;
@@ -57,6 +67,7 @@ type WorkspaceProps = {
   data: WorkspaceData;
   imageImportRequestId: number;
   isGridVisible: boolean;
+  isFlowchartConnectorArrowEnabled: boolean;
   isSnapToGridEnabled: boolean;
   selectedObjectId: string | null;
   tagSuggestions: string[];
@@ -67,7 +78,9 @@ type WorkspaceProps = {
   onResetView: () => void;
   onSearchByTag: (tag: string) => void;
   onSelectionChange: (objectId: string | null) => void;
+  onShapeTypeChange: (shapeType: CanvasShapeType) => void;
   onToggleGrid: () => void;
+  onToggleFlowchartConnectorArrow: () => void;
   onToggleSnapToGrid: () => void;
   onToolChange: (tool: CanvasTool) => void;
   onUndoCanvas: () => void;
@@ -87,6 +100,7 @@ type WorkspaceProps = {
 
 export function Workspace({
   activeTool,
+  activeShapeType,
   activePage,
   canRedoCanvas,
   canUndoCanvas,
@@ -94,6 +108,7 @@ export function Workspace({
   data,
   imageImportRequestId,
   isGridVisible,
+  isFlowchartConnectorArrowEnabled,
   isSnapToGridEnabled,
   selectedObjectId,
   tagSuggestions,
@@ -104,7 +119,9 @@ export function Workspace({
   onResetView,
   onSearchByTag,
   onSelectionChange,
+  onShapeTypeChange,
   onToggleGrid,
+  onToggleFlowchartConnectorArrow,
   onToggleSnapToGrid,
   onToolChange,
   onUndoCanvas,
@@ -125,9 +142,11 @@ export function Workspace({
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [isManualSaveVisible, setIsManualSaveVisible] = useState(false);
   const [isZoomIndicatorVisible, setIsZoomIndicatorVisible] = useState(false);
+  const [pendingConnectorStart, setPendingConnectorStart] = useState<CanvasConnectorStart | null>(null);
 
   useEffect(() => {
     onSelectionChange(null);
+    setPendingConnectorStart(null);
   }, [activePage?.id, onSelectionChange]);
 
   useEffect(() => {
@@ -174,7 +193,7 @@ export function Workspace({
     : "document";
   const canvasViewState = page.canvasViewState ?? defaultCanvasViewState;
   const isPanning = boardPanInteraction !== null;
-  const activeCreationDefaultType = getCreationDefaultType(activeTool);
+  const activeCreationDefaultType = getCreationDefaultType(activeTool, activeShapeType);
   const isSelectedPenStroke = selectedObject?.type === "penStroke";
   const shouldShowActivePenDefaults = activeTool === "Pen" && (!selectedObject || isSelectedPenStroke);
   const toolbarExtraContent = shouldShowActivePenDefaults ? (
@@ -182,8 +201,11 @@ export function Workspace({
   ) : selectedObject ? (
     <CanvasObjectToolbar
       object={selectedObject}
+      pendingConnectorStart={pendingConnectorStart}
+      onCancelConnector={() => setPendingConnectorStart(null)}
       onDelete={deleteSelectedObject}
       onDuplicate={duplicateSelectedObject}
+      onStartConnector={startConnectorFromSelectedShape}
       onUpdate={updateSelectedObject}
     />
   ) : activeCreationDefaultType ? (
@@ -212,17 +234,32 @@ export function Workspace({
       return;
     }
 
-    onUpdateCanvasObjects(
-      page.id,
-      page.canvasObjects.map((object) =>
+    const shouldSyncConnectors =
+      (selectedObject.type === "line" || selectedObject.type === "arrow") &&
+      Boolean(selectedObject.sourceObjectId && selectedObject.targetObjectId) &&
+      ("sourceAnchor" in updates || "targetAnchor" in updates);
+    const nextObjects = page.canvasObjects.map((object) =>
         object.id === selectedObject.id
           ? {
               ...object,
               ...updates,
             }
           : object,
-      ),
-    );
+      );
+
+    onUpdateCanvasObjects(page.id, shouldSyncConnectors ? syncConnectedLines(nextObjects) : nextObjects);
+  }
+
+  function startConnectorFromSelectedShape(sourceAnchor: CanvasConnectorAnchor) {
+    if (!selectedObject || !isFlowchartShape(selectedObject)) {
+      return;
+    }
+
+    setPendingConnectorStart({
+      sourceAnchor,
+      sourceObjectId: selectedObject.id,
+    });
+    onToolChange("Select");
   }
 
   function duplicateSelectedObject() {
@@ -256,7 +293,7 @@ export function Workspace({
 
     onUpdateCanvasObjects(
       page.id,
-      page.canvasObjects.filter((object) => object.id !== selectedObject.id),
+      removeObjectsAndConnectedLines(page.canvasObjects, new Set([selectedObject.id])),
     );
     onSelectionChange(null);
   }
@@ -536,15 +573,20 @@ export function Workspace({
         <CanvasLayer
           key={page.id}
           activeTool={activeTool}
+          activeShapeType={activeShapeType}
           creationToolDefaults={creationToolDefaults}
+          isFlowchartConnectorArrowEnabled={isFlowchartConnectorArrowEnabled}
           isSnapToGridEnabled={isSnapToGridEnabled}
           objects={page.canvasObjects}
+          pendingConnectorStart={pendingConnectorStart}
           penSettings={penSettings}
           viewState={canvasViewState}
           selectedObjectId={selectedObjectId}
           onChange={(canvasObjects, options) => onUpdateCanvasObjects(page.id, canvasObjects, options)}
+          onConnectorStartChange={setPendingConnectorStart}
           onViewStateChange={(viewState) => onUpdatePage(page.id, { canvasViewState: viewState })}
           onSelectionChange={onSelectionChange}
+          onShapeTypeChange={onShapeTypeChange}
           onToolChange={onToolChange}
         />
         <article
@@ -675,16 +717,20 @@ export function Workspace({
 
       <CanvasCreationToolbar
         activeTool={activeTool}
+        activeShapeType={activeShapeType}
         canRedoCanvas={canRedoCanvas}
         canUndoCanvas={canUndoCanvas}
         isGridVisible={isGridVisible}
+        isFlowchartConnectorArrowEnabled={isFlowchartConnectorArrowEnabled}
         isSnapToGridEnabled={isSnapToGridEnabled}
         onImageUploadClick={() => canvasImageInputRef.current?.click()}
         onRedoCanvas={onRedoCanvas}
         onResetView={onResetView}
+        onToggleFlowchartConnectorArrow={onToggleFlowchartConnectorArrow}
         onToggleGrid={onToggleGrid}
         onToggleSnapToGrid={onToggleSnapToGrid}
         onToolChange={onToolChange}
+        onShapeTypeChange={onShapeTypeChange}
         onUndoCanvas={onUndoCanvas}
         onZoomIn={onZoomIn}
         onZoomOut={onZoomOut}
@@ -751,7 +797,8 @@ function ShortcutHelpDialog({ onClose }: { onClose: () => void }) {
             items={[
               ["1", "Select and move objects"],
               ["2", "Pan / hand tool"],
-              ["3-7", "Rectangle, Circle, Text, Line, Arrow"],
+              ["3", "Shape: Rectangle, Circle, or Diamond"],
+              ["4-6", "Text, Line, Arrow"],
               ["8", "Import image"],
               ["9", "Pen, Ink, Highlighter, Laser Pointer"],
               ["0", "Eraser"],
@@ -812,6 +859,10 @@ function isCanvasTextObject(object: CanvasObject) {
   return object.type === "textBox" || object.text !== undefined;
 }
 
+function isFlowchartShape(object: CanvasObject | null | undefined) {
+  return object?.type === "rectangle" || object?.type === "circle" || object?.type === "diamond";
+}
+
 function getBreadcrumbPath(data: WorkspaceData, page: Page) {
   const profile = data.profiles.find((item) => item.id === page.profileId);
   const project = data.projects.find((item) => item.id === page.projectId);
@@ -829,12 +880,14 @@ function getBreadcrumbPath(data: WorkspaceData, page: Page) {
   return [profile?.name ?? "Profile", project?.name ?? "Project", ...folderNames, page.title || "Untitled"];
 }
 
-function getCreationDefaultType(tool: CanvasTool): keyof CanvasCreationToolDefaults | null {
+function getCreationDefaultType(
+  tool: CanvasTool,
+  activeShapeType: CanvasShapeType,
+): keyof CanvasCreationToolDefaults | null {
   const creationDefaultTypeByTool: Partial<Record<CanvasTool, keyof CanvasCreationToolDefaults>> = {
     Arrow: "arrow",
-    Circle: "circle",
     Line: "line",
-    Rectangle: "rectangle",
+    Shape: activeShapeType,
     "Text Box": "textBox",
   };
 

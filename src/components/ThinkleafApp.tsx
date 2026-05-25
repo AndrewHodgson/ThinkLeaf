@@ -20,6 +20,7 @@ import type {
   CanvasHistoryOptions,
   CanvasObject,
   CanvasPenSettings,
+  CanvasShapeType,
   CanvasTool,
   Page,
   PageTemplate,
@@ -28,11 +29,10 @@ import type {
 const toolShortcuts: Record<string, CanvasTool> = {
   "1": "Select",
   "2": "Pan",
-  "3": "Rectangle",
-  "4": "Circle",
-  "5": "Text Box",
-  "6": "Line",
-  "7": "Arrow",
+  "3": "Shape",
+  "4": "Text Box",
+  "5": "Line",
+  "6": "Arrow",
   "9": "Pen",
   "0": "Eraser",
 };
@@ -40,6 +40,8 @@ const toolShortcuts: Record<string, CanvasTool> = {
 const SNAP_TO_GRID_STORAGE_KEY = "thinkleaf.snapToGrid.v1";
 const PEN_SETTINGS_STORAGE_KEY = "thinkleaf.penSettings.v1";
 const CREATION_TOOL_DEFAULTS_STORAGE_KEY = "thinkleaf.canvasCreationToolDefaults.v1";
+const ACTIVE_SHAPE_TYPE_STORAGE_KEY = "thinkleaf.activeShapeType.v1";
+const FLOWCHART_CONNECTOR_ARROW_STORAGE_KEY = "thinkleaf.flowchartConnectorArrow.v1";
 const PAGE_TEMPLATES_STORAGE_KEY = "thinkleaf.pageTemplates.v1";
 const CANVAS_HISTORY_LIMIT = 25;
 
@@ -53,7 +55,9 @@ export function ThinkleafApp() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isGridVisible, setIsGridVisible] = useState(true);
   const [isSnapToGridEnabled, setIsSnapToGridEnabled] = useState(true);
+  const [isFlowchartConnectorArrowEnabled, setIsFlowchartConnectorArrowEnabled] = useState(true);
   const [activeTool, setActiveTool] = useState<CanvasTool>("Select");
+  const [activeShapeType, setActiveShapeType] = useState<CanvasShapeType>("rectangle");
   const [penSettings, setPenSettings] = useState<CanvasPenSettings>(defaultPenSettings);
   const [creationToolDefaults, setCreationToolDefaults] = useState<CanvasCreationToolDefaults>(
     defaultCanvasCreationToolDefaults,
@@ -74,6 +78,10 @@ export function ThinkleafApp() {
       setPenSettings(normalizeStoredPenSettings(window.localStorage.getItem(PEN_SETTINGS_STORAGE_KEY)));
       setCreationToolDefaults(
         normalizeStoredCreationToolDefaults(window.localStorage.getItem(CREATION_TOOL_DEFAULTS_STORAGE_KEY)),
+      );
+      setActiveShapeType(normalizeStoredShapeType(window.localStorage.getItem(ACTIVE_SHAPE_TYPE_STORAGE_KEY)));
+      setIsFlowchartConnectorArrowEnabled(
+        window.localStorage.getItem(FLOWCHART_CONNECTOR_ARROW_STORAGE_KEY) !== "off",
       );
       setPageTemplates(normalizeStoredPageTemplates(window.localStorage.getItem(PAGE_TEMPLATES_STORAGE_KEY)));
     } catch {
@@ -133,6 +141,33 @@ export function ThinkleafApp() {
       // Ignore storage errors in private/incognito modes.
     }
   }, [creationToolDefaults, hasLoadedUiPreferences]);
+
+  useEffect(() => {
+    if (!hasLoadedUiPreferences) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(ACTIVE_SHAPE_TYPE_STORAGE_KEY, activeShapeType);
+    } catch {
+      // Ignore storage errors in private/incognito modes.
+    }
+  }, [activeShapeType, hasLoadedUiPreferences]);
+
+  useEffect(() => {
+    if (!hasLoadedUiPreferences) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        FLOWCHART_CONNECTOR_ARROW_STORAGE_KEY,
+        isFlowchartConnectorArrowEnabled ? "on" : "off",
+      );
+    } catch {
+      // Ignore storage errors in private/incognito modes.
+    }
+  }, [hasLoadedUiPreferences, isFlowchartConnectorArrowEnabled]);
 
   useEffect(() => {
     if (!hasLoadedUiPreferences) {
@@ -421,12 +456,14 @@ export function ThinkleafApp() {
       <section className="flex min-w-0 flex-1 flex-col">
         <Workspace
           activeTool={activeTool}
+          activeShapeType={activeShapeType}
           activePage={workspace.activePage}
           creationToolDefaults={creationToolDefaults}
           data={workspace.activeProfileData}
           canRedoCanvas={canRedoCanvas}
           canUndoCanvas={canUndoCanvas}
           imageImportRequestId={imageImportRequestId}
+          isFlowchartConnectorArrowEnabled={isFlowchartConnectorArrowEnabled}
           isGridVisible={isGridVisible}
           isSnapToGridEnabled={isSnapToGridEnabled}
           onDeletePage={workspace.deletePage}
@@ -439,6 +476,8 @@ export function ThinkleafApp() {
           onUpdateCanvasObjects={updateCanvasObjects}
           onUpdatePage={workspace.updatePage}
           onSelectionChange={setSelectedObjectId}
+          onShapeTypeChange={setActiveShapeType}
+          onToggleFlowchartConnectorArrow={() => setIsFlowchartConnectorArrowEnabled((value) => !value)}
           onToggleSnapToGrid={() => setIsSnapToGridEnabled((value) => !value)}
           onToggleGrid={() => setIsGridVisible((value) => !value)}
           penSettings={penSettings}
@@ -535,6 +574,7 @@ function normalizeStoredCreationToolDefaults(value: string | null): CanvasCreati
     return {
       arrow: normalizeCreationDefaultStyle(parsed.arrow, defaultCanvasCreationToolDefaults.arrow),
       circle: normalizeCreationDefaultStyle(parsed.circle, defaultCanvasCreationToolDefaults.circle),
+      diamond: normalizeCreationDefaultStyle(parsed.diamond, defaultCanvasCreationToolDefaults.diamond),
       line: normalizeCreationDefaultStyle(parsed.line, defaultCanvasCreationToolDefaults.line),
       rectangle: normalizeCreationDefaultStyle(parsed.rectangle, defaultCanvasCreationToolDefaults.rectangle),
       textBox: normalizeCreationDefaultStyle(parsed.textBox, defaultCanvasCreationToolDefaults.textBox),
@@ -542,6 +582,10 @@ function normalizeStoredCreationToolDefaults(value: string | null): CanvasCreati
   } catch {
     return defaultCanvasCreationToolDefaults;
   }
+}
+
+function normalizeStoredShapeType(value: string | null): CanvasShapeType {
+  return value === "circle" || value === "diamond" || value === "rectangle" ? value : "rectangle";
 }
 
 function normalizeStoredPageTemplates(value: string | null): PageTemplate[] {

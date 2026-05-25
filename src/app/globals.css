@@ -167,6 +167,7 @@ textarea {
   border: 1px solid #dbe3ee;
   min-width: 1em;
   padding: 0.55rem 0.65rem;
+  position: relative;
   vertical-align: top;
 }
 

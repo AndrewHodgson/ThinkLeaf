@@ -4,7 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import { sampleWorkspace } from "@/lib/sampleWorkspace";
 import { createDefaultCanvasViewState, defaultCanvasStyle, defaultPenSettings } from "@/lib/canvasStyle";
 import { createId, defaultProfileId, defaultProfileName, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
-import type { CanvasObject, Folder, Page, PageTemplate, Profile, Project, WorkspaceData } from "@/types/workspace";
+import type {
+  CanvasConnectorAnchor,
+  CanvasConnectorArrowDirection,
+  CanvasConnectorStyle,
+  CanvasObject,
+  Folder,
+  Page,
+  PageTemplate,
+  Profile,
+  Project,
+  WorkspaceData,
+} from "@/types/workspace";
 
 const STORAGE_KEY = "thinkleaf.workspace.v1";
 
@@ -28,6 +39,14 @@ function normalizeCanvasObject(object: CanvasObject): CanvasObject {
     textAlign: object.textAlign ?? defaultCanvasStyle.textAlign,
     textVerticalAlign: object.textVerticalAlign ?? defaultCanvasStyle.textVerticalAlign,
     fontSize: object.fontSize ?? defaultCanvasStyle.fontSize,
+    sourceObjectId: typeof object.sourceObjectId === "string" ? object.sourceObjectId : undefined,
+    targetObjectId: typeof object.targetObjectId === "string" ? object.targetObjectId : undefined,
+    sourceAnchor: normalizeConnectorAnchor(object.sourceAnchor),
+    targetAnchor: normalizeConnectorAnchor(object.targetAnchor),
+    connectorStyle: normalizeConnectorStyle(object.connectorStyle),
+    arrowDirection: normalizeArrowDirection(object.arrowDirection),
+    connectorLabel: typeof object.connectorLabel === "string" ? object.connectorLabel : undefined,
+    shapeLabel: typeof object.shapeLabel === "string" ? object.shapeLabel : undefined,
     imageDataUrl: object.imageDataUrl,
     penPoints: Array.isArray(object.penPoints)
       ? object.penPoints.filter(
@@ -74,6 +93,25 @@ function normalizeCanvasObject(object: CanvasObject): CanvasObject {
   }
 
   return normalized;
+}
+
+function normalizeConnectorAnchor(anchor: CanvasObject["sourceAnchor"]): CanvasConnectorAnchor | undefined {
+  return anchor === "top" || anchor === "right" || anchor === "bottom" || anchor === "left" ? anchor : undefined;
+}
+
+function normalizeConnectorStyle(style: CanvasObject["connectorStyle"]): CanvasConnectorStyle | undefined {
+  return style === "straight" || style === "elbow" || style === "curve" ? style : undefined;
+}
+
+function normalizeArrowDirection(
+  arrowDirection: CanvasObject["arrowDirection"],
+): CanvasConnectorArrowDirection | undefined {
+  return arrowDirection === "none" ||
+    arrowDirection === "forward" ||
+    arrowDirection === "backward" ||
+    arrowDirection === "both"
+    ? arrowDirection
+    : undefined;
 }
 
 function createDefaultProfile(now = timestamp()): Profile {
@@ -272,6 +310,8 @@ function cloneCanvasObjects(objects: CanvasObject[]) {
     return {
       ...object,
       id: nextId,
+      sourceObjectId: object.sourceObjectId ? objectIdMap.get(object.sourceObjectId) : undefined,
+      targetObjectId: object.targetObjectId ? objectIdMap.get(object.targetObjectId) : undefined,
       createdAt: timestamp(),
       updatedAt: timestamp(),
     };

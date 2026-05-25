@@ -35,12 +35,23 @@ import {
   textSizePresets,
 } from "@/lib/canvasStyle";
 import { ColorPicker } from "@/components/workspace/ColorPicker";
-import type { CanvasCreationDefaultStyle, CanvasObject, CanvasPenSettings, CanvasTool } from "@/types/workspace";
+import type {
+  CanvasConnectorAnchor,
+  CanvasConnectorStart,
+  CanvasCreationDefaultStyle,
+  CanvasObject,
+  CanvasPenSettings,
+  CanvasTool,
+} from "@/types/workspace";
+import type { CanvasShapeType } from "@/types/workspace";
 
 type CanvasObjectToolbarProps = {
   object: CanvasObject;
+  pendingConnectorStart: CanvasConnectorStart | null;
+  onCancelConnector: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onStartConnector: (sourceAnchor: CanvasConnectorAnchor) => void;
   onUpdate: (updates: Partial<CanvasObject>) => void;
 };
 
@@ -57,6 +68,28 @@ type CanvasToolDefaultsToolbarProps = {
 
 const activeControlClass = "border-leaf-200 bg-leaf-50 text-leaf-700";
 const activeMenuItemClass = "bg-leaf-50 text-leaf-700";
+const connectorStylePresets = [
+  { label: "Straight", value: "straight" as const },
+  { label: "Elbow", value: "elbow" as const },
+  { label: "Curve", value: "curve" as const },
+];
+const arrowDirectionPresets = [
+  { label: "None", value: "none" as const },
+  { label: "Forward", value: "forward" as const },
+  { label: "Back", value: "backward" as const },
+  { label: "Both", value: "both" as const },
+];
+const connectorAnchorPresets = [
+  { label: "Top", value: "top" as const },
+  { label: "Right", value: "right" as const },
+  { label: "Bottom", value: "bottom" as const },
+  { label: "Left", value: "left" as const },
+];
+const shapeTypePresets = [
+  { label: "Rectangle", value: "rectangle" as const },
+  { label: "Circle", value: "circle" as const },
+  { label: "Diamond", value: "diamond" as const },
+];
 
 export function PenToolToolbar({ penSettings, onChange }: PenToolToolbarProps) {
   function updateMode(mode: CanvasPenSettings["mode"]) {
@@ -124,8 +157,9 @@ export function PenToolToolbar({ penSettings, onChange }: PenToolToolbarProps) {
 
 export function CanvasToolDefaultsToolbar({ defaults, tool, onUpdate }: CanvasToolDefaultsToolbarProps) {
   const isTextTool = tool === "Text Box";
-  const supportsFill = tool === "Rectangle" || tool === "Circle" || isTextTool;
-  const supportsStroke = tool === "Rectangle" || tool === "Circle" || tool === "Line" || tool === "Arrow" || isTextTool;
+  const isShapeTool = tool === "Shape";
+  const supportsFill = isShapeTool || isTextTool;
+  const supportsStroke = isShapeTool || tool === "Line" || tool === "Arrow" || isTextTool;
   const supportsStrokeStyle = supportsStroke;
   const strokeWidth = defaults.strokeWidth ?? defaultCanvasStyle.strokeWidth;
   const strokeStyle = defaults.strokeStyle ?? defaultCanvasStyle.strokeStyle;
@@ -296,16 +330,28 @@ export function CanvasToolDefaultsToolbar({ defaults, tool, onUpdate }: CanvasTo
   );
 }
 
-export function CanvasObjectToolbar({ object, onDelete, onDuplicate, onUpdate }: CanvasObjectToolbarProps) {
-  const supportsFill = object.type === "rectangle" || object.type === "circle" || object.type === "textBox";
+export function CanvasObjectToolbar({
+  object,
+  pendingConnectorStart,
+  onCancelConnector,
+  onDelete,
+  onDuplicate,
+  onStartConnector,
+  onUpdate,
+}: CanvasObjectToolbarProps) {
+  const supportsFill =
+    object.type === "rectangle" || object.type === "circle" || object.type === "diamond" || object.type === "textBox";
   const supportsStroke = object.type !== "image";
   const supportsStrokeStyle =
     object.type === "rectangle" ||
     object.type === "circle" ||
+    object.type === "diamond" ||
     object.type === "textBox" ||
     object.type === "line" ||
     object.type === "arrow";
   const isPenStroke = object.type === "penStroke";
+  const isConnectedLine = Boolean(object.sourceObjectId && object.targetObjectId);
+  const isShape = isCanvasShape(object);
 
   function updatePenMode(penMode: CanvasPenSettings["mode"]) {
     const isEnteringHighlighter = penMode === "highlighter" && object.penMode !== "highlighter";
@@ -353,6 +399,51 @@ export function CanvasObjectToolbar({ object, onDelete, onDuplicate, onUpdate }:
         </>
       ) : (
         <>
+          {isShape ? (
+            <>
+              <SegmentLabel>Shape</SegmentLabel>
+              <ToolbarDropdown
+                ariaLabel="Shape type"
+                currentLabel={getShapeTypeLabel(object.type)}
+                options={shapeTypePresets}
+                selectedValue={object.type}
+                title="Shape type"
+                onSelect={(type) => onUpdate({ type })}
+              />
+              <ToolbarTextInput
+                ariaLabel="Shape label"
+                placeholder="Label"
+                title="Shape label"
+                value={object.shapeLabel ?? ""}
+                onChange={(shapeLabel) => onUpdate({ shapeLabel })}
+              />
+              <SegmentLabel>Connect</SegmentLabel>
+              {connectorAnchorPresets.map((anchor) => {
+                const isPending =
+                  pendingConnectorStart?.sourceObjectId === object.id &&
+                  pendingConnectorStart.sourceAnchor === anchor.value;
+
+                return (
+                  <button
+                    key={`connect-${anchor.value}`}
+                    aria-label={`Connect from ${anchor.label}`}
+                    className={compactButtonClass(isPending, "min-w-12")}
+                    title={`Connect to another shape from ${anchor.label}`}
+                    type="button"
+                    onClick={() => {
+                      if (isPending) {
+                        onCancelConnector();
+                      } else {
+                        onStartConnector(anchor.value);
+                      }
+                    }}
+                  >
+                    {anchor.label}
+                  </button>
+                );
+              })}
+            </>
+          ) : null}
           {supportsFill ? (
             <ColorPicker
               currentValue={object.fillColor}
@@ -393,6 +484,59 @@ export function CanvasObjectToolbar({ object, onDelete, onDuplicate, onUpdate }:
               ))}
             </>
           ) : null}
+          {isConnectedLine ? (
+            <>
+              <SegmentLabel>Connector</SegmentLabel>
+              {connectorStylePresets.map((style) => (
+                <button
+                  key={style.value}
+                  aria-label={`Connector style ${style.label}`}
+                  className={compactButtonClass((object.connectorStyle ?? "straight") === style.value, "min-w-16")}
+                  type="button"
+                  onClick={() => onUpdate({ connectorStyle: style.value })}
+                >
+                  {style.label}
+                </button>
+              ))}
+              <SegmentLabel>Start</SegmentLabel>
+              <ToolbarDropdown
+                ariaLabel="Connector start anchor"
+                currentLabel={getConnectorAnchorLabel(object.sourceAnchor)}
+                options={connectorAnchorPresets}
+                selectedValue={object.sourceAnchor ?? "right"}
+                title="Start anchor"
+                onSelect={(sourceAnchor) => onUpdate({ sourceAnchor })}
+              />
+              <SegmentLabel>End</SegmentLabel>
+              <ToolbarDropdown
+                ariaLabel="Connector end anchor"
+                currentLabel={getConnectorAnchorLabel(object.targetAnchor)}
+                options={connectorAnchorPresets}
+                selectedValue={object.targetAnchor ?? "left"}
+                title="End anchor"
+                onSelect={(targetAnchor) => onUpdate({ targetAnchor })}
+              />
+              <SegmentLabel>Arrow</SegmentLabel>
+              {arrowDirectionPresets.map((direction) => (
+                <button
+                  key={direction.value}
+                  aria-label={`Arrow direction ${direction.label}`}
+                  className={compactButtonClass(getArrowDirectionValue(object) === direction.value, "min-w-14")}
+                  type="button"
+                  onClick={() => onUpdate({ arrowDirection: direction.value })}
+                >
+                  {direction.label}
+                </button>
+              ))}
+              <ToolbarTextInput
+                ariaLabel="Connector label"
+                placeholder="Label"
+                title="Connector label"
+                value={object.connectorLabel ?? ""}
+                onChange={(connectorLabel) => onUpdate({ connectorLabel })}
+              />
+            </>
+          ) : null}
         </>
       )}
 
@@ -422,6 +566,33 @@ export function CanvasObjectToolbar({ object, onDelete, onDuplicate, onUpdate }:
         </span>
       ) : null}
     </>
+  );
+}
+
+function ToolbarTextInput({
+  ariaLabel,
+  placeholder,
+  title,
+  value,
+  onChange,
+}: {
+  ariaLabel: string;
+  placeholder: string;
+  title: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <input
+      aria-label={ariaLabel}
+      className="h-8 w-28 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-leaf-300 focus:ring-2 focus:ring-leaf-100"
+      placeholder={placeholder}
+      title={title}
+      type="text"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      onPointerDown={(event) => event.stopPropagation()}
+    />
   );
 }
 
@@ -669,7 +840,36 @@ function getObjectLabel(object: CanvasObject) {
     return "Text box";
   }
 
+  if (object.type === "diamond") {
+    return "Diamond";
+  }
+
   return object.type;
+}
+
+function isCanvasShape(object: CanvasObject): object is CanvasObject & { type: CanvasShapeType } {
+  return object.type === "rectangle" || object.type === "circle" || object.type === "diamond";
+}
+
+function getShapeTypeLabel(type: CanvasShapeType) {
+  return shapeTypePresets.find((preset) => preset.value === type)?.label ?? "Rectangle";
+}
+
+function getArrowDirectionValue(object: CanvasObject) {
+  if (
+    object.arrowDirection === "none" ||
+    object.arrowDirection === "forward" ||
+    object.arrowDirection === "backward" ||
+    object.arrowDirection === "both"
+  ) {
+    return object.arrowDirection;
+  }
+
+  return object.type === "arrow" ? "forward" : "none";
+}
+
+function getConnectorAnchorLabel(anchor: CanvasConnectorAnchor | undefined) {
+  return connectorAnchorPresets.find((preset) => preset.value === anchor)?.label ?? "Auto";
 }
 
 function getLaserColor(value: string | undefined) {
