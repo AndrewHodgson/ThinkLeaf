@@ -15,6 +15,7 @@ import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { normalizeEditorContent } from "@/lib/editorContent";
+import { safeSetLocalStorage } from "@/lib/storage";
 import {
   ChevronDown,
   Bold as BoldIcon,
@@ -416,11 +417,7 @@ export function RichTextEditor({
       return;
     }
 
-    try {
-      window.localStorage.setItem(DOCUMENT_VERTICAL_ALIGN_STORAGE_KEY, verticalAlign);
-    } catch {
-      // Ignore storage errors in private/incognito modes.
-    }
+    safeSetLocalStorage(DOCUMENT_VERTICAL_ALIGN_STORAGE_KEY, verticalAlign);
   }, [hasLoadedVerticalAlign, verticalAlign]);
 
   const documentToolbar = hasMounted && editor && toolbarPortalElement

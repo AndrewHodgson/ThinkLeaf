@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { sampleWorkspace } from "@/lib/sampleWorkspace";
 import { createDefaultCanvasViewState, defaultCanvasStyle, defaultPenSettings } from "@/lib/canvasStyle";
+import { safeSetLocalStorage } from "@/lib/storage";
 import { createId, defaultProfileId, defaultProfileName, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
 import type {
   CanvasConnectorAnchor,
@@ -359,7 +360,7 @@ export function useWorkspace() {
       return;
     }
 
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    safeSetLocalStorage(STORAGE_KEY, JSON.stringify(data));
   }, [data, hasHydrated]);
 
   const activeProfile = useMemo(
@@ -939,6 +940,19 @@ export function useWorkspace() {
     });
   }
 
+  function importWorkspaceData(value: unknown) {
+    const parsed = value as Partial<WorkspaceData>;
+
+    if (!parsed || !Array.isArray(parsed.projects) || !Array.isArray(parsed.folders) || !Array.isArray(parsed.pages)) {
+      return false;
+    }
+
+    const nextData = normalizeWorkspace(parsed);
+    setData(nextData);
+    setActivePageId(pickFallbackPageIdForProfile(nextData, nextData.activeProfileId));
+    return true;
+  }
+
   return {
     data,
     activeProfile,
@@ -965,5 +979,6 @@ export function useWorkspace() {
     updatePage,
     updateCanvasViewState,
     deletePage,
+    importWorkspaceData,
   };
 }

@@ -21,6 +21,7 @@ import {
   Star,
   Trash2,
 } from "lucide-react";
+import { safeSetLocalStorage } from "@/lib/storage";
 
 type SidebarProps = {
   activePageId: string;
@@ -132,7 +133,7 @@ export function Sidebar({
       return;
     }
 
-    window.localStorage.setItem(
+    safeSetLocalStorage(
       storageKey,
       JSON.stringify({
         expandedFolderIds,

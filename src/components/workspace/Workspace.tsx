@@ -33,7 +33,7 @@ import {
 } from "@/lib/canvasStyle";
 import { TagEditor } from "@/components/workspace/TagEditor";
 import { RichTextEditor, type FormattingTarget } from "@/components/workspace/RichTextEditor";
-import { Check, Clock3, Save, Star, Trash2, X } from "lucide-react";
+import { Check, Clock3, Download, FileDown, Save, Star, Trash2, X } from "lucide-react";
 import { CanvasLayer } from "@/components/workspace/CanvasLayer";
 import {
   alignCanvasSize,
@@ -48,6 +48,7 @@ import {
   CanvasToolDefaultsToolbar,
   PenToolToolbar,
 } from "@/components/workspace/CanvasObjectToolbar";
+import { exportPageAsPdf } from "@/lib/exportUtils";
 import { getImageFilesFromClipboard, type ProcessedImage, processImageFile } from "@/lib/imageUtils";
 
 type BoardPanInteraction = {
@@ -73,6 +74,8 @@ type WorkspaceProps = {
   tagSuggestions: string[];
   onCreationToolDefaultsChange: (defaults: CanvasCreationToolDefaults) => void;
   onDeletePage: (pageId: string) => void;
+  onExportBackup: () => void;
+  onImportBackup: () => void;
   onPenSettingsChange: Dispatch<SetStateAction<CanvasPenSettings>>;
   onRedoCanvas: () => void;
   onResetView: () => void;
@@ -114,6 +117,8 @@ export function Workspace({
   tagSuggestions,
   onCreationToolDefaultsChange,
   onDeletePage,
+  onExportBackup,
+  onImportBackup,
   onPenSettingsChange,
   onRedoCanvas,
   onResetView,
@@ -140,6 +145,7 @@ export function Workspace({
   const [boardPanInteraction, setBoardPanInteraction] = useState<BoardPanInteraction | null>(null);
   const [documentToolbarElement, setDocumentToolbarElement] = useState<HTMLDivElement | null>(null);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isManualSaveVisible, setIsManualSaveVisible] = useState(false);
   const [isZoomIndicatorVisible, setIsZoomIndicatorVisible] = useState(false);
   const [pendingConnectorStart, setPendingConnectorStart] = useState<CanvasConnectorStart | null>(null);
@@ -227,6 +233,11 @@ export function Workspace({
     onUpdatePage(page.id, {});
     setIsManualSaveVisible(true);
     window.setTimeout(() => setIsManualSaveVisible(false), 1200);
+  }
+
+  function runExport(action: () => void) {
+    setIsExportMenuOpen(false);
+    action();
   }
 
   function updateSelectedObject(updates: Partial<NonNullable<typeof selectedObject>>) {
@@ -425,11 +436,26 @@ export function Workspace({
     );
   }
 
+  function isMiddlePanBlockedTarget(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    return Boolean(
+      target.closest("button, input, textarea, select, summary, option, [role='menu'], [role='listbox'], [data-pan-block='true']"),
+    );
+  }
+
   function handleWorkspacePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     const isBlockedTarget = isPanBlockedTarget(event.target);
 
     if (!isBlockedTarget) {
       event.currentTarget.focus();
+    }
+
+    if (event.button === 1 && !isMiddlePanBlockedTarget(event.target)) {
+      startWorkspacePan(event);
+      return;
     }
 
     if (activeTool === "Select" && event.button === 0 && !isBlockedTarget) {
@@ -445,6 +471,10 @@ export function Workspace({
       return;
     }
 
+    startWorkspacePan(event);
+  }
+
+  function startWorkspacePan(event: React.PointerEvent<HTMLDivElement>) {
     event.preventDefault();
     releaseWorkspacePan();
     onSelectionChange(null);
@@ -641,6 +671,38 @@ export function Workspace({
                 {isManualSaveVisible ? (
                   <span className="text-xs font-medium text-leaf-700">Saved</span>
                 ) : null}
+                <div className="relative">
+                  <button
+                    aria-expanded={isExportMenuOpen}
+                    aria-label="Export"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    title="Export"
+                    type="button"
+                    onClick={() => setIsExportMenuOpen((current) => !current)}
+                  >
+                    <Download aria-hidden="true" className="h-4 w-4" />
+                  </button>
+                  {isExportMenuOpen ? (
+                    <div className="absolute right-0 top-11 z-40 grid w-48 gap-1 rounded-md border border-slate-200 bg-white p-1 text-sm shadow-soft">
+                      <button
+                        className="flex h-9 items-center gap-2 rounded px-2 text-left font-medium text-slate-700 hover:bg-slate-50"
+                        type="button"
+                        onClick={() => runExport(() => exportPageAsPdf(page, breadcrumbPath))}
+                      >
+                        <FileDown aria-hidden="true" className="h-4 w-4" />
+                        Export as PDF
+                      </button>
+                      <button
+                        className="flex h-9 items-center gap-2 rounded px-2 text-left font-medium text-slate-700 hover:bg-slate-50"
+                        type="button"
+                        onClick={() => runExport(onExportBackup)}
+                      >
+                        <Download aria-hidden="true" className="h-4 w-4" />
+                        Export backup file
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
                 <button
                   aria-label={page.isFavorite ? "Remove from favorites" : "Add to favorites"}
                   className={[
@@ -738,6 +800,8 @@ export function Workspace({
         onToggleFlowchartConnectorArrow={onToggleFlowchartConnectorArrow}
         onToggleGrid={onToggleGrid}
         onToggleSnapToGrid={onToggleSnapToGrid}
+        onExportBackup={onExportBackup}
+        onImportBackup={onImportBackup}
         onToolChange={onToolChange}
         onShapeTypeChange={onShapeTypeChange}
         onUndoCanvas={onUndoCanvas}

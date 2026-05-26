@@ -10,6 +10,8 @@ import {
   Hand,
   HelpCircle,
   Image as ImageIcon,
+  Download,
+  Upload,
   Magnet,
   Redo2,
   RotateCcw,
@@ -52,6 +54,8 @@ type CanvasCreationToolbarProps = {
   isSnapToGridEnabled: boolean;
   onHelpClick: () => void;
   onImageUploadClick: () => void;
+  onExportBackup: () => void;
+  onImportBackup: () => void;
   onRedoCanvas: () => void;
   onResetView: () => void;
   onToggleGrid: () => void;
@@ -74,6 +78,8 @@ export function CanvasCreationToolbar({
   isSnapToGridEnabled,
   onHelpClick,
   onImageUploadClick,
+  onExportBackup,
+  onImportBackup,
   onRedoCanvas,
   onResetView,
   onToggleGrid,
@@ -382,6 +388,27 @@ export function CanvasCreationToolbar({
               </span>
               <span className="text-xs font-semibold">{isFlowchartConnectorArrowEnabled ? "On" : "Off"}</span>
             </button>
+            <div className="my-2 border-t border-slate-100 pt-2">
+              <div className="px-2 pb-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                Data & Backup
+              </div>
+              <button
+                className="flex h-9 w-full items-center gap-2 rounded px-2 text-left text-slate-600 transition hover:bg-slate-50"
+                type="button"
+                onClick={onExportBackup}
+              >
+                <Download aria-hidden="true" className="h-4 w-4" />
+                Export backup file
+              </button>
+              <button
+                className="mt-1 flex h-9 w-full items-center gap-2 rounded px-2 text-left text-slate-600 transition hover:bg-slate-50"
+                type="button"
+                onClick={onImportBackup}
+              >
+                <Upload aria-hidden="true" className="h-4 w-4" />
+                Import backup file
+              </button>
+            </div>
           </div>
         </details>
       </div>

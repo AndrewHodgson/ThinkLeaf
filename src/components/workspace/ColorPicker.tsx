@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
+import { safeSetLocalStorage } from "@/lib/storage";
 
 const RECENT_COLORS_STORAGE_KEY = "thinkleaf.recentCustomColors.v1";
 const COLOR_PICKER_OPEN_EVENT = "thinkleaf-color-picker-open";
@@ -246,6 +247,7 @@ function saveRecentColor(color: string) {
     0,
     maxRecentColors,
   );
-  window.localStorage.setItem(RECENT_COLORS_STORAGE_KEY, JSON.stringify(nextColors));
-  window.dispatchEvent(new Event("thinkleaf-recent-colors-change"));
+  if (safeSetLocalStorage(RECENT_COLORS_STORAGE_KEY, JSON.stringify(nextColors))) {
+    window.dispatchEvent(new Event("thinkleaf-recent-colors-change"));
+  }
 }

@@ -13,6 +13,8 @@ import {
   zoomStep,
 } from "@/lib/canvasStyle";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import { exportWorkspaceBackup } from "@/lib/exportUtils";
+import { safeSetLocalStorage, storageWriteErrorEvent } from "@/lib/storage";
 import { createId, searchPages, sortPagesByUpdatedAt, timestamp } from "@/lib/workspaceUtils";
 import type {
   CanvasCreationDefaultStyle,
@@ -52,6 +54,7 @@ type CanvasPageHistory = {
 
 export function ThinkleafApp() {
   const workspace = useWorkspace();
+  const backupFileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isGridVisible, setIsGridVisible] = useState(true);
   const [isSnapToGridEnabled, setIsSnapToGridEnabled] = useState(true);
@@ -69,6 +72,7 @@ export function ThinkleafApp() {
   const [zoomIndicatorTick, setZoomIndicatorTick] = useState(0);
   const [canvasHistoryByPage, setCanvasHistoryByPage] = useState<Record<string, CanvasPageHistory>>({});
   const [pageTemplates, setPageTemplates] = useState<PageTemplate[]>([]);
+  const [hasStorageWriteError, setHasStorageWriteError] = useState(false);
   const recordedCanvasHistoryKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -92,18 +96,23 @@ export function ThinkleafApp() {
   }, []);
 
   useEffect(() => {
+    function handleStorageWriteError() {
+      setHasStorageWriteError(true);
+    }
+
+    window.addEventListener(storageWriteErrorEvent, handleStorageWriteError);
+
+    return () => {
+      window.removeEventListener(storageWriteErrorEvent, handleStorageWriteError);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!hasLoadedUiPreferences) {
       return;
     }
 
-    try {
-      window.localStorage.setItem(
-        "thinkleaf.ui.v1",
-        isSidebarCollapsed ? "sidebar-collapsed" : "sidebar-expanded",
-      );
-    } catch {
-      // Ignore storage errors in private/incognito modes.
-    }
+    safeSetLocalStorage("thinkleaf.ui.v1", isSidebarCollapsed ? "sidebar-collapsed" : "sidebar-expanded");
   }, [hasLoadedUiPreferences, isSidebarCollapsed]);
 
   useEffect(() => {
@@ -111,11 +120,7 @@ export function ThinkleafApp() {
       return;
     }
 
-    try {
-      window.localStorage.setItem(SNAP_TO_GRID_STORAGE_KEY, isSnapToGridEnabled ? "on" : "off");
-    } catch {
-      // Ignore storage errors in private/incognito modes.
-    }
+    safeSetLocalStorage(SNAP_TO_GRID_STORAGE_KEY, isSnapToGridEnabled ? "on" : "off");
   }, [hasLoadedUiPreferences, isSnapToGridEnabled]);
 
   useEffect(() => {
@@ -123,11 +128,7 @@ export function ThinkleafApp() {
       return;
     }
 
-    try {
-      window.localStorage.setItem(PEN_SETTINGS_STORAGE_KEY, JSON.stringify(penSettings));
-    } catch {
-      // Ignore storage errors in private/incognito modes.
-    }
+    safeSetLocalStorage(PEN_SETTINGS_STORAGE_KEY, JSON.stringify(penSettings));
   }, [hasLoadedUiPreferences, penSettings]);
 
   useEffect(() => {
@@ -135,11 +136,7 @@ export function ThinkleafApp() {
       return;
     }
 
-    try {
-      window.localStorage.setItem(CREATION_TOOL_DEFAULTS_STORAGE_KEY, JSON.stringify(creationToolDefaults));
-    } catch {
-      // Ignore storage errors in private/incognito modes.
-    }
+    safeSetLocalStorage(CREATION_TOOL_DEFAULTS_STORAGE_KEY, JSON.stringify(creationToolDefaults));
   }, [creationToolDefaults, hasLoadedUiPreferences]);
 
   useEffect(() => {
@@ -147,11 +144,7 @@ export function ThinkleafApp() {
       return;
     }
 
-    try {
-      window.localStorage.setItem(ACTIVE_SHAPE_TYPE_STORAGE_KEY, activeShapeType);
-    } catch {
-      // Ignore storage errors in private/incognito modes.
-    }
+    safeSetLocalStorage(ACTIVE_SHAPE_TYPE_STORAGE_KEY, activeShapeType);
   }, [activeShapeType, hasLoadedUiPreferences]);
 
   useEffect(() => {
@@ -159,14 +152,10 @@ export function ThinkleafApp() {
       return;
     }
 
-    try {
-      window.localStorage.setItem(
-        FLOWCHART_CONNECTOR_ARROW_STORAGE_KEY,
-        isFlowchartConnectorArrowEnabled ? "on" : "off",
-      );
-    } catch {
-      // Ignore storage errors in private/incognito modes.
-    }
+    safeSetLocalStorage(
+      FLOWCHART_CONNECTOR_ARROW_STORAGE_KEY,
+      isFlowchartConnectorArrowEnabled ? "on" : "off",
+    );
   }, [hasLoadedUiPreferences, isFlowchartConnectorArrowEnabled]);
 
   useEffect(() => {
@@ -174,11 +163,7 @@ export function ThinkleafApp() {
       return;
     }
 
-    try {
-      window.localStorage.setItem(PAGE_TEMPLATES_STORAGE_KEY, JSON.stringify(pageTemplates));
-    } catch {
-      // Ignore storage errors in private/incognito modes.
-    }
+    safeSetLocalStorage(PAGE_TEMPLATES_STORAGE_KEY, JSON.stringify(pageTemplates));
   }, [hasLoadedUiPreferences, pageTemplates]);
 
   const canvasViewState = workspace.activePage?.canvasViewState ?? defaultCanvasViewState;
@@ -415,8 +400,62 @@ export function ThinkleafApp() {
     setPageTemplates((current) => [template, ...current].slice(0, 24));
   }
 
+  function exportBackupFile() {
+    exportWorkspaceBackup(workspace.data);
+  }
+
+  function requestImportBackupFile() {
+    backupFileInputRef.current?.click();
+  }
+
+  function importBackupFile(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+
+    if (!window.confirm("Importing a backup will replace the current workspace on this device. Continue?")) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result ?? ""));
+        if (!workspace.importWorkspaceData(parsed)) {
+          window.alert("That backup file does not look like a Thinkleaf workspace backup.");
+          return;
+        }
+        window.alert("Backup imported.");
+      } catch {
+        window.alert("Could not import that backup file.");
+      }
+    };
+    reader.onerror = () => {
+      window.alert("Could not read that backup file.");
+    };
+    reader.readAsText(file);
+  }
+
   return (
     <main className="flex h-screen min-h-0 bg-slate-50 text-slate-900">
+      <input
+        ref={backupFileInputRef}
+        accept="application/json,.json"
+        className="hidden"
+        type="file"
+        onChange={(event) => {
+          importBackupFile(event.target.files?.[0]);
+          event.target.value = "";
+        }}
+      />
+      {hasStorageWriteError ? (
+        <div
+          className="fixed left-1/2 top-3 z-50 w-[min(520px,calc(100vw-24px))] -translate-x-1/2 rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950 shadow-lg"
+          role="alert"
+        >
+          Saving failed. Your latest changes may not persist. Free up browser storage, then keep working.
+        </div>
+      ) : null}
       <Sidebar
         activePageId={workspace.activePageId}
         activeProfileId={workspace.activeProfileId}
@@ -473,6 +512,8 @@ export function ThinkleafApp() {
           onPenSettingsChange={setPenSettings}
           onSearchByTag={(tag) => setSearchQuery(tag)}
           onUndoCanvas={undoCanvas}
+          onExportBackup={exportBackupFile}
+          onImportBackup={requestImportBackupFile}
           onUpdateCanvasObjects={updateCanvasObjects}
           onUpdatePage={workspace.updatePage}
           onSelectionChange={setSelectedObjectId}
