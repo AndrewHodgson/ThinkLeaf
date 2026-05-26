@@ -98,14 +98,63 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Image objects can be imported or pasted, resized/compressed, moved, resized, deleted, and stored per page.
 - Snap to Grid is separate from Show Grid, is on by default, and applies to creation, movement, resizing, and line/arrow endpoints when enabled.
 
+## Beta Hardening — Completed (2026-05-26)
+
+The following beta-readiness issues have been addressed since the last maintainability pass:
+
+- **Safe localStorage writes**: all writes go through `safeSetLocalStorage`; a visible amber banner with an Export Backup button appears on quota failures. See `codex-notes/safe-localstorage.md`.
+- **Error Boundary**: `src/components/ErrorBoundary.tsx` wraps the full app tree; render crashes show a clean fallback with Download Backup and Reload buttons. See `codex-notes/error-boundary.md`.
+- **Corrupted storage recovery**: if `thinkleaf.workspace.v1` fails JSON parsing or shape validation, the raw value is preserved under a timestamped key, autosave is gated, and the user sees a recovery screen with a Download and Start Fresh option. See `codex-notes/corrupted-storage-recovery.md`.
+- **Undo history memory**: `imageDataUrl` is now stripped from undo/redo history snapshots; a per-page image asset registry (React ref) re-injects data on restore. History entries no longer pin image strings in memory beyond their use lifetime. History remains session-only (never persisted to localStorage). See `codex-notes/undo-history-memory.md`.
+- **Data storage disclosure**: A plain-language note explaining local-only storage, no cloud sync, and browser-access risk was added to the Settings menu's "Data & Backup" section. No encryption or backend added — beta scope is disclosure only.
+- **Security headers**: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy` added to `next.config.ts`. CSP intentionally deferred — requires nonce middleware to be useful alongside Next.js inline scripts and Tiptap inline styles. See `codex-notes/security-headers.md`.
+- **Export separation**: JSON backup (editable restore) and PDF export (print/share, with canvas on its own page) are distinct functions with no confusion between them.
+- **Mobile/tablet**: intentionally not a beta priority. No responsive work planned until core QA is complete.
+- **CanvasLayer runtime errors**: confirmed resolved — `getConnectorLineMode`, `getDoubleLinePathData`, and `getLineMarkerUrl` are all hoisted function declarations; `markerEnd` is a JSX SVG prop name, not a variable.
+
 ## Current Recommended Next
 
-Latest behavior-preserving maintainability pass on 2026-05-26 extracted Pen stroke SVG rendering from `CanvasLayer`, removed stale Pen smoothing QA references, and passed `npm.cmd run build` plus direct TypeScript checking.
+Manual browser QA is the top priority. All beta-hardening code changes are complete; the app needs hands-on verification before deployment.
 
-Remaining verification should be hands-on browser QA with real drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching. The previous local startup check was blocked by an existing `node` listener on port 3000 that was not reachable by `curl` from this session; see `notes/bugs-and-issues.md`.
+Priority QA checklist:
 
-Recommended next work:
+- Restart the dev server cleanly and confirm the app loads without console errors.
+- Exercise Pen, Ink, Highlighter, Laser Pointer, and Eraser with real drawing.
+- Test flowchart connectors: create, move, re-anchor, switch styles (straight/elbow/curve), double-line mode.
+- Test image import via toolbar and paste.
+- Test Tiptap tables: create, edit, merge cells, header rows, delete.
+- Test profiles: create, rename, delete, switch.
+- Test nested folders: create, rename, duplicate, delete with confirmation.
+- Test page templates: save, create from template.
+- Test undo/redo: canvas actions, cross-page, after page switch.
+- Test localStorage persistence: edit, refresh, confirm data survived.
+- Verify security headers appear in DevTools → Network → response headers for any document request.
+- Verify the data storage disclosure text appears in Settings → Data & Backup.
+- Trigger the storage error banner manually via the DevTools console snippet in `codex-notes/safe-localstorage.md`.
+- Trigger the corrupted storage recovery screen via the DevTools steps in `codex-notes/corrupted-storage-recovery.md`.
+- Trigger the error boundary fallback via the temporary-throw method in `codex-notes/error-boundary.md`.
+- Test JSON backup export and re-import.
+- Test PDF export: confirm note body and canvas each appear on their own pages.
 
-- Repeat startup/browser QA after restarting the port 3000 dev server cleanly.
-- Exercise Pen, Ink, Highlighter, Laser, Eraser, flowchart connectors, image import, Tiptap tables, profiles, nested folders, templates, undo/redo, and localStorage persistence in a real browser.
-- Continue behavior-preserving extraction from the largest remaining modules only after manual QA confirms the current behavior.
+After manual QA confirms stable behavior, the only remaining deferred beta issue is #9 (sidebar/search performance at scale), which is acceptable for a small beta and can be addressed post-launch if needed.
+
+## Post-Beta Refactor Priorities
+
+A maintainability audit was completed 2026-05-26. The full plan is in `codex-notes/refactor-plan.md`. Do not start these before manual QA is complete.
+
+Top priorities in order:
+1. Move ~310 lines of pure geometry math out of `CanvasLayer.tsx` into `canvasGeometry.ts` — also eliminates five duplicated helper functions shared with `CanvasObjectToolbar.tsx`.
+2. Extract `isEditableTarget` to a shared utility (currently defined in both `ThinkleafApp.tsx` and `CanvasLayer.tsx`).
+3. Rename the three `cloneCanvasObjects` variants to prevent confusion (two shallow-clone variants with same-IDs, one ID-remapping variant — different behaviors, easy to misuse).
+4. Remove dead `updateCanvasViewState` export from `useWorkspace.ts`.
+
+What not to touch before beta: splitting the `CanvasLayer` component body or `useWorkspace` (risky, architectural changes).
+
+## Pre-Deployment Checklist
+
+Before deploying to a public host:
+
+- Remove `public/.DS_Store` (OS metadata file; should not be served).
+- Remove `public/brand/ThinkLeaf Logo Working.ai` (source design file; should not be served). See `notes/bugs-and-issues.md`.
+- Configure the deployment platform (Vercel, Netlify, etc.) — no `vercel.json` or `netlify.toml` exists yet.
+- Confirm `npm run build` still passes clean after any last-minute changes.

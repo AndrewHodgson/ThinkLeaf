@@ -19,6 +19,7 @@ import type {
 } from "@/types/workspace";
 
 const STORAGE_KEY = "thinkleaf.workspace.v1";
+const CORRUPTED_KEY_PREFIX = "thinkleaf.workspace.corrupted.";
 
 function normalizeCanvasObject(object: CanvasObject): CanvasObject {
   const width = Math.max(24, object.width ?? 120);
@@ -319,27 +320,47 @@ function cloneCanvasObjects(objects: CanvasObject[]) {
   });
 }
 
-function loadWorkspace(): WorkspaceData {
+type LoadResult = {
+  data: WorkspaceData;
+  corruptedKey: string | null;
+};
+
+function preserveCorruptedWorkspace(raw: string): string {
+  const key = `${CORRUPTED_KEY_PREFIX}${Date.now()}`;
+  try {
+    window.localStorage.setItem(key, raw);
+  } catch {
+    // Storage may be full; the original corrupted value remains under STORAGE_KEY
+    // until the user explicitly starts fresh, so recovery is still possible.
+  }
+  return key;
+}
+
+function loadWorkspace(): LoadResult {
   if (typeof window === "undefined") {
-    return sampleWorkspace;
+    return { data: sampleWorkspace, corruptedKey: null };
   }
 
   const stored = window.localStorage.getItem(STORAGE_KEY);
 
   if (!stored) {
-    return sampleWorkspace;
+    return { data: sampleWorkspace, corruptedKey: null };
   }
 
   try {
     const parsed = JSON.parse(stored) as Partial<WorkspaceData>;
 
     if (!Array.isArray(parsed.projects) || !Array.isArray(parsed.folders) || !Array.isArray(parsed.pages)) {
-      return sampleWorkspace;
+      const corruptedKey = preserveCorruptedWorkspace(stored);
+      console.warn("[Thinkleaf] Workspace data failed validation; preserved under", corruptedKey);
+      return { data: sampleWorkspace, corruptedKey };
     }
 
-    return normalizeWorkspace(parsed);
-  } catch {
-    return sampleWorkspace;
+    return { data: normalizeWorkspace(parsed), corruptedKey: null };
+  } catch (error) {
+    const corruptedKey = preserveCorruptedWorkspace(stored);
+    console.warn("[Thinkleaf] Workspace JSON could not be parsed; preserved under", corruptedKey, error);
+    return { data: sampleWorkspace, corruptedKey };
   }
 }
 
@@ -347,21 +368,25 @@ export function useWorkspace() {
   const [data, setData] = useState<WorkspaceData>(sampleWorkspace);
   const [activePageId, setActivePageId] = useState(sampleWorkspace.pages[0]?.id ?? "");
   const [hasHydrated, setHasHydrated] = useState(false);
+  const [corruptedStorageKey, setCorruptedStorageKey] = useState<string | null>(null);
 
   useEffect(() => {
-    const loaded = loadWorkspace();
+    const { data: loaded, corruptedKey } = loadWorkspace();
     setData(loaded);
     setActivePageId(pickFallbackPageIdForProfile(loaded, loaded.activeProfileId));
+    setCorruptedStorageKey(corruptedKey);
     setHasHydrated(true);
   }, []);
 
+  // Gate autosave while corruption is unresolved so sample data never silently
+  // overwrites the user's workspace key before they can recover their data.
   useEffect(() => {
-    if (!hasHydrated) {
+    if (!hasHydrated || corruptedStorageKey !== null) {
       return;
     }
 
     safeSetLocalStorage(STORAGE_KEY, JSON.stringify(data));
-  }, [data, hasHydrated]);
+  }, [data, hasHydrated, corruptedStorageKey]);
 
   const activeProfile = useMemo(
     () => data.profiles.find((profile) => profile.id === data.activeProfileId) ?? data.profiles[0],
@@ -953,6 +978,21 @@ export function useWorkspace() {
     return true;
   }
 
+  function clearCorruptedData() {
+    try {
+      if (corruptedStorageKey) {
+        window.localStorage.removeItem(corruptedStorageKey);
+      }
+    } catch {
+      // ignore — stashed copy may not exist if storage was full
+    }
+    // Write the fresh sample workspace explicitly so the next page load is clean.
+    safeSetLocalStorage(STORAGE_KEY, JSON.stringify(sampleWorkspace));
+    setData(sampleWorkspace);
+    setActivePageId(pickFallbackPageIdForProfile(sampleWorkspace, sampleWorkspace.activeProfileId));
+    setCorruptedStorageKey(null);
+  }
+
   return {
     data,
     activeProfile,
@@ -960,6 +1000,7 @@ export function useWorkspace() {
     activeProfileId,
     activePage,
     activePageId,
+    corruptedStorageKey,
     selectProfile,
     createProfile,
     renameProfile,
@@ -980,5 +1021,6 @@ export function useWorkspace() {
     updateCanvasViewState,
     deletePage,
     importWorkspaceData,
+    clearCorruptedData,
   };
 }

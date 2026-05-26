@@ -392,6 +392,11 @@ export function CanvasCreationToolbar({
               <div className="px-2 pb-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">
                 Data & Backup
               </div>
+              <p className="px-2 pb-2 text-[11px] leading-relaxed text-slate-400">
+                Notes are stored locally in this browser only — not synced to the cloud. Anyone with
+                access to this browser may be able to view them. Export a backup to save a copy to
+                your device.
+              </p>
               <button
                 className="flex h-9 w-full items-center gap-2 rounded px-2 text-left text-slate-600 transition hover:bg-slate-50"
                 type="button"

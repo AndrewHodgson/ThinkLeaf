@@ -74,6 +74,7 @@ export function ThinkleafApp() {
   const [pageTemplates, setPageTemplates] = useState<PageTemplate[]>([]);
   const [hasStorageWriteError, setHasStorageWriteError] = useState(false);
   const recordedCanvasHistoryKeysRef = useRef<Set<string>>(new Set());
+  const imageAssetsByPageRef = useRef<Record<string, Record<string, string>>>({});
 
   useEffect(() => {
     try {
@@ -270,11 +271,48 @@ export function ThinkleafApp() {
     return objects.map((object) => ({ ...object }));
   }
 
+  function collectPageImageAssets(pageId: string, objects: CanvasObject[]) {
+    let assets = imageAssetsByPageRef.current[pageId];
+    let changed = false;
+    for (const obj of objects) {
+      if (obj.type === "image" && obj.imageDataUrl && !(assets?.[obj.id])) {
+        if (!assets) {
+          assets = {};
+        }
+        assets[obj.id] = obj.imageDataUrl;
+        changed = true;
+      }
+    }
+    if (changed) {
+      imageAssetsByPageRef.current = { ...imageAssetsByPageRef.current, [pageId]: assets! };
+    }
+  }
+
+  function cloneHistorySnapshot(objects: CanvasObject[]): CanvasObject[] {
+    return objects.map((obj) =>
+      obj.type === "image" ? { ...obj, imageDataUrl: undefined } : { ...obj },
+    );
+  }
+
+  function restoreHistorySnapshot(pageId: string, objects: CanvasObject[]): CanvasObject[] {
+    const assets = imageAssetsByPageRef.current[pageId];
+    return objects.map((obj) => {
+      if (obj.type === "image" && !obj.imageDataUrl) {
+        const dataUrl = assets?.[obj.id];
+        return dataUrl ? { ...obj, imageDataUrl: dataUrl } : { ...obj };
+      }
+      return { ...obj };
+    });
+  }
+
   function updateCanvasObjects(pageId: string, canvasObjects: CanvasObject[], options: CanvasHistoryOptions = {}) {
     const page = workspace.data.pages.find((item) => item.id === pageId);
     if (!page) {
       return;
     }
+
+    collectPageImageAssets(pageId, page.canvasObjects);
+    collectPageImageAssets(pageId, canvasObjects);
 
     if (options.recordHistory !== false) {
       const historyKey = options.historyKey;
@@ -285,14 +323,14 @@ export function ThinkleafApp() {
           recordedCanvasHistoryKeysRef.current.add(historyKey);
         }
 
-        const previousObjects = cloneCanvasObjects(page.canvasObjects);
+        const previousSnapshot = cloneHistorySnapshot(page.canvasObjects);
         setCanvasHistoryByPage((current) => {
           const pageHistory = current[pageId] ?? { redoStack: [], undoStack: [] };
 
           return {
             ...current,
             [pageId]: {
-              undoStack: [...pageHistory.undoStack, previousObjects].slice(-CANVAS_HISTORY_LIMIT),
+              undoStack: [...pageHistory.undoStack, previousSnapshot].slice(-CANVAS_HISTORY_LIMIT),
               redoStack: [],
             },
           };
@@ -312,11 +350,12 @@ export function ThinkleafApp() {
     }
 
     const pageHistory = canvasHistoryByPage[page.id];
-    const previousObjects = pageHistory?.undoStack.at(-1);
-    if (!pageHistory || !previousObjects) {
+    const previousSnapshot = pageHistory?.undoStack.at(-1);
+    if (!pageHistory || !previousSnapshot) {
       return;
     }
 
+    collectPageImageAssets(page.id, page.canvasObjects);
     setSelectedObjectId(null);
     setCanvasHistoryByPage((current) => {
       const currentHistory = current[page.id] ?? { redoStack: [], undoStack: [] };
@@ -325,12 +364,12 @@ export function ThinkleafApp() {
         ...current,
         [page.id]: {
           undoStack: currentHistory.undoStack.slice(0, -1),
-          redoStack: [cloneCanvasObjects(page.canvasObjects), ...currentHistory.redoStack].slice(0, CANVAS_HISTORY_LIMIT),
+          redoStack: [cloneHistorySnapshot(page.canvasObjects), ...currentHistory.redoStack].slice(0, CANVAS_HISTORY_LIMIT),
         },
       };
     });
     workspace.updatePage(page.id, {
-      canvasObjects: cloneCanvasObjects(previousObjects),
+      canvasObjects: restoreHistorySnapshot(page.id, previousSnapshot),
     });
   }
 
@@ -341,11 +380,12 @@ export function ThinkleafApp() {
     }
 
     const pageHistory = canvasHistoryByPage[page.id];
-    const nextObjects = pageHistory?.redoStack[0];
-    if (!pageHistory || !nextObjects) {
+    const nextSnapshot = pageHistory?.redoStack[0];
+    if (!pageHistory || !nextSnapshot) {
       return;
     }
 
+    collectPageImageAssets(page.id, page.canvasObjects);
     setSelectedObjectId(null);
     setCanvasHistoryByPage((current) => {
       const currentHistory = current[page.id] ?? { redoStack: [], undoStack: [] };
@@ -353,13 +393,13 @@ export function ThinkleafApp() {
       return {
         ...current,
         [page.id]: {
-          undoStack: [...currentHistory.undoStack, cloneCanvasObjects(page.canvasObjects)].slice(-CANVAS_HISTORY_LIMIT),
+          undoStack: [...currentHistory.undoStack, cloneHistorySnapshot(page.canvasObjects)].slice(-CANVAS_HISTORY_LIMIT),
           redoStack: currentHistory.redoStack.slice(1),
         },
       };
     });
     workspace.updatePage(page.id, {
-      canvasObjects: cloneCanvasObjects(nextObjects),
+      canvasObjects: restoreHistorySnapshot(page.id, nextSnapshot),
     });
   }
 
@@ -404,6 +444,34 @@ export function ThinkleafApp() {
     exportWorkspaceBackup(workspace.data);
   }
 
+  function downloadCorruptedWorkspace() {
+    try {
+      // Try the stashed copy first, fall back to the main key (autosave is gated
+      // so the corrupted value is still there until the user starts fresh).
+      const raw =
+        (workspace.corruptedStorageKey
+          ? window.localStorage.getItem(workspace.corruptedStorageKey)
+          : null) ?? window.localStorage.getItem("thinkleaf.workspace.v1");
+
+      if (!raw) {
+        window.alert("No corrupted data found in browser storage.");
+        return;
+      }
+
+      const blob = new Blob([raw], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `thinkleaf-corrupted-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      window.alert("Could not read data from browser storage.");
+    }
+  }
+
   function requestImportBackupFile() {
     backupFileInputRef.current?.click();
   }
@@ -436,6 +504,51 @@ export function ThinkleafApp() {
     reader.readAsText(file);
   }
 
+  if (workspace.corruptedStorageKey) {
+    return (
+      <main className="flex h-screen flex-col items-center justify-center gap-6 bg-slate-50 px-6 text-center text-slate-900">
+        <div className="max-w-md">
+          <h1 className="text-xl font-semibold text-slate-800">Your saved workspace could not be read</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            The data stored in your browser appears to be corrupted or invalid. Your notes have
+            not been deleted — the raw data has been preserved and can be downloaded below.
+          </p>
+          <p className="mt-1 text-sm text-slate-600">
+            Download the corrupted file before starting fresh. A developer may be able to recover
+            it manually.
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <button
+            className="rounded bg-slate-800 px-5 py-2 text-sm font-medium text-white hover:bg-slate-700"
+            type="button"
+            onClick={downloadCorruptedWorkspace}
+          >
+            Download corrupted backup
+          </button>
+          <button
+            className="rounded border border-slate-300 bg-white px-5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            type="button"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "This will discard the corrupted workspace and start fresh with a blank workspace. Download the corrupted backup first if you want to keep it. Continue?",
+                )
+              ) {
+                workspace.clearCorruptedData();
+              }
+            }}
+          >
+            Start fresh
+          </button>
+        </div>
+        <p className="text-xs text-slate-400">
+          Details have been logged to the browser console (F12 → Console).
+        </p>
+      </main>
+    );
+  }
+
   return (
     <main className="flex h-screen min-h-0 bg-slate-50 text-slate-900">
       <input
@@ -450,10 +563,32 @@ export function ThinkleafApp() {
       />
       {hasStorageWriteError ? (
         <div
-          className="fixed left-1/2 top-3 z-50 w-[min(520px,calc(100vw-24px))] -translate-x-1/2 rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950 shadow-lg"
+          className="fixed left-1/2 top-3 z-50 w-[min(560px,calc(100vw-24px))] -translate-x-1/2 rounded border border-amber-300 bg-amber-50 px-4 py-3 shadow-lg"
           role="alert"
         >
-          Saving failed. Your latest changes may not persist. Free up browser storage, then keep working.
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-amber-900">Storage full — changes may not have been saved</p>
+              <p className="mt-0.5 text-sm text-amber-800">
+                Export a backup now to avoid losing work, then free up browser storage and reload.
+              </p>
+              <button
+                className="mt-2 rounded bg-amber-200 px-3 py-1 text-xs font-semibold text-amber-950 hover:bg-amber-300"
+                type="button"
+                onClick={exportBackupFile}
+              >
+                Export backup
+              </button>
+            </div>
+            <button
+              aria-label="Dismiss storage warning"
+              className="shrink-0 text-amber-700 hover:text-amber-900"
+              type="button"
+              onClick={() => setHasStorageWriteError(false)}
+            >
+              ✕
+            </button>
+          </div>
         </div>
       ) : null}
       <Sidebar

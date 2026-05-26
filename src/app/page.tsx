@@ -1,7 +1,12 @@
 "use client";
 
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ThinkleafApp } from "@/components/ThinkleafApp";
 
 export default function Home() {
-  return <ThinkleafApp />;
+  return (
+    <ErrorBoundary>
+      <ThinkleafApp />
+    </ErrorBoundary>
+  );
 }
