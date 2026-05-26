@@ -247,3 +247,62 @@ export function EndpointHandle({
     />
   );
 }
+
+export function ConnectorAnchorTargets({
+  activeAnchor,
+  zoom,
+}: {
+  activeAnchor: CanvasConnectorAnchor | null;
+  zoom: number;
+}) {
+  return (
+    <>
+      {(["top", "right", "bottom", "left"] satisfies CanvasConnectorAnchor[]).map((anchor) => {
+        const position = {
+          bottom: "bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2",
+          left: "left-0 top-1/2 -translate-x-1/2 -translate-y-1/2",
+          right: "right-0 top-1/2 -translate-y-1/2 translate-x-1/2",
+          top: "left-1/2 top-0 -translate-x-1/2 -translate-y-1/2",
+        }[anchor];
+        const isActive = activeAnchor === anchor;
+
+        return (
+          <div
+            key={anchor}
+            aria-hidden="true"
+            className={[
+              "pointer-events-none absolute rounded-full border shadow-sm ring-4 ring-white/80",
+              isActive ? "border-leaf-700 bg-leaf-600" : "border-leaf-600 bg-white",
+              position,
+            ].join(" ")}
+            style={{
+              height: Math.max(12 / zoom, 8),
+              width: Math.max(12 / zoom, 8),
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+export function ConnectorPathHandle({
+  label,
+  onPointerDown,
+  point,
+}: {
+  label: string;
+  onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
+  point: { x: number; y: number };
+}) {
+  return (
+    <button
+      aria-label={label}
+      className="pointer-events-auto absolute h-6 w-6 rounded-full border border-leaf-700 bg-white shadow-sm ring-4 ring-white/70 transition hover:bg-leaf-50"
+      style={{ left: point.x - 12, top: point.y - 12 }}
+      title={label}
+      type="button"
+      onPointerDown={onPointerDown}
+    />
+  );
+}

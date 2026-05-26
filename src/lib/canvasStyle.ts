@@ -84,13 +84,6 @@ export const strokeStylePresets = [
   { label: "Dashed", value: "dashed" as const },
   { label: "Dotted", value: "dotted" as const },
 ];
-export const penSmoothingPresets = [
-  { label: "Off", value: "off" as const },
-  { label: "Light", value: "light" as const },
-  { label: "Medium", value: "medium" as const },
-  { label: "High", value: "high" as const },
-  { label: "Very High", value: "veryHigh" as const },
-];
 export const penModePresets = [
   { label: "Pen", value: "uniform" as const },
   { label: "Ink", value: "ink" as const },
@@ -117,7 +110,6 @@ export const defaultPenSettings: CanvasPenSettings = {
   laserColor: defaultLaserColor,
   laserFadeDuration: "normal",
   mode: "uniform",
-  smoothing: "medium",
   strokeColor: defaultCanvasStyle.strokeColor,
   strokeWidth: defaultCanvasStyle.strokeWidth,
 };

@@ -1,4 +1,4 @@
-import type { CanvasPoint, CanvasTool } from "@/types/workspace";
+import type { CanvasConnectorAnchor, CanvasPoint, CanvasTool } from "@/types/workspace";
 
 export type ResizeHandle = "n" | "e" | "s" | "w" | "nw" | "ne" | "sw" | "se";
 
@@ -40,6 +40,22 @@ export type EndpointInteraction = {
   historyKey: string;
   id: string;
   kind: "endpoint";
+};
+
+export type ConnectorPathInteraction = {
+  historyKey: string;
+  id: string;
+  kind: "connectorPath";
+  pathKind: "curve" | "elbow";
+};
+
+export type ConnectorEndpointPreview = {
+  endpoint: "start" | "end";
+  id: string;
+  pointerX: number;
+  pointerY: number;
+  targetAnchor: CanvasConnectorAnchor | null;
+  targetObjectId: string | null;
 };
 
 export type CreateInteraction = {
@@ -98,6 +114,7 @@ export type Interaction =
   | ResizeInteraction
   | LineMoveInteraction
   | EndpointInteraction
+  | ConnectorPathInteraction
   | CreateInteraction
   | PendingLineInteraction
   | PenDrawInteraction

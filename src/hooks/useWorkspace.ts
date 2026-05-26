@@ -77,7 +77,7 @@ function normalizeCanvasObject(object: CanvasObject): CanvasObject {
             object.penSmoothing === "high" ||
             object.penSmoothing === "veryHigh"
               ? object.penSmoothing
-              : defaultPenSettings.smoothing,
+              : undefined,
         }
       : {}),
   };

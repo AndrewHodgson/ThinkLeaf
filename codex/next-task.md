@@ -2,11 +2,11 @@
 
 ## Goal
 
-Run a short manual browser QA/polish pass before starting new feature work, then identify any low-risk maintainability cleanup needed for large canvas/editor modules.
+Run a short manual browser QA/polish pass before starting new feature work, then identify any low-risk maintainability cleanup still needed for large canvas/editor modules.
 
 Keep this pass focused on confirming current behavior, fixing small regressions, and tightening obvious rough edges. Do not add new major features.
 
-The latest code-path/build check passed after adding a Fast Laser Pointer fade option while keeping Normal as the default. The remaining recommended work is hands-on browser verification with real clicks, drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching.
+The latest code-path/build check passed after extracting Pen stroke SVG rendering into `PenStrokeLayer` and keeping the refactor behavior-preserving. The remaining recommended work is hands-on browser verification with real clicks, drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching.
 
 ## QA Focus
 
@@ -63,9 +63,9 @@ The latest code-path/build check passed after adding a Fast Laser Pointer fade o
    - Confirm pen stroke color and compact width dropdown work from the top contextual toolbar.
    - Confirm active Pen tool settings show in the top toolbar and persist after refresh.
    - Confirm changing Pen width/mode while the Pen tool is active affects the very next new stroke.
-   - Confirm selected pen strokes can change smoothing Off/Light/Medium/High/Very High and mode Pen/Ink/Highlighter.
-   - Confirm Smoothing and Ink Density use compact dropdowns.
-   - Confirm Ink Density appears only when Ink mode is active or selected.
+   - Confirm selected pen strokes can change mode Pen/Ink/Highlighter.
+   - Confirm no Pen smoothing controls remain in Pen, Ink, or Highlighter settings.
+   - Confirm Ink Density uses a compact dropdown and appears only when Ink mode is active or selected.
    - Confirm Low, Medium, High, and Very High Ink Density progressively increase visible width variation.
    - Confirm Highlighter defaults to yellow, uses a wider semi-transparent rounded stroke, and works over document text, images, and whiteboard objects.
    - Confirm highlighter strokes can be selected, moved, duplicated, deleted, undone/redone, and persist after refresh.
@@ -74,12 +74,10 @@ The latest code-path/build check passed after adding a Fast Laser Pointer fade o
    - Confirm Laser Pointer fade duration dropdown appears only in Laser mode, persists after refresh, and Fast/Normal/Long/Longer/Longest progressively increase the hold delay while fading at the same speed once fade starts.
    - Confirm Laser Pointer strokes pan/zoom with the canvas, fade from the tail after release, do not persist after refresh, and do not affect undo/redo history.
    - Confirm Ink mode visibly differs from Pen mode with subtle speed-responsive variable-width strokes.
-   - Confirm Ink strokes use smooth curved edges without visibly jagged segment joins.
+   - Confirm Ink strokes preserve the raw centerline but use a smooth variable-width outline without visibly jagged segment joins.
    - Confirm slower Ink drawing feels thicker and faster Ink drawing feels thinner without looking messy.
    - Confirm saved Ink strokes render the same after refresh using stored point timing.
-   - Confirm Medium, High, and Very High smoothing progressively reduce wobble using path simplification, while Light preserves most hand movement.
-   - Confirm Very High strongly straightens mostly vertical/horizontal shaky strokes and softens hard turns.
-   - Confirm existing pen strokes still load and render after the smoothing/mode update.
+   - Confirm existing pen strokes still load and render after the smoothing removal and Ink outline update.
    - Confirm selected canvas object controls appear in the top contextual toolbar and the old right-side properties panel is gone.
    - Confirm duplicate and delete work from the top contextual toolbar.
    - Confirm Rectangle, Circle, Line, Arrow, and Text Box defaults appear in the top contextual toolbar when the tool is active and no canvas object is selected.
@@ -113,7 +111,7 @@ Keep future feature ideas in `notes/feature-ideas.md`. Page Types, document bloc
 
 ## Maintainability Watchlist
 
-- `src/components/workspace/CanvasLayer.tsx` is still the main growth hotspot, but pen rendering, laser rendering, eraser hit-testing, geometry helpers, interaction types, and canvas object view components have been split out.
+- `src/components/workspace/CanvasLayer.tsx` is still the main growth hotspot, but pen rendering, Pen stroke SVG rendering, laser rendering, eraser hit-testing, geometry helpers, interaction types, and canvas object view components have been split out.
 - Good future extraction targets, after manual QA confirms behavior: stateful pointer interaction handlers and smaller rendering layers for lines, boxes, pen strokes, and laser strokes.
 - Keep any refactor behavior-preserving and covered by `npm run build`; do not combine it with new feature work.
 

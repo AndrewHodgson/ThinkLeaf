@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import {
   AlignCenter,
   AlignLeft,
@@ -29,7 +29,6 @@ import {
   penInkDensityPresets,
   penModePresets,
   penStrokeWidthPresets,
-  penSmoothingPresets,
   strokeStylePresets,
   strokeWidthPresets,
   textSizePresets,
@@ -37,6 +36,7 @@ import {
 import { ColorPicker } from "@/components/workspace/ColorPicker";
 import type {
   CanvasConnectorAnchor,
+  CanvasConnectorLineMode,
   CanvasConnectorStart,
   CanvasCreationDefaultStyle,
   CanvasObject,
@@ -72,6 +72,10 @@ const connectorStylePresets = [
   { label: "Straight", value: "straight" as const },
   { label: "Elbow", value: "elbow" as const },
   { label: "Curve", value: "curve" as const },
+];
+const connectorLineModePresets = [
+  { label: "Single", value: "single" as const },
+  { label: "Double", value: "double" as const },
 ];
 const arrowDirectionPresets = [
   { label: "None", value: "none" as const },
@@ -119,10 +123,11 @@ export function PenToolToolbar({ penSettings, onChange }: PenToolToolbarProps) {
   return (
     <>
       <div className="mr-2 min-w-24">
-        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Tool</div>
+        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">TOOL</div>
         <div className="text-xs font-semibold text-slate-700">Pen defaults</div>
       </div>
       <PenModeControls allowLaserMode mode={penSettings.mode} onModeChange={updateMode} />
+      <SegmentLabel>COLOR</SegmentLabel>
       {penSettings.mode === "laser" ? (
         <ColorPicker
           currentValue={getLaserColor(penSettings.laserColor)}
@@ -142,13 +147,11 @@ export function PenToolToolbar({ penSettings, onChange }: PenToolToolbarProps) {
         inkDensity={penSettings.inkDensity}
         laserFadeDuration={penSettings.laserFadeDuration}
         mode={penSettings.mode}
-        smoothing={penSettings.smoothing}
         strokeWidth={penSettings.strokeWidth}
         showModeControls={false}
         onInkDensityChange={(inkDensity) => updatePenDefaults({ inkDensity })}
         onLaserFadeDurationChange={(laserFadeDuration) => updatePenDefaults({ laserFadeDuration })}
         onModeChange={updateMode}
-        onSmoothingChange={(smoothing) => updatePenDefaults({ smoothing })}
         onStrokeWidthChange={(strokeWidth) => updatePenDefaults({ strokeWidth })}
       />
     </>
@@ -169,12 +172,13 @@ export function CanvasToolDefaultsToolbar({ defaults, tool, onUpdate }: CanvasTo
   return (
     <>
       <div className="mr-2 min-w-24">
-        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Tool</div>
+        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">TOOL</div>
         <div className="text-xs font-semibold text-slate-700">{tool} defaults</div>
       </div>
 
       {isTextTool ? (
         <>
+          <SegmentLabel>TEXT</SegmentLabel>
           <ColorPicker
             currentValue={defaults.textColor ?? defaultCanvasStyle.textColor}
             icon={<Type aria-hidden="true" className="h-4 w-4" />}
@@ -275,26 +279,32 @@ export function CanvasToolDefaultsToolbar({ defaults, tool, onUpdate }: CanvasTo
       ) : null}
 
       {supportsFill ? (
-        <ColorPicker
-          currentValue={defaults.fillColor ?? defaultCanvasStyle.fillColor}
-          label="Fill"
-          onSelect={(fillColor) => onUpdate({ fillColor })}
-          presets={fillPresets}
-        />
-      ) : null}
-
-      {supportsStroke ? (
-        <ColorPicker
-          currentValue={defaults.strokeColor ?? defaultCanvasStyle.strokeColor}
-          label="Stroke"
-          onSelect={(strokeColor) => onUpdate({ strokeColor })}
-          presets={colorPresets}
-        />
+        <>
+          <SegmentLabel>FILL</SegmentLabel>
+          <ColorPicker
+            currentValue={defaults.fillColor ?? defaultCanvasStyle.fillColor}
+            label="Fill"
+            onSelect={(fillColor) => onUpdate({ fillColor })}
+            presets={fillPresets}
+          />
+        </>
       ) : null}
 
       {supportsStroke ? (
         <>
-          <SegmentLabel>Width</SegmentLabel>
+          <SegmentLabel>STROKE</SegmentLabel>
+          <ColorPicker
+            currentValue={defaults.strokeColor ?? defaultCanvasStyle.strokeColor}
+            label="Stroke"
+            onSelect={(strokeColor) => onUpdate({ strokeColor })}
+            presets={colorPresets}
+          />
+        </>
+      ) : null}
+
+      {supportsStroke ? (
+        <>
+          <SegmentLabel>WIDTH</SegmentLabel>
           {strokeWidthPresets.map((nextStrokeWidth) => (
             <button
               key={`${tool}-default-stroke-width-${nextStrokeWidth}`}
@@ -312,7 +322,7 @@ export function CanvasToolDefaultsToolbar({ defaults, tool, onUpdate }: CanvasTo
 
       {supportsStrokeStyle ? (
         <>
-          <SegmentLabel>Style</SegmentLabel>
+          <SegmentLabel>STYLE</SegmentLabel>
           {strokeStylePresets.map((style) => (
             <button
               key={`${tool}-default-stroke-style-${style.value}`}
@@ -367,16 +377,31 @@ export function CanvasObjectToolbar({
     });
   }
 
+  function updateConnectorLineMode(connectorLineMode: CanvasConnectorLineMode) {
+    onUpdate(
+      connectorLineMode === "double"
+        ? {
+            connectorLineMode,
+            secondLineArrowDirection: object.secondLineArrowDirection ?? "backward",
+            secondLineStrokeColor: object.secondLineStrokeColor ?? object.strokeColor,
+            secondLineStrokeStyle: object.secondLineStrokeStyle ?? object.strokeStyle ?? defaultCanvasStyle.strokeStyle,
+            secondLineStrokeWidth: object.secondLineStrokeWidth ?? object.strokeWidth,
+          }
+        : { connectorLineMode },
+    );
+  }
+
   return (
     <>
       <div className="mr-2 min-w-24">
-        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Selection</div>
+        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">SELECTION</div>
         <div className="text-xs font-semibold capitalize text-slate-700">{getObjectLabel(object)}</div>
       </div>
 
       {isPenStroke ? (
         <>
           <PenModeControls mode={object.penMode ?? defaultPenSettings.mode} onModeChange={updatePenMode} />
+          <SegmentLabel>COLOR</SegmentLabel>
           <ColorPicker
             currentValue={object.strokeColor}
             label="Stroke"
@@ -387,13 +412,11 @@ export function CanvasObjectToolbar({
             inkDensity={object.penInkDensity ?? defaultPenSettings.inkDensity}
             laserFadeDuration={defaultPenSettings.laserFadeDuration}
             mode={object.penMode ?? defaultPenSettings.mode}
-            smoothing={object.penSmoothing ?? defaultPenSettings.smoothing}
             strokeWidth={object.strokeWidth}
             showModeControls={false}
             onInkDensityChange={(penInkDensity) => onUpdate({ penInkDensity })}
             onLaserFadeDurationChange={() => undefined}
             onModeChange={updatePenMode}
-            onSmoothingChange={(penSmoothing) => onUpdate({ penSmoothing })}
             onStrokeWidthChange={(strokeWidth) => onUpdate({ strokeWidth })}
           />
         </>
@@ -401,7 +424,7 @@ export function CanvasObjectToolbar({
         <>
           {isShape ? (
             <>
-              <SegmentLabel>Shape</SegmentLabel>
+              <SegmentLabel>SHAPE</SegmentLabel>
               <ToolbarDropdown
                 ariaLabel="Shape type"
                 currentLabel={getShapeTypeLabel(object.type)}
@@ -410,6 +433,7 @@ export function CanvasObjectToolbar({
                 title="Shape type"
                 onSelect={(type) => onUpdate({ type })}
               />
+              <SegmentLabel>LABEL</SegmentLabel>
               <ToolbarTextInput
                 ariaLabel="Shape label"
                 placeholder="Label"
@@ -417,7 +441,7 @@ export function CanvasObjectToolbar({
                 value={object.shapeLabel ?? ""}
                 onChange={(shapeLabel) => onUpdate({ shapeLabel })}
               />
-              <SegmentLabel>Connect</SegmentLabel>
+              <SegmentLabel>CONNECT</SegmentLabel>
               {connectorAnchorPresets.map((anchor) => {
                 const isPending =
                   pendingConnectorStart?.sourceObjectId === object.id &&
@@ -445,32 +469,38 @@ export function CanvasObjectToolbar({
             </>
           ) : null}
           {supportsFill ? (
-            <ColorPicker
-              currentValue={object.fillColor}
-              label="Fill"
-              onSelect={(fillColor) => onUpdate({ fillColor })}
-              presets={fillPresets}
-            />
+            <>
+              <SegmentLabel>FILL</SegmentLabel>
+              <ColorPicker
+                currentValue={object.fillColor}
+                label="Fill"
+                onSelect={(fillColor) => onUpdate({ fillColor })}
+                presets={fillPresets}
+              />
+            </>
           ) : null}
 
-          {supportsStroke ? (
-            <ColorPicker
-              currentValue={object.strokeColor}
-              label="Stroke"
-              onSelect={(strokeColor) => onUpdate({ strokeColor })}
-              presets={colorPresets}
-            />
+          {supportsStroke && !isConnectedLine ? (
+            <>
+              <SegmentLabel>STROKE</SegmentLabel>
+              <ColorPicker
+                currentValue={object.strokeColor}
+                label="Stroke"
+                onSelect={(strokeColor) => onUpdate({ strokeColor })}
+                presets={colorPresets}
+              />
+            </>
           ) : null}
 
-          {supportsStroke ? (
+          {supportsStroke && !isConnectedLine ? (
             <StrokeWidthControls
               strokeWidth={object.strokeWidth}
               onStrokeWidthChange={(strokeWidth) => onUpdate({ strokeWidth })}
             />
           ) : null}
-          {supportsStrokeStyle ? (
+          {supportsStrokeStyle && !isConnectedLine ? (
             <>
-              <SegmentLabel>Style</SegmentLabel>
+              <SegmentLabel>STYLE</SegmentLabel>
               {strokeStylePresets.map((style) => (
                 <button
                   key={style.value}
@@ -485,57 +515,11 @@ export function CanvasObjectToolbar({
             </>
           ) : null}
           {isConnectedLine ? (
-            <>
-              <SegmentLabel>Connector</SegmentLabel>
-              {connectorStylePresets.map((style) => (
-                <button
-                  key={style.value}
-                  aria-label={`Connector style ${style.label}`}
-                  className={compactButtonClass((object.connectorStyle ?? "straight") === style.value, "min-w-16")}
-                  type="button"
-                  onClick={() => onUpdate({ connectorStyle: style.value })}
-                >
-                  {style.label}
-                </button>
-              ))}
-              <SegmentLabel>Start</SegmentLabel>
-              <ToolbarDropdown
-                ariaLabel="Connector start anchor"
-                currentLabel={getConnectorAnchorLabel(object.sourceAnchor)}
-                options={connectorAnchorPresets}
-                selectedValue={object.sourceAnchor ?? "right"}
-                title="Start anchor"
-                onSelect={(sourceAnchor) => onUpdate({ sourceAnchor })}
-              />
-              <SegmentLabel>End</SegmentLabel>
-              <ToolbarDropdown
-                ariaLabel="Connector end anchor"
-                currentLabel={getConnectorAnchorLabel(object.targetAnchor)}
-                options={connectorAnchorPresets}
-                selectedValue={object.targetAnchor ?? "left"}
-                title="End anchor"
-                onSelect={(targetAnchor) => onUpdate({ targetAnchor })}
-              />
-              <SegmentLabel>Arrow</SegmentLabel>
-              {arrowDirectionPresets.map((direction) => (
-                <button
-                  key={direction.value}
-                  aria-label={`Arrow direction ${direction.label}`}
-                  className={compactButtonClass(getArrowDirectionValue(object) === direction.value, "min-w-14")}
-                  type="button"
-                  onClick={() => onUpdate({ arrowDirection: direction.value })}
-                >
-                  {direction.label}
-                </button>
-              ))}
-              <ToolbarTextInput
-                ariaLabel="Connector label"
-                placeholder="Label"
-                title="Connector label"
-                value={object.connectorLabel ?? ""}
-                onChange={(connectorLabel) => onUpdate({ connectorLabel })}
-              />
-            </>
+            <ConnectorControls
+              object={object}
+              onLineModeChange={updateConnectorLineMode}
+              onUpdate={onUpdate}
+            />
           ) : null}
         </>
       )}
@@ -561,9 +545,12 @@ export function CanvasObjectToolbar({
       </button>
 
       {object.type === "image" ? (
-        <span className="ml-1 rounded-md bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
-          Move, resize, duplicate, or delete
-        </span>
+        <>
+          <SegmentLabel>IMAGE</SegmentLabel>
+          <span className="ml-1 rounded-md bg-slate-50 px-2 py-1 text-xs font-medium text-slate-500">
+            Move, resize, duplicate, or delete
+          </span>
+        </>
       ) : null}
     </>
   );
@@ -596,6 +583,163 @@ function ToolbarTextInput({
   );
 }
 
+function ConnectorControls({
+  object,
+  onLineModeChange,
+  onUpdate,
+}: {
+  object: CanvasObject;
+  onLineModeChange: (connectorLineMode: CanvasConnectorLineMode) => void;
+  onUpdate: (updates: Partial<CanvasObject>) => void;
+}) {
+  const lineMode = getConnectorLineMode(object);
+
+  return (
+    <div className="flex min-w-[min(760px,100%)] flex-1 flex-col gap-2 rounded-md border border-slate-100 bg-slate-50/60 p-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <ConnectorControlGroup title="CONNECTOR">
+          <ToolbarDropdown
+            ariaLabel="Connector style"
+            currentLabel={getPresetLabel(connectorStylePresets, object.connectorStyle ?? "straight")}
+            options={connectorStylePresets}
+            selectedValue={object.connectorStyle ?? "straight"}
+            title="Connector style"
+            onSelect={(connectorStyle) => onUpdate({ connectorStyle })}
+          />
+          <ToolbarDropdown
+            ariaLabel="Connector line mode"
+            currentLabel={getPresetLabel(connectorLineModePresets, lineMode)}
+            options={connectorLineModePresets}
+            selectedValue={lineMode}
+            title="Connector line mode"
+            onSelect={onLineModeChange}
+          />
+        </ConnectorControlGroup>
+        <ConnectorControlGroup title="SHARED">
+          <ToolbarDropdown
+            ariaLabel="Connector start anchor"
+            currentLabel={`Start: ${getConnectorAnchorLabel(object.sourceAnchor)}`}
+            options={connectorAnchorPresets}
+            selectedValue={object.sourceAnchor ?? "right"}
+            title="Start anchor"
+            onSelect={(sourceAnchor) => onUpdate({ sourceAnchor })}
+          />
+          <ToolbarDropdown
+            ariaLabel="Connector end anchor"
+            currentLabel={`End: ${getConnectorAnchorLabel(object.targetAnchor)}`}
+            options={connectorAnchorPresets}
+            selectedValue={object.targetAnchor ?? "left"}
+            title="End anchor"
+            onSelect={(targetAnchor) => onUpdate({ targetAnchor })}
+          />
+          <ToolbarTextInput
+            ariaLabel="Connector label"
+            placeholder="Label"
+            title="Connector label"
+            value={object.connectorLabel ?? ""}
+            onChange={(connectorLabel) => onUpdate({ connectorLabel })}
+          />
+        </ConnectorControlGroup>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 border-t border-slate-200/70 pt-2">
+        <ConnectorLineControls
+          arrowDirection={getArrowDirectionValue(object)}
+          color={object.strokeColor}
+          label="LINE 1"
+          style={object.strokeStyle ?? defaultCanvasStyle.strokeStyle}
+          width={object.strokeWidth}
+          onArrowDirectionChange={(arrowDirection) => onUpdate({ arrowDirection })}
+          onColorChange={(strokeColor) => onUpdate({ strokeColor })}
+          onStyleChange={(strokeStyle) => onUpdate({ strokeStyle })}
+          onWidthChange={(strokeWidth) => onUpdate({ strokeWidth })}
+        />
+        {lineMode === "double" ? (
+          <ConnectorLineControls
+            arrowDirection={getSecondLineArrowDirection(object)}
+            color={getSecondLineStrokeColor(object)}
+            label="LINE 2"
+            style={getSecondLineStrokeStyle(object)}
+            width={getSecondLineStrokeWidth(object)}
+            onArrowDirectionChange={(secondLineArrowDirection) => onUpdate({ secondLineArrowDirection })}
+            onColorChange={(secondLineStrokeColor) => onUpdate({ secondLineStrokeColor })}
+            onStyleChange={(secondLineStrokeStyle) => onUpdate({ secondLineStrokeStyle })}
+            onWidthChange={(secondLineStrokeWidth) => onUpdate({ secondLineStrokeWidth })}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ConnectorLineControls({
+  arrowDirection,
+  color,
+  label,
+  style,
+  width,
+  onArrowDirectionChange,
+  onColorChange,
+  onStyleChange,
+  onWidthChange,
+}: {
+  arrowDirection: CanvasObject["arrowDirection"];
+  color: string;
+  label: string;
+  style: NonNullable<CanvasObject["strokeStyle"]>;
+  width: number;
+  onArrowDirectionChange: (arrowDirection: NonNullable<CanvasObject["arrowDirection"]>) => void;
+  onColorChange: (color: string) => void;
+  onStyleChange: (style: NonNullable<CanvasObject["strokeStyle"]>) => void;
+  onWidthChange: (width: number) => void;
+}) {
+  const selectedArrowDirection =
+    arrowDirection === "none" ||
+    arrowDirection === "forward" ||
+    arrowDirection === "backward" ||
+    arrowDirection === "both"
+      ? arrowDirection
+      : "none";
+
+  return (
+    <ConnectorControlGroup title={label}>
+      <ColorPicker currentValue={color} label={label} onSelect={onColorChange} presets={colorPresets} />
+      <ToolbarDropdown
+        ariaLabel={`${label} width`}
+        currentLabel={`W ${width}`}
+        options={strokeWidthPresets.map((strokeWidth) => ({ label: `${strokeWidth}`, value: strokeWidth }))}
+        selectedValue={width}
+        title={`${label} width`}
+        onSelect={onWidthChange}
+      />
+      <ToolbarDropdown
+        ariaLabel={`${label} stroke style`}
+        currentLabel={getPresetLabel(strokeStylePresets, style)}
+        options={strokeStylePresets}
+        selectedValue={style}
+        title={`${label} stroke style`}
+        onSelect={onStyleChange}
+      />
+      <ToolbarDropdown
+        ariaLabel={`${label} arrow direction`}
+        currentLabel={`Arrow: ${getPresetLabel(arrowDirectionPresets, selectedArrowDirection)}`}
+        options={arrowDirectionPresets}
+        selectedValue={selectedArrowDirection}
+        title={`${label} arrow direction`}
+        onSelect={onArrowDirectionChange}
+      />
+    </ConnectorControlGroup>
+  );
+}
+
+function ConnectorControlGroup({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-white px-2 py-1 shadow-sm ring-1 ring-slate-100">
+      <span className="mr-0.5 min-w-12 text-[10px] font-bold uppercase tracking-wide text-slate-400">{title}</span>
+      {children}
+    </div>
+  );
+}
+
 function PenModeControls({
   allowLaserMode = false,
   mode,
@@ -609,7 +753,7 @@ function PenModeControls({
 
   return (
     <>
-      <SegmentLabel>Mode</SegmentLabel>
+      <SegmentLabel>MODE</SegmentLabel>
       {modePresets.map((preset) => (
         <button
           key={preset.value}
@@ -635,7 +779,7 @@ function StrokeWidthControls({
 }) {
   return (
     <>
-      <SegmentLabel>Width</SegmentLabel>
+      <SegmentLabel>WIDTH</SegmentLabel>
       {strokeWidthPresets.map((nextStrokeWidth) => (
         <button
           key={nextStrokeWidth}
@@ -657,28 +801,24 @@ function PenStrokeControls({
   inkDensity,
   laserFadeDuration,
   mode,
-  smoothing,
   strokeWidth,
   showPenControls = true,
   showModeControls = true,
   onInkDensityChange,
   onLaserFadeDurationChange,
   onModeChange,
-  onSmoothingChange,
   onStrokeWidthChange,
 }: {
   allowLaserMode?: boolean;
   inkDensity: CanvasPenSettings["inkDensity"];
   laserFadeDuration: CanvasPenSettings["laserFadeDuration"];
   mode: CanvasPenSettings["mode"];
-  smoothing: CanvasPenSettings["smoothing"];
   strokeWidth: number;
   showModeControls?: boolean;
   showPenControls?: boolean;
   onInkDensityChange: (inkDensity: CanvasPenSettings["inkDensity"]) => void;
   onLaserFadeDurationChange: (laserFadeDuration: CanvasPenSettings["laserFadeDuration"]) => void;
   onModeChange: (mode: CanvasPenSettings["mode"]) => void;
-  onSmoothingChange: (smoothing: CanvasPenSettings["smoothing"]) => void;
   onStrokeWidthChange: (strokeWidth: number) => void;
 }) {
   const isLaserMode = mode === "laser";
@@ -690,7 +830,7 @@ function PenStrokeControls({
       ) : null}
       {!isLaserMode ? (
         <>
-          <SegmentLabel>Width</SegmentLabel>
+          <SegmentLabel>WIDTH</SegmentLabel>
           <ToolbarDropdown
             ariaLabel="Pen stroke width"
             currentLabel={`${strokeWidth}`}
@@ -703,22 +843,9 @@ function PenStrokeControls({
       ) : null}
       {showPenControls ? (
         <>
-          {!isLaserMode ? (
-            <>
-              <SegmentLabel>Smoothing</SegmentLabel>
-              <ToolbarDropdown
-                ariaLabel="Pen smoothing"
-                currentLabel={getPresetLabel(penSmoothingPresets, smoothing)}
-                options={penSmoothingPresets}
-                selectedValue={smoothing}
-                title="Pen smoothing"
-                onSelect={onSmoothingChange}
-              />
-            </>
-          ) : null}
           {isLaserMode ? (
             <>
-              <SegmentLabel>Fade</SegmentLabel>
+              <SegmentLabel>FADE</SegmentLabel>
               <ToolbarDropdown
                 ariaLabel="Laser fade duration"
                 currentLabel={getPresetLabel(laserFadeDurationPresets, laserFadeDuration)}
@@ -731,7 +858,7 @@ function PenStrokeControls({
           ) : null}
           {mode === "ink" ? (
             <>
-              <SegmentLabel>Density</SegmentLabel>
+              <SegmentLabel>DENSITY</SegmentLabel>
               <ToolbarDropdown
                 ariaLabel="Ink density"
                 currentLabel={getPresetLabel(penInkDensityPresets, inkDensity)}
@@ -866,6 +993,35 @@ function getArrowDirectionValue(object: CanvasObject) {
   }
 
   return object.type === "arrow" ? "forward" : "none";
+}
+
+function getConnectorLineMode(object: CanvasObject) {
+  return object.connectorLineMode === "double" ? "double" : "single";
+}
+
+function getSecondLineStrokeColor(object: CanvasObject) {
+  return object.secondLineStrokeColor ?? object.strokeColor;
+}
+
+function getSecondLineStrokeWidth(object: CanvasObject) {
+  return object.secondLineStrokeWidth ?? object.strokeWidth;
+}
+
+function getSecondLineStrokeStyle(object: CanvasObject) {
+  return object.secondLineStrokeStyle ?? object.strokeStyle ?? defaultCanvasStyle.strokeStyle;
+}
+
+function getSecondLineArrowDirection(object: CanvasObject) {
+  if (
+    object.secondLineArrowDirection === "none" ||
+    object.secondLineArrowDirection === "forward" ||
+    object.secondLineArrowDirection === "backward" ||
+    object.secondLineArrowDirection === "both"
+  ) {
+    return object.secondLineArrowDirection;
+  }
+
+  return "backward";
 }
 
 function getConnectorAnchorLabel(anchor: CanvasConnectorAnchor | undefined) {

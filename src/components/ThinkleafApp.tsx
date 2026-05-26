@@ -547,14 +547,6 @@ function normalizeStoredPenSettings(value: string | null): CanvasPenSettings {
         parsed.mode === "ink" || parsed.mode === "uniform" || parsed.mode === "highlighter" || parsed.mode === "laser"
           ? parsed.mode
           : defaultPenSettings.mode,
-      smoothing:
-        parsed.smoothing === "off" ||
-        parsed.smoothing === "light" ||
-        parsed.smoothing === "medium" ||
-        parsed.smoothing === "high" ||
-        parsed.smoothing === "veryHigh"
-          ? parsed.smoothing
-          : defaultPenSettings.smoothing,
       strokeColor: typeof parsed.strokeColor === "string" ? parsed.strokeColor : defaultPenSettings.strokeColor,
       strokeWidth,
     };

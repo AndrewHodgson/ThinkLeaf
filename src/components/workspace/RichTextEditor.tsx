@@ -647,6 +647,7 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
           />
         ) : formattingTarget === "document" ? (
           <>
+            <ToolbarGroupLabel>TEXT</ToolbarGroupLabel>
             <HeadingDropdown editor={editor} />
             <span className="h-6 w-px bg-slate-200" />
             <button
@@ -699,6 +700,7 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
               <ImageIcon aria-hidden="true" className="h-4 w-4" />
             </button>
             <span className="h-6 w-px bg-slate-200" />
+            <ToolbarGroupLabel>COLOR</ToolbarGroupLabel>
             <ColorPicker
               currentValue={currentTextColor}
               disabled={!editor}
@@ -717,6 +719,7 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
             />
             <SizeDropdown currentSize={currentFontSize} disabled={!editor} onSelect={setFontSize} />
             <span className="h-6 w-px bg-slate-200" />
+            <ToolbarGroupLabel>ALIGN</ToolbarGroupLabel>
             <button
               aria-label="Align left"
               className={buttonClass(editor?.isActive({ textAlign: "left" }), isEditorUnavailable)}
@@ -794,6 +797,7 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
               <IndentIncrease aria-hidden="true" className="h-4 w-4" />
             </button>
             <span className="h-6 w-px bg-slate-200" />
+            <ToolbarGroupLabel>LIST</ToolbarGroupLabel>
             <button
               aria-label="Bullet list"
               className={buttonClass(editor?.isActive("bulletList"), isEditorUnavailable)}
@@ -831,6 +835,7 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
               <Quote aria-hidden="true" className="h-4 w-4" />
             </button>
             <span className="h-6 w-px bg-slate-200" />
+            <ToolbarGroupLabel>INSERT</ToolbarGroupLabel>
             <button
               aria-label="Insert table"
               className={buttonClass(editor?.isActive("table"), isEditorUnavailable)}
@@ -873,6 +878,10 @@ const EditorToolbar = forwardRef<HTMLDivElement, {
 });
 
 type TableSelectionMode = "cell" | "row" | "column" | null;
+
+function ToolbarGroupLabel({ children }: { children: string }) {
+  return <span className="mr-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">{children}</span>;
+}
 
 function TableControls({
   buttonClass,
@@ -917,7 +926,7 @@ function TableControls({
 
   return (
     <div className="mt-2 flex min-h-8 flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
-      <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Table</span>
+      <ToolbarGroupLabel>SELECT</ToolbarGroupLabel>
       <TableButton
         ariaLabel="Select cell"
         isActive={selectionMode === "cell"}
@@ -949,6 +958,7 @@ function TableControls({
         <TableColumnsSplit aria-hidden="true" className="h-4 w-4" />
       </TableButton>
       <span className="h-6 w-px bg-slate-200" />
+      <ToolbarGroupLabel>FILL</ToolbarGroupLabel>
       <ColorPicker
         currentValue={cellBackground}
         disabled={!editor}
@@ -957,6 +967,7 @@ function TableControls({
         onSelect={setCellBackground}
         presets={tableCellBackgroundPresets}
       />
+      <ToolbarGroupLabel>CELL</ToolbarGroupLabel>
       <TableButton
         ariaLabel="Merge selected cells"
         isUnavailable={!canMergeCells}
@@ -984,6 +995,7 @@ function TableControls({
         <TableCellsSplit aria-hidden="true" className="h-4 w-4" />
       </TableButton>
       <span className="h-6 w-px bg-slate-200" />
+      <ToolbarGroupLabel>INSERT</ToolbarGroupLabel>
       <TableButton
         ariaLabel="Insert row above"
         isUnavailable={!canAddRowBefore}
@@ -1037,6 +1049,7 @@ function TableControls({
         <BetweenVerticalEnd aria-hidden="true" className="h-4 w-4" />
       </TableButton>
       <span className="h-6 w-px bg-slate-200" />
+      <ToolbarGroupLabel>DELETE</ToolbarGroupLabel>
       <TableButton
         ariaLabel="Delete row"
         isUnavailable={!canDeleteRow}
@@ -1063,6 +1076,7 @@ function TableControls({
       >
         <Columns3 aria-hidden="true" className="h-4 w-4" />
       </TableButton>
+      <ToolbarGroupLabel>HEADER</ToolbarGroupLabel>
       <TableButton
         ariaLabel="Toggle header row"
         isUnavailable={!canToggleHeaderRow}
@@ -1160,7 +1174,7 @@ function WhiteboardTextFormattingControls({
 
   return (
     <>
-      <span className="mr-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Whiteboard text</span>
+      <ToolbarGroupLabel>TEXT</ToolbarGroupLabel>
       <button
         aria-label="Bold whiteboard text"
         className={buttonClass(Boolean(object.textBold))}
@@ -1180,6 +1194,7 @@ function WhiteboardTextFormattingControls({
         <ItalicIcon aria-hidden="true" className="h-4 w-4" />
       </button>
       <span className="h-6 w-px bg-slate-200" />
+      <ToolbarGroupLabel>COLOR</ToolbarGroupLabel>
       <ColorPicker
         currentValue={object.textColor}
         icon={<Type aria-hidden="true" className="h-4 w-4" />}
@@ -1200,6 +1215,7 @@ function WhiteboardTextFormattingControls({
         onSelect={(fontSize) => updateWhiteboardText({ fontSize })}
       />
       <span className="h-6 w-px bg-slate-200" />
+      <ToolbarGroupLabel>ALIGN</ToolbarGroupLabel>
       <button
         aria-label="Align whiteboard text left"
         className={buttonClass(textAlign === "left")}

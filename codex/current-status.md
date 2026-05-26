@@ -30,6 +30,7 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Table header alignment supports left, center, and right.
 - Main document formatting controls stay visible in the top workspace toolbar, keeping the page content focused on title, metadata, tags, and body.
 - Context-specific table, whiteboard object, and image controls appear on the second toolbar row when relevant.
+- Top toolbar contexts use compact uppercase group labels such as TEXT, COLOR, ALIGN, SELECT, FILL, STROKE, WIDTH, STYLE, CONNECTOR, SHARED, LINE 1, LINE 2, LABEL, and IMAGE so document, table, shape, line/arrow, connector, pen, and image controls are easier to scan without labelling every button.
 - Top toolbar text formatting has an explicit active target: document, whiteboard text, or none.
 - Toolbar interactions are event-contained so whiteboard text selection stays active while using buttons, size menus, and color/highlight popovers.
 - Table controls appear only while the editor cursor or selection is inside a table; Insert Table remains available from the active editor toolbar.
@@ -57,26 +58,26 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Tool and zoom shortcuts do not trigger while typing in editors, inputs, textareas, selects, or contenteditable areas.
 - Canvas undo/redo does not override Tiptap document undo/redo while typing in the main document.
 - Main document and bottom toolbar unavailable states avoid native disabled-attribute hydration mismatches while still no-oping unavailable actions.
-- CanvasLayer maintainability pass split pen rendering, laser rendering, eraser hit-testing, geometry helpers, interaction types, and canvas object view components into focused helper files while preserving the existing canvas behavior.
+- CanvasLayer maintainability passes split pen/highlighter/ink rendering helpers, Pen stroke SVG rendering, laser rendering, eraser hit-testing, geometry helpers, interaction types, and canvas object view components into focused helper files while preserving existing canvas behavior.
 
 ## Canvas Editing
 
 - Canvas supports rectangle, circle, diamond, text box, line, arrow, image, and pen stroke objects.
 - Objects can be created, selected, moved, resized, styled, deleted, and persisted per page.
-- Pen, Ink, Highlighter, and Laser Pointer pointer-downs stay in drawing mode over existing objects and the main document instead of switching to object move/select behavior.
-- Pen strokes can be drawn freehand, selected, moved, duplicated, deleted, styled with stroke color/width, smoothing, Ink Density, and Pen/Ink/Highlighter mode, and persisted per page.
+- Pen, Ink, Highlighter, and Laser Pointer pointer-downs stay in drawing mode over existing objects and the main document instead of switching to object move/select behavior; the active drawing hit layer extends beyond the document/page-related area so strokes can start far left/up/right/down on the virtual board after panning.
+- Pen strokes can be drawn freehand, selected, moved, duplicated, deleted, styled with stroke color/width, Ink Density, and Pen/Ink/Highlighter mode, and persisted per page.
 - Laser Pointer is available as a Pen tool mode; it draws temporary fixed-width glowing strokes that pan/zoom with the canvas, fade from the tail after release, and do not persist or affect canvas undo/redo history. Missing or invalid saved Laser colors fall back to red, the glow renders as tightened layered continuous strokes under the crisp laser stroke, and a persisted Laser fade duration dropdown controls how long the trail holds before fading at the shared Normal fade speed. Fade options are Fast, Normal, Long, Longer, and Longest, with Normal remaining the default.
 - The Eraser tool uses a compact circular Excalidraw-style cursor with a subtle movement trail, previews circle-overlapped objects at low opacity during hover and active drag, and commits pending drag erases only on pointer release.
 - Eraser deletes Pen, Ink, Highlighter, shapes, text boxes, lines, arrows, and images; it works with pan/zoom and records deletions in canvas undo/redo.
 - In-progress Pen, Ink, and Highlighter strokes draw without showing a selection bounding box while the pointer is down.
-- Pen mode renders at constant width; Ink strokes store point timing and render with subtle speed-based width variation so slower movement feels thicker and faster movement thinner.
-- Ink rendering preserves more centerline detail than Pen smoothing and uses curved variable-width chunks to avoid jagged segment joins.
+- Pen mode renders the raw pointer path at constant width; Ink strokes store point timing and preserve the raw centerline while rendering a smooth filled variable-width outline so slower movement feels thicker and faster movement thinner without chunky sampled blobs.
+- Pen, Ink, and Highlighter centerline rendering no longer simplifies, straightens, or smooths the captured pointer path; Ink smoothing is limited to the rendered outline and width transitions.
 - Highlighter mode renders wider semi-transparent rounded strokes over text, images, and whiteboard objects, with yellow as the default starting color.
-- Pen smoothing uses distance filtering, Ramer-Douglas-Peucker style path simplification, and curve smoothing so Medium, High, and Very High meaningfully reduce wobble; Very High aggressively straightens shaky mostly-straight strokes and softens hard turns.
-- Pen defaults include stroke color, compact stroke-width selection, smoothing, Ink Density, stroke mode, Laser color, and Laser fade duration; these settings persist in localStorage and apply immediately to newly drawn strokes while the Pen tool is active. Laser mode hides smoothing/width controls because it uses a temporary fixed-width stroke.
-- Pen default controls update with functional state changes so mode, width, smoothing, Ink Density, color, Laser color, and Laser fade settings do not reset when changing another Pen option.
+- Legacy saved pen smoothing values are still tolerated for older strokes, but smoothing is ignored during rendering and is no longer exposed in Pen, Ink, or Highlighter settings or toolbar controls.
+- Pen defaults include stroke color, compact stroke-width selection, Ink Density, stroke mode, Laser color, and Laser fade duration; these settings persist in localStorage and apply immediately to newly drawn strokes while the Pen tool is active. Laser mode hides width controls because it uses a temporary fixed-width stroke.
+- Pen default controls update with functional state changes so mode, width, Ink Density, color, Laser color, and Laser fade settings do not reset when changing another Pen option.
 - Pen modes in the active Pen toolbar are Pen, Ink, Highlighter, and Laser Pointer; selected non-pen objects expose only their object styling controls, not Pen mode controls.
-- Pen toolbar controls are ordered as mode first, then shared color/width modifiers, then mode-specific settings such as smoothing, Ink Density, or Laser Pointer fade duration.
+- Pen toolbar controls are ordered as mode first, then shared color/width modifiers, then mode-specific settings such as Ink Density or Laser Pointer fade duration.
 - The bottom toolbar has a consolidated Shape tool on shortcut 3 with a dropdown for Rectangle, Circle, and Diamond; the selected shape type persists in localStorage and drives new shape creation.
 - Shape, Line, Arrow, and Text Box creation defaults appear in the top contextual toolbar when their tool is active and no object is selected; the defaults persist in localStorage and apply to newly created objects.
 - Selected canvas object controls now appear in the top contextual toolbar instead of a right-side properties panel; selected rectangles, circles, and diamonds can be converted between shape types while preserving position, size, text, styling, and connector relationships.
@@ -87,24 +88,24 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Canvas object duplicate and delete actions are available from the top contextual toolbar.
 - Canvas undo/redo is tracked per page for create, delete, move, resize, style changes, whiteboard text edits, and inserted image objects.
 - Selected rectangles, circles, and diamonds show four small flowchart plus handles. Clicking a handle creates a new shape with the same type, width, height, and styling as the source shape, connects it with an arrow using `sourceObjectId`, `targetObjectId`, `sourceAnchor`, and `targetAnchor`, selects the new shape, and records the shape-plus-connector creation as one canvas undo action where practical.
-- Basic connected arrows stay attached to rectangle/circle/diamond anchors when connected shapes move or resize; connected arrows support editable start/end anchors, optional centered labels, color, stroke width, stroke style, straight/elbow/curve connector style, and none/forward/backward/both arrow direction, while normal line and arrow objects remain freeform. Elbow connectors route out from the source anchor and into the target anchor with simple right-angle segments; curve connectors use smooth Bezier paths between anchors.
+- Basic connected arrows stay attached to rectangle/circle/diamond anchors when connected shapes move or resize; connected arrows support editable start/end anchors, optional centered labels, color, stroke width, stroke style, straight/elbow/curve connector style, single/double line mode, and none/forward/backward/both arrow direction, while normal line and arrow objects remain freeform. Connected connector toolbar controls are grouped into Connector, Shared, Line 1, and Line 2 sections so it is clear which settings affect path shape, anchors/label, and each rendered line. Double-line connectors render two separated parallel lines for straight, elbow, and curve paths with spacing that scales by stroke width; straight paths use perpendicular offsets, curve paths are sampled along the curve and offset by tangent normals at each point to keep spacing consistent through bends, and elbow paths offset each horizontal/vertical segment while preserving 90-degree routing. Double-line endpoints are separated along the shape edge where practical so arrowheads do not sit on the same anchor point. Line 1 uses the regular connector stroke and arrow controls, while line 2 has its own stroke color, width, style, and arrow direction settings. Selected connected arrows show draggable start/end handles directly on the canvas; dragging an endpoint previews anchor targets on the hovered shape and dropping on an anchor updates the connector's source/target object and anchor metadata. Selected curve connectors show a draggable middle bend handle and persist the curve control offset; selected elbow connectors show draggable bend handles and persist the route offset while keeping horizontal/vertical segments. Connector anchor changes clear custom path offsets so the route recalculates cleanly from the new anchors.
 - Selected rectangles, circles, and diamonds support optional labels centered above the shape. A selected shape can start a lightweight "Connect to..." flow from any side, then connect to another existing rectangle/circle/diamond using the current flowchart connector defaults.
 - Line and arrow endpoint handles are larger and easier to hit; with Select active, endpoint handles move one endpoint and the line/arrow body hit area moves the whole line/arrow.
 - Rectangles, circles, and diamonds snap placement and size to the visible dot centers when Snap to Grid is enabled; lines and arrows snap endpoints to the same visible dot centers while still allowing any angle.
 - Rectangles, circles, and diamonds can contain editable text.
 - Text-bearing canvas objects support practical formatting: bold, italic, alignment, vertical alignment, text color, highlight, and size, while preserving plain text storage.
-- Shape, line, and pen stroke styling includes stroke color and stroke width; pen strokes also support smoothing, Ink Density, and Pen/Ink/Highlighter modes, while shapes and lines support solid/dashed/dotted stroke style where applicable.
+- Shape, line, and pen stroke styling includes stroke color and stroke width; pen strokes also support Ink Density and Pen/Ink/Highlighter modes, while shapes and lines support solid/dashed/dotted stroke style where applicable.
 - Image objects can be imported or pasted, resized/compressed, moved, resized, deleted, and stored per page.
 - Snap to Grid is separate from Show Grid, is on by default, and applies to creation, movement, resizing, and line/arrow endpoints when enabled.
 
 ## Current Recommended Next
 
-Latest full QC code-path/build review on 2026-05-24 passed `npm run build` and did not find a safe, obvious runtime code fix to make without browser reproduction.
+Latest behavior-preserving maintainability pass on 2026-05-26 extracted Pen stroke SVG rendering from `CanvasLayer`, removed stale Pen smoothing QA references, and passed `npm.cmd run build` plus direct TypeScript checking.
 
-Remaining verification should be hands-on browser QA with real drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching. The local startup check is still blocked by an existing `node` listener on port 3000 that was not reachable by `curl` from this session; see `notes/bugs-and-issues.md`.
+Remaining verification should be hands-on browser QA with real drawing, typing, image import, trackpad gestures, refreshes, and profile/page switching. The previous local startup check was blocked by an existing `node` listener on port 3000 that was not reachable by `curl` from this session; see `notes/bugs-and-issues.md`.
 
 Recommended next work:
 
 - Repeat startup/browser QA after restarting the port 3000 dev server cleanly.
-- Remove public-folder source/OS metadata artifacts when safe.
-- Do a behavior-preserving maintainability pass on the largest workspace modules after manual QA confirms current behavior.
+- Exercise Pen, Ink, Highlighter, Laser, Eraser, flowchart connectors, image import, Tiptap tables, profiles, nested folders, templates, undo/redo, and localStorage persistence in a real browser.
+- Continue behavior-preserving extraction from the largest remaining modules only after manual QA confirms the current behavior.

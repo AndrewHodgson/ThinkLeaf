@@ -1,6 +1,10 @@
 import { defaultPenSettings } from "@/lib/canvasStyle";
 import type { CanvasObject, CanvasPenSettings, CanvasPoint } from "@/types/workspace";
 
+type InkRenderPoint = CanvasPoint & {
+  width: number;
+};
+
 export function getPenAbsolutePoints(object: CanvasObject): CanvasPoint[] {
   const points = object.penPoints?.length ? object.penPoints : [{ x: 0, y: 0 }];
 
@@ -32,7 +36,6 @@ export function normalizePenBounds(points: CanvasPoint[]): Partial<CanvasObject>
 }
 
 export function getPenPath(object: CanvasObject) {
-  const smoothing = object.penSmoothing ?? defaultPenSettings.smoothing;
   const points = getPenRenderPoints(object);
 
   if (points.length === 1) {
@@ -40,35 +43,27 @@ export function getPenPath(object: CanvasObject) {
     return `M ${point.x} ${point.y} L ${point.x + 0.1} ${point.y + 0.1}`;
   }
 
-  if (smoothing === "off" || points.length < 3) {
-    return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
-  }
-
-  const [firstPoint, ...remainingPoints] = points;
-  const lastPoint = points[points.length - 1];
-  let path = `M ${firstPoint.x} ${firstPoint.y}`;
-
-  for (let index = 0; index < remainingPoints.length - 1; index += 1) {
-    const currentPoint = remainingPoints[index];
-    const nextPoint = remainingPoints[index + 1];
-    const midPoint = {
-      x: (currentPoint.x + nextPoint.x) / 2,
-      y: (currentPoint.y + nextPoint.y) / 2,
-    };
-
-    path += ` Q ${currentPoint.x} ${currentPoint.y} ${midPoint.x} ${midPoint.y}`;
-  }
-
-  return `${path} L ${lastPoint.x} ${lastPoint.y}`;
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
 }
 
-export function getPenInkSegments(object: CanvasObject) {
+export function getPenInkOutlinePath(object: CanvasObject) {
   const points = getPenInkRenderPoints(object);
 
-  if (points.length < 2) {
-    return [{ path: getPenPath(object), width: Math.max(1, object.strokeWidth) }];
+  if (points.length === 1) {
+    return getCirclePath(points[0], Math.max(1, object.strokeWidth) / 2);
   }
 
+  if (points.length < 2) {
+    return getPenPath(object);
+  }
+
+  const pointWidths = getInkPointWidths(points, object);
+  const renderPoints = getInkRenderPoints(points, pointWidths);
+
+  return getInkOutlinePath(renderPoints);
+}
+
+function getInkPointWidths(points: CanvasPoint[], object: CanvasObject) {
   const segmentMetrics = points.slice(0, -1).map((point, index) => {
     const nextPoint = points[index + 1];
     const distance = Math.max(0.1, Math.hypot(nextPoint.x - point.x, nextPoint.y - point.y));
@@ -79,15 +74,8 @@ export function getPenInkSegments(object: CanvasObject) {
   });
   const averageMetric =
     segmentMetrics.reduce((metricTotal, metric) => metricTotal + metric, 0) / Math.max(1, segmentMetrics.length);
-  let previousWidthFactor = 1;
-
-  return points.slice(0, -1).map((point, index) => {
-    const nextPoint = points[index + 1];
-    const previousPoint = points[index - 1];
-    const afterNextPoint = points[index + 2];
-    const startPoint = previousPoint ? getMidpoint(previousPoint, point) : point;
-    const endPoint = afterNextPoint ? getMidpoint(point, nextPoint) : nextPoint;
-    const normalizedSpeed = segmentMetrics[index] / Math.max(0.01, averageMetric);
+  const segmentWidths = segmentMetrics.map((metric, index) => {
+    const normalizedSpeed = metric / Math.max(0.01, averageMetric);
     const densityFactor = getInkDensityFactor(object.penInkDensity ?? defaultPenSettings.inkDensity);
     const baseWidthFactor = clamp(1.34 - normalizedSpeed * 0.34, 0.72, 1.3);
     const targetWidthFactor = clamp(
@@ -95,49 +83,219 @@ export function getPenInkSegments(object: CanvasObject) {
       1 - 0.3 * densityFactor,
       1 + 0.32 * densityFactor,
     );
-    const smoothedWidthFactor =
-      index === 0 ? targetWidthFactor : previousWidthFactor * 0.72 + targetWidthFactor * 0.28;
     const startTaper = clamp((index + 1) / 3, 0.82, 1);
     const endTaper = clamp((segmentMetrics.length - index) / 3, 0.82, 1);
 
-    previousWidthFactor = smoothedWidthFactor;
+    return Math.max(1, object.strokeWidth * targetWidthFactor * Math.min(startTaper, endTaper));
+  });
 
-    return {
-      path: `M ${startPoint.x} ${startPoint.y} Q ${point.x} ${point.y} ${endPoint.x} ${endPoint.y}`,
-      width: Math.max(1, object.strokeWidth * smoothedWidthFactor * Math.min(startTaper, endTaper)),
-    };
+  return points.map((_, index) => {
+    if (index === 0) {
+      return segmentWidths[0] ?? Math.max(1, object.strokeWidth);
+    }
+
+    if (index === points.length - 1) {
+      return segmentWidths[segmentWidths.length - 1] ?? Math.max(1, object.strokeWidth);
+    }
+
+    const previousWidth = segmentWidths[index - 1] ?? object.strokeWidth;
+    const nextWidth = segmentWidths[index] ?? previousWidth;
+    const currentWidth = (previousWidth + nextWidth) / 2;
+    const beforePreviousWidth = segmentWidths[index - 2] ?? previousWidth;
+    const afterNextWidth = segmentWidths[index + 1] ?? nextWidth;
+
+    return (beforePreviousWidth + previousWidth + currentWidth * 2 + nextWidth + afterNextWidth) / 6;
   });
 }
 
-export function getPenRenderPoints(object: CanvasObject) {
-  const smoothing = object.penSmoothing ?? defaultPenSettings.smoothing;
-  const simplifiedPoints = getSimplifiedPenPoints(getPenAbsolutePoints(object), smoothing);
+function getInkRenderPoints(points: CanvasPoint[], pointWidths: number[]): InkRenderPoint[] {
+  if (points.length < 2) {
+    return points.map((point, index) => ({ ...point, width: pointWidths[index] ?? 1 }));
+  }
 
-  return getSmoothedPenPoints(simplifiedPoints, smoothing);
+  const renderPoints: InkRenderPoint[] = [];
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const startPoint = points[index];
+    const endPoint = points[index + 1];
+    const distance = Math.hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y);
+    const stepCount = Math.max(2, Math.min(12, Math.ceil(distance / 6)));
+
+    for (let step = 0; step <= stepCount; step += 1) {
+      if (index > 0 && step === 0) {
+        continue;
+      }
+
+      const amount = step / stepCount;
+      const point = interpolateCatmullRom(
+        points[index - 1] ?? startPoint,
+        startPoint,
+        endPoint,
+        points[index + 2] ?? endPoint,
+        amount,
+      );
+      const width = interpolateNumber(
+        pointWidths[index] ?? 1,
+        pointWidths[index + 1] ?? pointWidths[index] ?? 1,
+        smoothStep(amount),
+      );
+
+      renderPoints.push({ ...point, width });
+    }
+  }
+
+  return renderPoints;
 }
 
-export function getPenInkRenderPoints(object: CanvasObject) {
-  const smoothing = object.penSmoothing ?? defaultPenSettings.smoothing;
-  const simplifiedPoints = getSimplifiedPenPoints(getPenAbsolutePoints(object), smoothing, { preserveDetail: true });
+function interpolateCatmullRom(
+  previousPoint: CanvasPoint,
+  startPoint: CanvasPoint,
+  endPoint: CanvasPoint,
+  nextPoint: CanvasPoint,
+  amount: number,
+): CanvasPoint {
+  const amountSquared = amount * amount;
+  const amountCubed = amountSquared * amount;
 
-  return getSmoothedPenPoints(simplifiedPoints, smoothing, { preserveDetail: true });
+  return {
+    x:
+      0.5 *
+      (2 * startPoint.x +
+        (-previousPoint.x + endPoint.x) * amount +
+        (2 * previousPoint.x - 5 * startPoint.x + 4 * endPoint.x - nextPoint.x) * amountSquared +
+        (-previousPoint.x + 3 * startPoint.x - 3 * endPoint.x + nextPoint.x) * amountCubed),
+    y:
+      0.5 *
+      (2 * startPoint.y +
+        (-previousPoint.y + endPoint.y) * amount +
+        (2 * previousPoint.y - 5 * startPoint.y + 4 * endPoint.y - nextPoint.y) * amountSquared +
+        (-previousPoint.y + 3 * startPoint.y - 3 * endPoint.y + nextPoint.y) * amountCubed),
+  };
+}
+
+function getInkOutlinePath(points: InkRenderPoint[]) {
+  if (points.length === 0) {
+    return "";
+  }
+
+  if (points.length === 1) {
+    return getCirclePath(points[0], points[0].width / 2);
+  }
+
+  const leftEdge: CanvasPoint[] = [];
+  const rightEdge: CanvasPoint[] = [];
+
+  points.forEach((point, index) => {
+    const normal = getRenderPointNormal(points, index);
+    const radius = Math.max(0.5, point.width / 2);
+
+    leftEdge.push({ x: point.x + normal.x * radius, y: point.y + normal.y * radius });
+    rightEdge.push({ x: point.x - normal.x * radius, y: point.y - normal.y * radius });
+  });
+
+  const firstTangent = getRenderPointTangent(points, 0);
+  const lastTangent = getRenderPointTangent(points, points.length - 1);
+  const firstRadius = Math.max(0.5, points[0].width / 2);
+  const lastRadius = Math.max(0.5, points[points.length - 1].width / 2);
+  const startCapControl = {
+    x: points[0].x - firstTangent.x * firstRadius,
+    y: points[0].y - firstTangent.y * firstRadius,
+  };
+  const endCapControl = {
+    x: points[points.length - 1].x + lastTangent.x * lastRadius,
+    y: points[points.length - 1].y + lastTangent.y * lastRadius,
+  };
+  const reversedRightEdge = [...rightEdge].reverse();
+
+  return [
+    `M ${leftEdge[0].x} ${leftEdge[0].y}`,
+    getSmoothEdgeCommands(leftEdge),
+    `Q ${endCapControl.x} ${endCapControl.y} ${rightEdge[rightEdge.length - 1].x} ${
+      rightEdge[rightEdge.length - 1].y
+    }`,
+    getSmoothEdgeCommands(reversedRightEdge),
+    `Q ${startCapControl.x} ${startCapControl.y} ${leftEdge[0].x} ${leftEdge[0].y}`,
+    "Z",
+  ].join(" ");
+}
+
+function getSmoothEdgeCommands(points: CanvasPoint[]) {
+  if (points.length < 2) {
+    return "";
+  }
+
+  if (points.length === 2) {
+    return `L ${points[1].x} ${points[1].y}`;
+  }
+
+  const commands: string[] = [];
+
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const midpoint = getMidpoint(points[index], points[index + 1]);
+    commands.push(`Q ${points[index].x} ${points[index].y} ${midpoint.x} ${midpoint.y}`);
+  }
+
+  const lastPoint = points[points.length - 1];
+  commands.push(`L ${lastPoint.x} ${lastPoint.y}`);
+
+  return commands.join(" ");
+}
+
+function getRenderPointNormal(points: InkRenderPoint[], index: number) {
+  const tangent = getRenderPointTangent(points, index);
+
+  return { x: -tangent.y, y: tangent.x };
+}
+
+function getRenderPointTangent(points: InkRenderPoint[], index: number) {
+  const previousPoint = points[Math.max(0, index - 1)];
+  const nextPoint = points[Math.min(points.length - 1, index + 1)];
+  const dx = nextPoint.x - previousPoint.x;
+  const dy = nextPoint.y - previousPoint.y;
+  const length = Math.hypot(dx, dy);
+
+  if (length <= 0.001) {
+    return { x: 1, y: 0 };
+  }
+
+  return { x: dx / length, y: dy / length };
 }
 
 function getMidpoint(point: CanvasPoint, otherPoint: CanvasPoint): CanvasPoint {
-  const midpoint: CanvasPoint = {
+  return {
     x: (point.x + otherPoint.x) / 2,
     y: (point.y + otherPoint.y) / 2,
   };
+}
 
-  if (Number.isFinite(point.t) && Number.isFinite(otherPoint.t)) {
-    midpoint.t = (point.t! + otherPoint.t!) / 2;
-  }
+function getCirclePath(point: CanvasPoint, radius: number) {
+  const safeRadius = Math.max(0.5, radius);
 
-  return midpoint;
+  return [
+    `M ${point.x - safeRadius} ${point.y}`,
+    `a ${safeRadius} ${safeRadius} 0 1 0 ${safeRadius * 2} 0`,
+    `a ${safeRadius} ${safeRadius} 0 1 0 ${-safeRadius * 2} 0`,
+  ].join(" ");
+}
+
+export function getPenRenderPoints(object: CanvasObject) {
+  return getPenAbsolutePoints(object);
+}
+
+export function getPenInkRenderPoints(object: CanvasObject) {
+  return getPenAbsolutePoints(object);
 }
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function interpolateNumber(start: number, end: number, amount: number) {
+  return start + (end - start) * amount;
+}
+
+function smoothStep(value: number) {
+  return value * value * (3 - 2 * value);
 }
 
 function getInkDensityFactor(density: CanvasPenSettings["inkDensity"]) {
@@ -147,177 +305,4 @@ function getInkDensityFactor(density: CanvasPenSettings["inkDensity"]) {
     medium: 1,
     veryHigh: 1.7,
   }[density];
-}
-
-function getSimplifiedPenPoints(
-  points: CanvasPoint[],
-  smoothing: CanvasObject["penSmoothing"],
-  options: { preserveDetail?: boolean } = {},
-) {
-  const config = getPenSmoothingConfig(smoothing);
-  const detailFactor = options.preserveDetail ? 0.45 : 1;
-  const minimumDistance = config.minimumDistance * detailFactor;
-  const pathTolerance = config.pathTolerance * detailFactor;
-
-  if ((minimumDistance <= 0 && pathTolerance <= 0) || points.length < 3) {
-    return points;
-  }
-
-  const distanceSimplifiedPoints = simplifyPenPointsByDistance(points, minimumDistance);
-
-  return simplifyPenPointsByPath(distanceSimplifiedPoints, pathTolerance);
-}
-
-function simplifyPenPointsByDistance(points: CanvasPoint[], minimumDistance: number) {
-  if (minimumDistance <= 0 || points.length < 3) {
-    return points;
-  }
-
-  const simplifiedPoints: CanvasPoint[] = [points[0]];
-
-  for (const point of points.slice(1, -1)) {
-    const previousPoint = simplifiedPoints[simplifiedPoints.length - 1];
-    const distance = Math.hypot(point.x - previousPoint.x, point.y - previousPoint.y);
-
-    if (distance >= minimumDistance) {
-      simplifiedPoints.push(point);
-    }
-  }
-
-  simplifiedPoints.push(points[points.length - 1]);
-  return simplifiedPoints;
-}
-
-function simplifyPenPointsByPath(points: CanvasPoint[], tolerance: number): CanvasPoint[] {
-  if (tolerance <= 0 || points.length < 3) {
-    return points;
-  }
-
-  const toleranceSquared = tolerance * tolerance;
-  let farthestPointIndex = 0;
-  let farthestDistanceSquared = 0;
-  const firstPoint = points[0];
-  const lastPoint = points[points.length - 1];
-
-  for (let index = 1; index < points.length - 1; index += 1) {
-    const distanceSquared = getSquaredSegmentDistance(points[index], firstPoint, lastPoint);
-
-    if (distanceSquared > farthestDistanceSquared) {
-      farthestDistanceSquared = distanceSquared;
-      farthestPointIndex = index;
-    }
-  }
-
-  if (farthestDistanceSquared <= toleranceSquared) {
-    return [firstPoint, lastPoint];
-  }
-
-  const firstSegment = simplifyPenPointsByPath(points.slice(0, farthestPointIndex + 1), tolerance);
-  const secondSegment = simplifyPenPointsByPath(points.slice(farthestPointIndex), tolerance);
-
-  return [...firstSegment.slice(0, -1), ...secondSegment];
-}
-
-function getSquaredSegmentDistance(point: CanvasPoint, startPoint: CanvasPoint, endPoint: CanvasPoint) {
-  const segmentX = endPoint.x - startPoint.x;
-  const segmentY = endPoint.y - startPoint.y;
-
-  if (segmentX === 0 && segmentY === 0) {
-    return getSquaredDistance(point, startPoint);
-  }
-
-  const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY;
-  const projection = clamp(
-    ((point.x - startPoint.x) * segmentX + (point.y - startPoint.y) * segmentY) / segmentLengthSquared,
-    0,
-    1,
-  );
-  const projectedPoint = {
-    x: startPoint.x + segmentX * projection,
-    y: startPoint.y + segmentY * projection,
-  };
-
-  return getSquaredDistance(point, projectedPoint);
-}
-
-function getSquaredDistance(point: CanvasPoint, otherPoint: Pick<CanvasPoint, "x" | "y">) {
-  const dx = point.x - otherPoint.x;
-  const dy = point.y - otherPoint.y;
-
-  return dx * dx + dy * dy;
-}
-
-function getSmoothedPenPoints(
-  points: CanvasPoint[],
-  smoothing: CanvasObject["penSmoothing"],
-  options: { preserveDetail?: boolean } = {},
-) {
-  const baseIterations = getPenSmoothingConfig(smoothing).curveIterations;
-  const iterations = options.preserveDetail ? Math.min(2, baseIterations) : baseIterations;
-
-  if (iterations <= 0 || points.length < 3) {
-    return points;
-  }
-
-  let smoothedPoints = points;
-
-  for (let iteration = 0; iteration < iterations; iteration += 1) {
-    const nextPoints: CanvasPoint[] = [smoothedPoints[0]];
-
-    for (let index = 0; index < smoothedPoints.length - 1; index += 1) {
-      const currentPoint = smoothedPoints[index];
-      const nextPoint = smoothedPoints[index + 1];
-
-      nextPoints.push(interpolatePenPoint(currentPoint, nextPoint, 0.25));
-      nextPoints.push(interpolatePenPoint(currentPoint, nextPoint, 0.75));
-    }
-
-    nextPoints.push(smoothedPoints[smoothedPoints.length - 1]);
-    smoothedPoints = nextPoints;
-  }
-
-  return smoothedPoints;
-}
-
-function getPenSmoothingConfig(smoothing: CanvasObject["penSmoothing"]) {
-  return {
-    high: {
-      curveIterations: 3,
-      minimumDistance: 8,
-      pathTolerance: 18,
-    },
-    light: {
-      curveIterations: 0,
-      minimumDistance: 2,
-      pathTolerance: 2.5,
-    },
-    medium: {
-      curveIterations: 1,
-      minimumDistance: 4,
-      pathTolerance: 8,
-    },
-    off: {
-      curveIterations: 0,
-      minimumDistance: 0,
-      pathTolerance: 0,
-    },
-    veryHigh: {
-      curveIterations: 4,
-      minimumDistance: 10,
-      pathTolerance: 32,
-    },
-  }[smoothing ?? defaultPenSettings.smoothing];
-}
-
-function interpolatePenPoint(startPoint: CanvasPoint, endPoint: CanvasPoint, amount: number): CanvasPoint {
-  const interpolatedPoint: CanvasPoint = {
-    x: startPoint.x + (endPoint.x - startPoint.x) * amount,
-    y: startPoint.y + (endPoint.y - startPoint.y) * amount,
-  };
-
-  if (Number.isFinite(startPoint.t) && Number.isFinite(endPoint.t)) {
-    interpolatedPoint.t = startPoint.t! + (endPoint.t! - startPoint.t!) * amount;
-  }
-
-  return interpolatedPoint;
 }

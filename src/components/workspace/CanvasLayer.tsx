@@ -29,12 +29,15 @@ import {
 } from "@/lib/canvasStyle";
 import { createId } from "@/lib/workspaceUtils";
 import {
+  ConnectorAnchorTargets,
   CanvasObjectView,
+  ConnectorPathHandle,
   EndpointHandle,
   EraserCursorRing,
   FlowchartConnectorHandle,
   ResizeHandleButton,
 } from "@/components/workspace/canvas/canvasObjectViews";
+import { PenStrokeLayer } from "@/components/workspace/canvas/PenStrokeLayer";
 import {
   alignCanvasSize,
   alignCanvasX,
@@ -42,6 +45,10 @@ import {
   getCreationDefaultsForType,
   getArrowDirection,
   getConnectorAnchorPoint,
+  getConnectorStyle,
+  getCurveConnectorControlPoint,
+  getElbowConnectorPoints,
+  getElbowConnectorControlPoints,
   getLineRenderSegments,
   getLineRenderPoints,
   getLineLabelPoint,
@@ -50,6 +57,7 @@ import {
   getOppositeConnectorAnchor,
   getResizeUpdates,
   getStrokeDashArray,
+  isConnectedLine,
   normalizeLineBounds,
   removeObjectsAndConnectedLines,
   screenToWorldPoint,
@@ -64,11 +72,10 @@ import {
 } from "@/components/workspace/canvas/laserRendering";
 import {
   getPenAbsolutePoints,
-  getPenInkSegments,
-  getPenPath,
   normalizePenBounds,
 } from "@/components/workspace/canvas/penRendering";
 import type {
+  ConnectorEndpointPreview,
   EraserCursorPoint,
   Interaction,
   LaserStroke,
@@ -100,6 +107,8 @@ const toolToObjectType: Partial<Record<CanvasTool, CanvasObjectType>> = {
   Arrow: "arrow",
   Pen: "penStroke",
 };
+const canvasHitMarginX = virtualBoardWidth;
+const canvasHitMarginY = virtualBoardHeight;
 
 export function CanvasLayer({
   activeTool,
@@ -127,6 +136,7 @@ export function CanvasLayer({
   const [eraserPreviewObjectIds, setEraserPreviewObjectIds] = useState<string[]>([]);
   const [eraserTrailPoints, setEraserTrailPoints] = useState<EraserCursorPoint[]>([]);
   const [laserStrokes, setLaserStrokes] = useState<LaserStroke[]>([]);
+  const [connectorEndpointPreview, setConnectorEndpointPreview] = useState<ConnectorEndpointPreview | null>(null);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const eraserSessionRef = useRef<{ historyKey: string; pendingIds: Set<string> } | null>(null);
   const laserFadeIntervalsRef = useRef<Map<string, number>>(new Map());
@@ -223,6 +233,7 @@ export function CanvasLayer({
     setEraserCursorPoint(null);
     setEraserTrailPoints([]);
     setEraserPreviewObjectIds([]);
+    setConnectorEndpointPreview(null);
     eraserSessionRef.current = null;
     clearTextEditing();
   }, [activeTool]);
@@ -541,6 +552,170 @@ export function CanvasLayer({
     onToolChange("Select");
   }
 
+  function getConnectorEndpointTarget(
+    pointer: { x: number; y: number },
+    connector: CanvasObject,
+    endpoint: "start" | "end",
+  ) {
+    if (!isConnectedLine(connector)) {
+      return null;
+    }
+
+    const oppositeObjectId = endpoint === "start" ? connector.targetObjectId : connector.sourceObjectId;
+    const candidates = objects
+      .filter((object) => isFlowchartShape(object) && object.id !== oppositeObjectId)
+      .reverse();
+
+    for (const object of candidates) {
+      const targetAnchor = getAnchorTargetForPointer(pointer, object);
+      if (targetAnchor) {
+        return {
+          targetAnchor,
+          targetObjectId: object.id,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  function getLinePreviewPoints(object: CanvasObject) {
+    const points = getLineRenderPoints(object, objects);
+    if (!connectorEndpointPreview || connectorEndpointPreview.id !== object.id) {
+      return points;
+    }
+
+    const targetObject = connectorEndpointPreview.targetObjectId
+      ? objects.find((item) => item.id === connectorEndpointPreview.targetObjectId)
+      : null;
+    const targetPoint =
+      targetObject && connectorEndpointPreview.targetAnchor
+        ? getConnectorAnchorPoint(targetObject, connectorEndpointPreview.targetAnchor)
+        : { x: connectorEndpointPreview.pointerX, y: connectorEndpointPreview.pointerY };
+
+    return connectorEndpointPreview.endpoint === "start"
+      ? {
+          ...points,
+          x1: targetPoint.x,
+          y1: targetPoint.y,
+        }
+      : {
+          ...points,
+          x2: targetPoint.x,
+          y2: targetPoint.y,
+        };
+  }
+
+  function updateConnectedEndpointPreview(
+    object: CanvasObject,
+    endpoint: "start" | "end",
+    pointer: { x: number; y: number },
+  ) {
+    const target = getConnectorEndpointTarget(pointer, object, endpoint);
+    setConnectorEndpointPreview({
+      endpoint,
+      id: object.id,
+      pointerX: pointer.x,
+      pointerY: pointer.y,
+      targetAnchor: target?.targetAnchor ?? null,
+      targetObjectId: target?.targetObjectId ?? null,
+    });
+  }
+
+  function commitConnectedEndpointDrop(interaction: Extract<Interaction, { kind: "endpoint" }>) {
+    const object = objects.find((item) => item.id === interaction.id);
+    const preview =
+      connectorEndpointPreview?.id === interaction.id &&
+      connectorEndpointPreview.endpoint === interaction.endpoint
+        ? connectorEndpointPreview
+        : null;
+
+    setConnectorEndpointPreview(null);
+
+    if (!object || !isConnectedLine(object) || !preview?.targetObjectId || !preview.targetAnchor) {
+      return;
+    }
+
+    const updates =
+      interaction.endpoint === "start"
+        ? {
+            ...getConnectorPathResetUpdates(),
+            sourceAnchor: preview.targetAnchor,
+            sourceObjectId: preview.targetObjectId,
+          }
+        : {
+            ...getConnectorPathResetUpdates(),
+            targetAnchor: preview.targetAnchor,
+            targetObjectId: preview.targetObjectId,
+          };
+    const now = new Date().toISOString();
+    const nextObjects = objects.map((item) =>
+      item.id === object.id
+        ? {
+            ...item,
+            ...updates,
+            updatedAt: now,
+          }
+        : item,
+    );
+
+    onChange(syncConnectedLines(nextObjects), { historyKey: interaction.historyKey });
+  }
+
+  function updateConnectorPathHandle(
+    object: CanvasObject,
+    interaction: Extract<Interaction, { kind: "connectorPath" }>,
+    pointer: { x: number; y: number },
+  ) {
+    if (!isConnectedLine(object)) {
+      return;
+    }
+
+    const points = getLineRenderPoints(object, objects);
+
+    if (interaction.pathKind === "curve") {
+      const defaultControlPoint = getCurveConnectorControlPoint(points, {
+        ...object,
+        curveControlOffsetX: 0,
+        curveControlOffsetY: 0,
+      });
+
+      updateObject(
+        object.id,
+        {
+          curveControlOffsetX: pointer.x - defaultControlPoint.x,
+          curveControlOffsetY: pointer.y - defaultControlPoint.y,
+        },
+        { historyKey: interaction.historyKey },
+      );
+      return;
+    }
+
+    const defaultControlPoints = getElbowConnectorControlPoints(points, {
+      ...object,
+      elbowBendOffsetX: 0,
+      elbowBendOffsetY: 0,
+    });
+    const defaultControlPoint = defaultControlPoints[0];
+
+    if (!defaultControlPoint) {
+      return;
+    }
+
+    const isSourceHorizontal = object.sourceAnchor === "left" || object.sourceAnchor === "right";
+    const isTargetHorizontal = object.targetAnchor === "left" || object.targetAnchor === "right";
+
+    updateObject(
+      object.id,
+      isSourceHorizontal
+        ? { elbowBendOffsetX: pointer.x - defaultControlPoint.x }
+        : isTargetHorizontal
+          ? { elbowBendOffsetY: pointer.y - defaultControlPoint.y }
+          : { elbowBendOffsetY: pointer.y - defaultControlPoint.y },
+      { historyKey: interaction.historyKey },
+    );
+  }
+
   function screenToWorld(clientX: number, clientY: number) {
     return screenToWorldPoint(canvasRef.current?.getBoundingClientRect(), viewState, clientX, clientY);
   }
@@ -638,7 +813,6 @@ export function CanvasLayer({
       createdAt: now,
       penInkDensity: penSettings.inkDensity,
       penMode: penSettings.mode,
-      penSmoothing: penSettings.smoothing,
       strokeColor: penSettings.strokeColor,
       strokeWidth: penSettings.strokeWidth,
       updatedAt: now,
@@ -927,7 +1101,17 @@ export function CanvasLayer({
       return;
     }
 
+    if (interaction.kind === "connectorPath") {
+      updateConnectorPathHandle(object, interaction, { x: point.x, y: point.y });
+      return;
+    }
+
     if (interaction.kind === "endpoint") {
+      if (isConnectedLine(object)) {
+        updateConnectedEndpointPreview(object, interaction.endpoint, { x: point.x, y: point.y });
+        return;
+      }
+
       const nextLine =
         interaction.endpoint === "start"
           ? { ...object, x1: pointerX, y1: pointerY }
@@ -1039,6 +1223,10 @@ export function CanvasLayer({
       }
     }
 
+    if (interaction?.kind === "endpoint") {
+      commitConnectedEndpointDrop(interaction);
+    }
+
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -1054,6 +1242,8 @@ export function CanvasLayer({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+
+    setConnectorEndpointPreview(null);
 
     if (interaction?.kind === "laserDraw") {
       scheduleLaserFade(interaction.id);
@@ -1283,7 +1473,36 @@ export function CanvasLayer({
 
     onSelectionChange(object.id);
     clearTextEditing();
+    const point = screenToWorld(event.clientX, event.clientY);
+    if (point && isConnectedLine(object)) {
+      updateConnectedEndpointPreview(object, endpoint, { x: point.x, y: point.y });
+    } else {
+      setConnectorEndpointPreview(null);
+    }
     setInteraction({ endpoint, historyKey: createId("history"), id: object.id, kind: "endpoint" });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function startConnectorPathDrag(
+    event: React.PointerEvent<HTMLButtonElement>,
+    object: CanvasObject,
+    pathKind: "curve" | "elbow",
+  ) {
+    event.stopPropagation();
+
+    if (activeTool !== "Select" || !isConnectedLine(object)) {
+      return;
+    }
+
+    onSelectionChange(object.id);
+    clearTextEditing();
+    setConnectorEndpointPreview(null);
+    setInteraction({
+      historyKey: createId("history"),
+      id: object.id,
+      kind: "connectorPath",
+      pathKind,
+    });
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
@@ -1322,6 +1541,7 @@ export function CanvasLayer({
       Boolean(pendingConnectorStart) ||
       isSpacePressed ||
       interaction?.kind === "pendingLine");
+  const shouldUseExpandedDrawingHitLayer = activeTool === "Pen" || activeTool === "Eraser";
   const activeToolCursor = getActiveToolCursor(activeTool, interaction?.kind === "pan");
 
   return (
@@ -1352,9 +1572,13 @@ export function CanvasLayer({
       onWheel={handleWheel}
     >
       <div
-        className={["absolute inset-0", shouldUseCanvasHitLayer ? "pointer-events-auto" : "pointer-events-none"].join(
-          " ",
-        )}
+        className={["absolute", shouldUseCanvasHitLayer ? "pointer-events-auto" : "pointer-events-none"].join(" ")}
+        style={{
+          height: shouldUseExpandedDrawingHitLayer ? virtualBoardHeight + canvasHitMarginY * 2 : virtualBoardHeight,
+          left: shouldUseExpandedDrawingHitLayer ? -canvasHitMarginX : 0,
+          top: shouldUseExpandedDrawingHitLayer ? -canvasHitMarginY : 0,
+          width: shouldUseExpandedDrawingHitLayer ? virtualBoardWidth + canvasHitMarginX * 2 : virtualBoardWidth,
+        }}
         onPointerDown={handleCanvasPointerDown}
       />
       <div
@@ -1368,36 +1592,67 @@ export function CanvasLayer({
       >
         <svg className="absolute inset-0 h-full w-full overflow-visible">
           {lineObjects.map((object) => {
-            const segments = getLineRenderSegments(object, objects);
-            const arrowDirection = getArrowDirection(object);
-            const markerStart =
-              arrowDirection === "backward" || arrowDirection === "both" ? `url(#arrow-${object.id})` : undefined;
-            const markerEnd =
-              arrowDirection === "forward" || arrowDirection === "both" ? `url(#arrow-${object.id})` : undefined;
+            const previewPoints = getLinePreviewPoints(object);
+            const segments = getLineRenderSegments(object, objects, previewPoints);
             const isSelected = selectedObjectId === object.id && activeTool !== "Eraser";
             const isEraserPreviewed = activeTool === "Eraser" && eraserPreviewObjectIds.includes(object.id);
+            const lineMode = getConnectorLineMode(object);
+            const renderLines =
+              lineMode === "double" && isConnectedLine(object)
+                ? [
+                    {
+                      arrowDirection: getArrowDirection(object),
+                      id: "primary",
+                      markerId: `arrow-${object.id}-primary`,
+                      pathData: getDoubleLinePathData(object, previewPoints, 1, object.strokeWidth, getSecondLineStrokeWidth(object)),
+                      strokeColor: object.strokeColor,
+                      strokeDasharray: getStrokeDashArray(object),
+                      strokeWidth: object.strokeWidth,
+                    },
+                    {
+                      arrowDirection: getSecondLineArrowDirection(object),
+                      id: "secondary",
+                      markerId: `arrow-${object.id}-secondary`,
+                      pathData: getDoubleLinePathData(object, previewPoints, -1, object.strokeWidth, getSecondLineStrokeWidth(object)),
+                      strokeColor: getSecondLineStrokeColor(object),
+                      strokeDasharray: getSecondLineStrokeDashArray(object),
+                      strokeWidth: getSecondLineStrokeWidth(object),
+                    },
+                  ]
+                : [
+                    {
+                      arrowDirection: getArrowDirection(object),
+                      id: "primary",
+                      markerId: `arrow-${object.id}`,
+                      pathData: segments.pathData,
+                      strokeColor: isSelected ? "#238157" : object.strokeColor,
+                      strokeDasharray: getStrokeDashArray(object),
+                      strokeWidth: object.strokeWidth,
+                    },
+                  ];
 
             return (
               <g key={object.id} opacity={isEraserPreviewed ? 0.35 : 1}>
                 <defs>
-                  {arrowDirection !== "none" ? (
-                    <marker
-                      id={`arrow-${object.id}`}
-                      markerHeight="8"
-                      markerWidth="8"
-                      orient="auto-start-reverse"
-                      refX="7"
-                      refY="4"
-                    >
-                      <path d="M0,0 L8,4 L0,8 Z" fill={object.strokeColor} />
-                    </marker>
-                  ) : null}
+                  {renderLines.map((line) =>
+                    line.arrowDirection !== "none" ? (
+                      <marker
+                        key={line.markerId}
+                        id={line.markerId}
+                        markerHeight="8"
+                        markerWidth="8"
+                        orient="auto-start-reverse"
+                        refX="7"
+                        refY="4"
+                      >
+                        <path d="M0,0 L8,4 L0,8 Z" fill={line.strokeColor} />
+                      </marker>
+                    ) : null,
+                  )}
                 </defs>
                 <path
                   className="pointer-events-auto"
                   d={segments.pathData}
-                  markerEnd={markerEnd}
-                  markerStart={markerStart}
                   stroke={isSelected ? "#238157" : object.strokeColor}
                   fill="none"
                   strokeLinecap="round"
@@ -1415,17 +1670,31 @@ export function CanvasLayer({
                   }}
                   onPointerEnter={(event) => continueObjectErase(event, object)}
                 />
-                <path
-                  d={segments.pathData}
-                  markerEnd={markerEnd}
-                  markerStart={markerStart}
-                  stroke={isSelected ? "#238157" : object.strokeColor}
-                  strokeDasharray={getStrokeDashArray(object)}
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={object.strokeWidth}
-                />
+                {renderLines.map((line) => {
+                  const markerStart =
+                    line.arrowDirection === "backward" || line.arrowDirection === "both"
+                      ? `url(#${line.markerId})`
+                      : undefined;
+                  const markerEnd =
+                    line.arrowDirection === "forward" || line.arrowDirection === "both"
+                      ? `url(#${line.markerId})`
+                      : undefined;
+
+                  return (
+                    <path
+                      key={`${object.id}-${line.id}`}
+                      d={line.pathData}
+                      markerEnd={markerEnd}
+                      markerStart={markerStart}
+                      stroke={line.strokeColor}
+                      strokeDasharray={line.strokeDasharray}
+                      fill="none"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={line.strokeWidth}
+                    />
+                  );
+                })}
                 {object.connectorLabel?.trim() ? (
                   <ConnectorLabel
                     isSelected={isSelected}
@@ -1440,7 +1709,7 @@ export function CanvasLayer({
 
         {lineObjects.map((object) => {
           const isSelected = selectedObjectId === object.id && activeTool !== "Eraser";
-          const points = getLineRenderPoints(object, objects);
+          const points = getLinePreviewPoints(object);
           const box = getLineSelectionBox(points);
 
           if (!isSelected) {
@@ -1465,6 +1734,23 @@ export function CanvasLayer({
                 onStart={startEndpointDrag}
                 endpoint="end"
               />
+              {isConnectedLine(object) && getConnectorStyle(object) === "curve" ? (
+                <ConnectorPathHandle
+                  label="Adjust curve bend"
+                  point={getCurveConnectorControlPoint(points, object)}
+                  onPointerDown={(event) => startConnectorPathDrag(event, object, "curve")}
+                />
+              ) : null}
+              {isConnectedLine(object) && getConnectorStyle(object) === "elbow"
+                ? getElbowConnectorControlPoints(points, object).map((point, index) => (
+                    <ConnectorPathHandle
+                      key={`${object.id}-elbow-${index}`}
+                      label="Adjust elbow bend"
+                      point={point}
+                      onPointerDown={(event) => startConnectorPathDrag(event, object, "elbow")}
+                    />
+                  ))
+                : null}
             </div>
           );
         })}
@@ -1473,6 +1759,8 @@ export function CanvasLayer({
           const isSelected = selectedObjectId === object.id;
           const isEditing = editingTextId === object.id;
           const isEraserPreviewed = activeTool === "Eraser" && eraserPreviewObjectIds.includes(object.id);
+          const isConnectorEndpointTarget =
+            connectorEndpointPreview?.targetObjectId === object.id && activeTool !== "Eraser";
 
           return (
             <div
@@ -1514,6 +1802,9 @@ export function CanvasLayer({
               />
               {isFlowchartShape(object) && object.shapeLabel?.trim() ? (
                 <ShapeLabel label={object.shapeLabel} />
+              ) : null}
+              {isFlowchartShape(object) && isConnectorEndpointTarget ? (
+                <ConnectorAnchorTargets activeAnchor={connectorEndpointPreview.targetAnchor} zoom={viewState.zoom} />
               ) : null}
               {isSelected && activeTool !== "Eraser" ? (
                 <>
@@ -1558,78 +1849,17 @@ export function CanvasLayer({
             </div>
           );
         })}
-        <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
-          {penObjects.map((object) => {
-            const isSelected = selectedObjectId === object.id;
-            const isActivelyDrawing = interaction?.kind === "penDraw" && interaction.id === object.id;
-            const isEraserPreviewed = activeTool === "Eraser" && eraserPreviewObjectIds.includes(object.id);
-            const path = getPenPath(object);
-            const penMode = object.penMode ?? defaultPenSettings.mode;
-            const shouldRenderInk = penMode === "ink";
-            const shouldRenderHighlighter = penMode === "highlighter";
-
-            return (
-              <g key={object.id} opacity={isEraserPreviewed ? 0.35 : 1}>
-                <path
-                  className="pointer-events-auto"
-                  d={path}
-                  fill="none"
-                  opacity="0"
-                  stroke={object.strokeColor}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={Math.max(16, object.strokeWidth + 10)}
-                  style={{ cursor: activeTool === "Eraser" ? "none" : activeToolCursor }}
-                  onPointerDown={(event) => {
-                    if (activeTool === "Eraser") {
-                      startObjectErase(event, object);
-                      return;
-                    }
-
-                    startPenMove(event, object);
-                  }}
-                  onPointerEnter={(event) => continueObjectErase(event, object)}
-                />
-                {shouldRenderInk ? (
-                  getPenInkSegments(object).map((segment, index) => (
-                    <path
-                      key={`${object.id}-ink-${index}`}
-                      d={segment.path}
-                      fill="none"
-                      stroke={object.strokeColor}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={segment.width}
-                    />
-                  ))
-                ) : (
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke={object.strokeColor}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeOpacity={shouldRenderHighlighter ? 0.38 : 1}
-                    strokeWidth={object.strokeWidth}
-                    style={shouldRenderHighlighter ? { mixBlendMode: "multiply" } : undefined}
-                  />
-                )}
-                {isSelected && activeTool !== "Eraser" && !isActivelyDrawing ? (
-                  <rect
-                    fill="none"
-                    height={Math.max(1, object.height)}
-                    pointerEvents="none"
-                    stroke="#238157"
-                    strokeDasharray="4 4"
-                    width={Math.max(1, object.width)}
-                    x={object.x}
-                    y={object.y}
-                  />
-                ) : null}
-              </g>
-            );
-          })}
-        </svg>
+        <PenStrokeLayer
+          activeDrawingPenId={interaction?.kind === "penDraw" ? interaction.id : null}
+          activeTool={activeTool}
+          activeToolCursor={activeToolCursor}
+          eraserPreviewObjectIds={eraserPreviewObjectIds}
+          penObjects={penObjects}
+          selectedObjectId={selectedObjectId}
+          onContinueObjectErase={continueObjectErase}
+          onStartObjectErase={startObjectErase}
+          onStartPenMove={startPenMove}
+        />
         {laserStrokes.length ? (
           <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
             {laserStrokes.map((stroke) => {
@@ -1732,6 +1962,379 @@ function getBestTargetAnchor(sourceObject: CanvasObject, targetObject: CanvasObj
   }
 
   return dy >= 0 ? "top" : "bottom";
+}
+
+function getConnectorPathResetUpdates(): Partial<CanvasObject> {
+  return {
+    curveControlOffsetX: undefined,
+    curveControlOffsetY: undefined,
+    elbowBendOffsetX: undefined,
+    elbowBendOffsetY: undefined,
+  };
+}
+
+function getConnectorLineMode(object: CanvasObject) {
+  return isConnectedLine(object) && object.connectorLineMode === "double" ? "double" : "single";
+}
+
+function getSecondLineStrokeColor(object: CanvasObject) {
+  return object.secondLineStrokeColor ?? object.strokeColor;
+}
+
+function getSecondLineStrokeWidth(object: CanvasObject) {
+  return object.secondLineStrokeWidth ?? object.strokeWidth;
+}
+
+function getSecondLineStrokeStyle(object: CanvasObject) {
+  return object.secondLineStrokeStyle ?? object.strokeStyle ?? defaultCanvasStyle.strokeStyle;
+}
+
+function getSecondLineArrowDirection(object: CanvasObject) {
+  if (
+    object.secondLineArrowDirection === "none" ||
+    object.secondLineArrowDirection === "forward" ||
+    object.secondLineArrowDirection === "backward" ||
+    object.secondLineArrowDirection === "both"
+  ) {
+    return object.secondLineArrowDirection;
+  }
+
+  return "backward";
+}
+
+function getSecondLineStrokeDashArray(object: CanvasObject) {
+  return getStrokeDashArray({
+    ...object,
+    strokeStyle: getSecondLineStrokeStyle(object),
+    strokeWidth: getSecondLineStrokeWidth(object),
+  });
+}
+
+function getDoubleLinePathData(
+  object: CanvasObject & {
+    sourceAnchor: CanvasConnectorAnchor;
+    targetAnchor: CanvasConnectorAnchor;
+  },
+  points: { x1: number; x2: number; y1: number; y2: number },
+  side: 1 | -1,
+  firstLineStrokeWidth: number,
+  secondLineStrokeWidth: number,
+) {
+  const offsetDistance = getDoubleLineOffsetDistance(firstLineStrokeWidth, secondLineStrokeWidth);
+  const connectorStyle = getConnectorStyle(object);
+
+  if (connectorStyle === "curve") {
+    return getDoubleCurvePathData(object, points, side, offsetDistance);
+  }
+
+  if (connectorStyle === "elbow") {
+    return getDoubleElbowPathData(object, points, side, offsetDistance);
+  }
+
+  const offset = getStraightDoubleLineNormal(points, offsetDistance * side);
+  const sourcePoint = getEndpointSeparatedPoint(
+    { x: points.x1, y: points.y1 },
+    object.sourceAnchor,
+    offset,
+    offsetDistance,
+    side,
+  );
+  const targetPoint = getEndpointSeparatedPoint(
+    { x: points.x2, y: points.y2 },
+    object.targetAnchor,
+    offset,
+    offsetDistance,
+    side,
+  );
+
+  return `M ${sourcePoint.x} ${sourcePoint.y} L ${targetPoint.x} ${targetPoint.y}`;
+}
+
+function getDoubleCurvePathData(
+  object: CanvasObject & {
+    sourceAnchor: CanvasConnectorAnchor;
+    targetAnchor: CanvasConnectorAnchor;
+  },
+  points: { x1: number; x2: number; y1: number; y2: number },
+  side: 1 | -1,
+  offsetDistance: number,
+) {
+  const centerControlPoint = getCurveConnectorControlPoint(points, object);
+  const controlPoint = {
+    x: centerControlPoint.x,
+    y: centerControlPoint.y,
+  };
+  const samplePoints = getOffsetQuadraticCurvePoints(
+    { x: points.x1, y: points.y1 },
+    controlPoint,
+    { x: points.x2, y: points.y2 },
+    offsetDistance * side,
+  );
+
+  return getPointPathData(samplePoints);
+}
+
+function getDoubleElbowPathData(
+  object: CanvasObject & {
+    sourceAnchor: CanvasConnectorAnchor;
+    targetAnchor: CanvasConnectorAnchor;
+  },
+  points: { x1: number; x2: number; y1: number; y2: number },
+  side: 1 | -1,
+  offsetDistance: number,
+) {
+  const routePoints = getElbowConnectorPoints(points, object);
+  const offsetPoints = getOffsetPolylinePoints(routePoints, offsetDistance * side);
+
+  if (offsetPoints.length < 2) {
+    return `M ${points.x1} ${points.y1} L ${points.x2} ${points.y2}`;
+  }
+
+  return offsetPoints.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+}
+
+function getDoubleLineOffsetDistance(firstLineStrokeWidth: number, secondLineStrokeWidth: number) {
+  return Math.max(8, (firstLineStrokeWidth + secondLineStrokeWidth) / 2 + 5);
+}
+
+function getStraightDoubleLineNormal(
+  points: { x1: number; x2: number; y1: number; y2: number },
+  distance: number,
+) {
+  const dx = points.x2 - points.x1;
+  const dy = points.y2 - points.y1;
+  const length = Math.hypot(dx, dy);
+
+  if (length < 0.001) {
+    return { x: 0, y: 0 };
+  }
+
+  return {
+    x: (-dy / length) * distance,
+    y: (dx / length) * distance,
+  };
+}
+
+function getEndpointSeparatedPoint(
+  point: { x: number; y: number },
+  anchor: CanvasConnectorAnchor,
+  preferredOffset: { x: number; y: number },
+  distance: number,
+  side: 1 | -1,
+) {
+  const tangent = getAnchorTangent(anchor);
+  const projectedDistance = preferredOffset.x * tangent.x + preferredOffset.y * tangent.y;
+  const direction = Math.abs(projectedDistance) > 0.5 ? Math.sign(projectedDistance) : side;
+
+  return {
+    x: point.x + tangent.x * distance * direction,
+    y: point.y + tangent.y * distance * direction,
+  };
+}
+
+function getAnchorTangent(anchor: CanvasConnectorAnchor) {
+  if (anchor === "top" || anchor === "bottom") {
+    return { x: 1, y: 0 };
+  }
+
+  return { x: 0, y: 1 };
+}
+
+function getOffsetQuadraticCurvePoints(
+  start: { x: number; y: number },
+  control: { x: number; y: number },
+  end: { x: number; y: number },
+  distance: number,
+) {
+  const sampleCount = 28;
+  const fallbackTangent = {
+    x: end.x - start.x,
+    y: end.y - start.y,
+  };
+
+  return Array.from({ length: sampleCount + 1 }, (_, index) => {
+    const t = index / sampleCount;
+    const point = getQuadraticCurvePoint(start, control, end, t);
+    const tangent = getQuadraticCurveTangent(start, control, end, t, fallbackTangent);
+    const tangentLength = Math.hypot(tangent.x, tangent.y);
+
+    if (tangentLength < 0.001) {
+      return point;
+    }
+
+    return {
+      x: point.x + (-tangent.y / tangentLength) * distance,
+      y: point.y + (tangent.x / tangentLength) * distance,
+    };
+  });
+}
+
+function getQuadraticCurvePoint(
+  start: { x: number; y: number },
+  control: { x: number; y: number },
+  end: { x: number; y: number },
+  t: number,
+) {
+  const oneMinusT = 1 - t;
+
+  return {
+    x: oneMinusT * oneMinusT * start.x + 2 * oneMinusT * t * control.x + t * t * end.x,
+    y: oneMinusT * oneMinusT * start.y + 2 * oneMinusT * t * control.y + t * t * end.y,
+  };
+}
+
+function getQuadraticCurveTangent(
+  start: { x: number; y: number },
+  control: { x: number; y: number },
+  end: { x: number; y: number },
+  t: number,
+  fallbackTangent: { x: number; y: number },
+) {
+  const oneMinusT = 1 - t;
+  const tangent = {
+    x: 2 * oneMinusT * (control.x - start.x) + 2 * t * (end.x - control.x),
+    y: 2 * oneMinusT * (control.y - start.y) + 2 * t * (end.y - control.y),
+  };
+
+  return Math.hypot(tangent.x, tangent.y) < 0.001 ? fallbackTangent : tangent;
+}
+
+function getPointPathData(points: Array<{ x: number; y: number }>) {
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+}
+
+function getOffsetPolylinePoints(points: Array<{ x: number; y: number }>, distance: number) {
+  const offsetSegments = points
+    .slice(0, -1)
+    .map((point, index) => getOffsetSegment(point, points[index + 1], distance))
+    .filter((segment): segment is NonNullable<typeof segment> => Boolean(segment));
+
+  if (!offsetSegments.length) {
+    return [];
+  }
+
+  return offsetSegments.map((segment, index) => {
+    if (index === 0) {
+      return segment.start;
+    }
+
+    const previousSegment = offsetSegments[index - 1];
+    return getLineIntersection(previousSegment.start, previousSegment.end, segment.start, segment.end) ?? {
+      x: (previousSegment.end.x + segment.start.x) / 2,
+      y: (previousSegment.end.y + segment.start.y) / 2,
+    };
+  }).concat(offsetSegments[offsetSegments.length - 1].end);
+}
+
+function getOffsetSegment(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  distance: number,
+) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+
+  if (length < 0.001) {
+    return null;
+  }
+
+  const offset = {
+    x: (-dy / length) * distance,
+    y: (dx / length) * distance,
+  };
+
+  return {
+    end: { x: end.x + offset.x, y: end.y + offset.y },
+    start: { x: start.x + offset.x, y: start.y + offset.y },
+  };
+}
+
+function getLineIntersection(
+  lineAStart: { x: number; y: number },
+  lineAEnd: { x: number; y: number },
+  lineBStart: { x: number; y: number },
+  lineBEnd: { x: number; y: number },
+) {
+  const aDx = lineAEnd.x - lineAStart.x;
+  const aDy = lineAEnd.y - lineAStart.y;
+  const bDx = lineBEnd.x - lineBStart.x;
+  const bDy = lineBEnd.y - lineBStart.y;
+  const denominator = aDx * bDy - aDy * bDx;
+
+  if (Math.abs(denominator) < 0.001) {
+    return null;
+  }
+
+  const t = ((lineBStart.x - lineAStart.x) * bDy - (lineBStart.y - lineAStart.y) * bDx) / denominator;
+
+  return {
+    x: lineAStart.x + t * aDx,
+    y: lineAStart.y + t * aDy,
+  };
+}
+
+function getAnchorTargetForPointer(
+  pointer: { x: number; y: number },
+  object: CanvasObject,
+): CanvasConnectorAnchor | null {
+  if (!isFlowchartShape(object)) {
+    return null;
+  }
+
+  const anchors: CanvasConnectorAnchor[] = ["top", "right", "bottom", "left"];
+  const anchorHitRadius = 24;
+  const closestAnchor = anchors.reduce(
+    (closest, anchor) => {
+      const anchorPoint = getConnectorAnchorPoint(object, anchor);
+      const distance = Math.hypot(pointer.x - anchorPoint.x, pointer.y - anchorPoint.y);
+
+      return distance < closest.distance ? { anchor, distance } : closest;
+    },
+    { anchor: "top" as CanvasConnectorAnchor, distance: Number.POSITIVE_INFINITY },
+  );
+
+  if (closestAnchor.distance <= anchorHitRadius) {
+    return closestAnchor.anchor;
+  }
+
+  if (!isPointInsideFlowchartShape(pointer, object)) {
+    return null;
+  }
+
+  return closestAnchor.anchor;
+}
+
+function isPointInsideFlowchartShape(pointer: { x: number; y: number }, object: CanvasObject) {
+  if (!isFlowchartShape(object)) {
+    return false;
+  }
+
+  const centerX = object.x + object.width / 2;
+  const centerY = object.y + object.height / 2;
+  const dx = pointer.x - centerX;
+  const dy = pointer.y - centerY;
+
+  if (object.type === "circle") {
+    const radiusX = Math.max(object.width / 2, 1);
+    const radiusY = Math.max(object.height / 2, 1);
+
+    return (dx * dx) / (radiusX * radiusX) + (dy * dy) / (radiusY * radiusY) <= 1;
+  }
+
+  if (object.type === "diamond") {
+    const radiusX = Math.max(object.width / 2, 1);
+    const radiusY = Math.max(object.height / 2, 1);
+
+    return Math.abs(dx) / radiusX + Math.abs(dy) / radiusY <= 1;
+  }
+
+  return (
+    pointer.x >= object.x &&
+    pointer.x <= object.x + object.width &&
+    pointer.y >= object.y &&
+    pointer.y <= object.y + object.height
+  );
 }
 
 function ConnectorLabel({

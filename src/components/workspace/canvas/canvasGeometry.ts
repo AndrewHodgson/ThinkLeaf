@@ -134,8 +134,12 @@ export function getArrowDirection(object: CanvasObject): CanvasConnectorArrowDir
   return object.type === "arrow" ? "forward" : "none";
 }
 
-export function getLineRenderSegments(object: CanvasObject, objects: CanvasObject[]) {
-  const points = getLineRenderPoints(object, objects);
+export function getLineRenderSegments(
+  object: CanvasObject,
+  objects: CanvasObject[],
+  overridePoints?: { x1: number; x2: number; y1: number; y2: number },
+) {
+  const points = overridePoints ?? getLineRenderPoints(object, objects);
   const connectorStyle = getConnectorStyle(object);
 
   if (!isConnectedLine(object)) {
@@ -148,7 +152,7 @@ export function getLineRenderSegments(object: CanvasObject, objects: CanvasObjec
   }
 
   if (connectorStyle === "curve") {
-    const pathData = getCurveConnectorPath(points, object.sourceAnchor, object.targetAnchor);
+    const pathData = getCurveConnectorPath(points, object);
 
     return {
       pathData,
@@ -159,7 +163,7 @@ export function getLineRenderSegments(object: CanvasObject, objects: CanvasObjec
   }
 
   if (connectorStyle === "elbow") {
-    const routePoints = getElbowConnectorPoints(points, object.sourceAnchor, object.targetAnchor);
+    const routePoints = getElbowConnectorPoints(points, object);
     const pathData = routePoints
       .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
       .join(" ");
@@ -184,7 +188,7 @@ export function getLineLabelPoint(object: CanvasObject, objects: CanvasObject[])
   const points = getLineRenderPoints(object, objects);
 
   if (isConnectedLine(object) && getConnectorStyle(object) === "elbow") {
-    const routePoints = getElbowConnectorPoints(points, object.sourceAnchor, object.targetAnchor);
+    const routePoints = getElbowConnectorPoints(points, object);
     const middleIndex = Math.floor(routePoints.length / 2);
     const previousPoint = routePoints[Math.max(0, middleIndex - 1)];
     const nextPoint = routePoints[middleIndex] ?? previousPoint;
@@ -195,20 +199,31 @@ export function getLineLabelPoint(object: CanvasObject, objects: CanvasObject[])
     };
   }
 
+  if (isConnectedLine(object) && getConnectorStyle(object) === "curve") {
+    const controlPoint = getCurveConnectorControlPoint(points, object);
+
+    return {
+      x: (points.x1 + 2 * controlPoint.x + points.x2) / 4,
+      y: (points.y1 + 2 * controlPoint.y + points.y2) / 4,
+    };
+  }
+
   return {
     x: points.x1 + (points.x2 - points.x1) / 2,
     y: points.y1 + (points.y2 - points.y1) / 2,
   };
 }
 
-function getElbowConnectorPoints(
+export function getElbowConnectorPoints(
   points: { x1: number; x2: number; y1: number; y2: number },
-  sourceAnchor: CanvasConnectorAnchor,
-  targetAnchor: CanvasConnectorAnchor,
+  object: CanvasObject & {
+    sourceAnchor: CanvasConnectorAnchor;
+    targetAnchor: CanvasConnectorAnchor;
+  },
 ) {
   const exitDistance = 36;
-  const sourceNormal = getAnchorNormal(sourceAnchor);
-  const targetNormal = getAnchorNormal(targetAnchor);
+  const sourceNormal = getAnchorNormal(object.sourceAnchor);
+  const targetNormal = getAnchorNormal(object.targetAnchor);
   const start = { x: points.x1, y: points.y1 };
   const end = { x: points.x2, y: points.y2 };
   const sourceExit = {
@@ -223,29 +238,51 @@ function getElbowConnectorPoints(
   const isTargetHorizontal = targetNormal.x !== 0;
 
   if (isSourceHorizontal && isTargetHorizontal) {
-    const midX = sourceExit.x + (targetEntry.x - sourceExit.x) / 2;
+    const midX = sourceExit.x + (targetEntry.x - sourceExit.x) / 2 + (object.elbowBendOffsetX ?? 0);
     return [start, sourceExit, { x: midX, y: sourceExit.y }, { x: midX, y: targetEntry.y }, targetEntry, end];
   }
 
   if (!isSourceHorizontal && !isTargetHorizontal) {
-    const midY = sourceExit.y + (targetEntry.y - sourceExit.y) / 2;
+    const midY = sourceExit.y + (targetEntry.y - sourceExit.y) / 2 + (object.elbowBendOffsetY ?? 0);
     return [start, sourceExit, { x: sourceExit.x, y: midY }, { x: targetEntry.x, y: midY }, targetEntry, end];
   }
 
   const corner = isSourceHorizontal
-    ? { x: targetEntry.x, y: sourceExit.y }
-    : { x: sourceExit.x, y: targetEntry.y };
+    ? { x: targetEntry.x + (object.elbowBendOffsetX ?? 0), y: sourceExit.y }
+    : { x: sourceExit.x, y: targetEntry.y + (object.elbowBendOffsetY ?? 0) };
 
   return [start, sourceExit, corner, targetEntry, end];
 }
 
-function getCurveConnectorPath(
+export function getElbowConnectorControlPoints(
   points: { x1: number; x2: number; y1: number; y2: number },
-  sourceAnchor: CanvasConnectorAnchor,
-  targetAnchor: CanvasConnectorAnchor,
+  object: CanvasObject & {
+    sourceAnchor: CanvasConnectorAnchor;
+    targetAnchor: CanvasConnectorAnchor;
+  },
 ) {
-  const sourceNormal = getAnchorNormal(sourceAnchor);
-  const targetNormal = getAnchorNormal(targetAnchor);
+  const sourceNormal = getAnchorNormal(object.sourceAnchor);
+  const targetNormal = getAnchorNormal(object.targetAnchor);
+  const isSourceHorizontal = sourceNormal.x !== 0;
+  const isTargetHorizontal = targetNormal.x !== 0;
+  const routePoints = getElbowConnectorPoints(points, object);
+
+  if (isSourceHorizontal === isTargetHorizontal) {
+    return routePoints.slice(2, 4);
+  }
+
+  return [routePoints[2]];
+}
+
+export function getCurveConnectorControlPoint(
+  points: { x1: number; x2: number; y1: number; y2: number },
+  object: CanvasObject & {
+    sourceAnchor: CanvasConnectorAnchor;
+    targetAnchor: CanvasConnectorAnchor;
+  },
+) {
+  const sourceNormal = getAnchorNormal(object.sourceAnchor);
+  const targetNormal = getAnchorNormal(object.targetAnchor);
   const dx = points.x2 - points.x1;
   const dy = points.y2 - points.y1;
   const controlDistance = Math.min(240, Math.max(72, Math.hypot(dx, dy) * 0.45));
@@ -257,8 +294,27 @@ function getCurveConnectorPath(
     x: points.x2 + targetNormal.x * controlDistance,
     y: points.y2 + targetNormal.y * controlDistance,
   };
+  const defaultControl = {
+    x: (points.x1 + 3 * c1.x + 3 * c2.x + points.x2) / 8,
+    y: (points.y1 + 3 * c1.y + 3 * c2.y + points.y2) / 8,
+  };
 
-  return `M ${points.x1} ${points.y1} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${points.x2} ${points.y2}`;
+  return {
+    x: defaultControl.x + (object.curveControlOffsetX ?? 0),
+    y: defaultControl.y + (object.curveControlOffsetY ?? 0),
+  };
+}
+
+function getCurveConnectorPath(
+  points: { x1: number; x2: number; y1: number; y2: number },
+  object: CanvasObject & {
+    sourceAnchor: CanvasConnectorAnchor;
+    targetAnchor: CanvasConnectorAnchor;
+  },
+) {
+  const controlPoint = getCurveConnectorControlPoint(points, object);
+
+  return `M ${points.x1} ${points.y1} Q ${controlPoint.x} ${controlPoint.y} ${points.x2} ${points.y2}`;
 }
 
 function getAnchorNormal(anchor: CanvasConnectorAnchor) {
@@ -357,7 +413,7 @@ export function removeObjectsAndConnectedLines(objects: CanvasObject[], objectId
   });
 }
 
-function isConnectedLine(object: CanvasObject): object is CanvasObject & {
+export function isConnectedLine(object: CanvasObject): object is CanvasObject & {
   sourceAnchor: CanvasConnectorAnchor;
   sourceObjectId: string;
   targetAnchor: CanvasConnectorAnchor;

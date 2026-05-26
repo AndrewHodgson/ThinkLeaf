@@ -67,6 +67,7 @@ export type CanvasStrokeStyle = "solid" | "dashed" | "dotted";
 export type CanvasConnectorAnchor = "top" | "right" | "bottom" | "left";
 export type CanvasConnectorStyle = "straight" | "elbow" | "curve";
 export type CanvasConnectorArrowDirection = "none" | "forward" | "backward" | "both";
+export type CanvasConnectorLineMode = "single" | "double";
 export type CanvasConnectorStart = {
   sourceAnchor: CanvasConnectorAnchor;
   sourceObjectId: string;
@@ -86,7 +87,6 @@ export type CanvasPenSettings = {
   laserColor: string;
   laserFadeDuration: CanvasLaserFadeDuration;
   mode: CanvasPenMode;
-  smoothing: CanvasPenSmoothing;
   strokeColor: string;
   strokeWidth: number;
 };
@@ -138,6 +138,15 @@ export type CanvasObject = {
   targetAnchor?: CanvasConnectorAnchor;
   connectorStyle?: CanvasConnectorStyle;
   arrowDirection?: CanvasConnectorArrowDirection;
+  connectorLineMode?: CanvasConnectorLineMode;
+  secondLineArrowDirection?: CanvasConnectorArrowDirection;
+  secondLineStrokeColor?: string;
+  secondLineStrokeStyle?: CanvasStrokeStyle;
+  secondLineStrokeWidth?: number;
+  curveControlOffsetX?: number;
+  curveControlOffsetY?: number;
+  elbowBendOffsetX?: number;
+  elbowBendOffsetY?: number;
   createdAt: string;
   updatedAt: string;
 };

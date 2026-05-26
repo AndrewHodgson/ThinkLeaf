@@ -130,6 +130,10 @@
 - Canvas creation defaults persist per tool in localStorage and apply to newly created shapes, lines, arrows, and text boxes
 - Selected canvas object controls take priority over active creation-tool defaults
 - CanvasLayer maintainability split extracted pen/highlighter/ink rendering helpers, laser rendering helpers, eraser hit-testing helpers, geometry helpers, interaction types, and canvas object view components
+- Pen stroke SVG rendering extracted from CanvasLayer into a focused PenStrokeLayer component
+- Pen smoothing controls and current Pen settings removed while preserving safe loading for legacy saved smoothing data
+- Pen and Highlighter rendering now follow raw captured pointer paths
+- Ink rendering now preserves the raw centerline while using a smooth filled variable-width outline with speed-responsive width variation
 - Canvas-to-document focus handoff fixed so clicking into the page clears object selection and restores the document toolbar
 - Top toolbar polished so document formatting stays on row 1 and table/object/image tools appear on row 2
 - Explicit toolbar formatting target added for document, whiteboard text, and no active text target

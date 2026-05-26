@@ -238,11 +238,20 @@ export function Workspace({
       (selectedObject.type === "line" || selectedObject.type === "arrow") &&
       Boolean(selectedObject.sourceObjectId && selectedObject.targetObjectId) &&
       ("sourceAnchor" in updates || "targetAnchor" in updates);
+    const nextUpdates = shouldSyncConnectors
+      ? {
+          ...updates,
+          curveControlOffsetX: undefined,
+          curveControlOffsetY: undefined,
+          elbowBendOffsetX: undefined,
+          elbowBendOffsetY: undefined,
+        }
+      : updates;
     const nextObjects = page.canvasObjects.map((object) =>
         object.id === selectedObject.id
           ? {
               ...object,
-              ...updates,
+              ...nextUpdates,
             }
           : object,
       );
