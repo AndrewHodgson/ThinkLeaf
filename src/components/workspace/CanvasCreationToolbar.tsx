@@ -25,6 +25,7 @@ import {
   Pencil,
   ZoomIn,
   ZoomOut,
+  Trash2,
   Undo2,
 } from "lucide-react";
 import type { CanvasShapeType, CanvasTool } from "@/types/workspace";
@@ -57,6 +58,7 @@ type CanvasCreationToolbarProps = {
   onImageUploadClick: () => void;
   onExportBackup: () => void;
   onImportBackup: () => void;
+  onResetWorkspace: () => void;
   onRedoCanvas: () => void;
   onResetView: () => void;
   onToggleGrid: () => void;
@@ -81,6 +83,7 @@ export function CanvasCreationToolbar({
   onImageUploadClick,
   onExportBackup,
   onImportBackup,
+  onResetWorkspace,
   onRedoCanvas,
   onResetView,
   onToggleGrid,
@@ -98,6 +101,7 @@ export function CanvasCreationToolbar({
   const [isShapeMenuOpen, setIsShapeMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isBetaOpen, setIsBetaOpen] = useState(false);
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const activeShapeOption = shapeOptions.find((option) => option.value === activeShapeType) ?? shapeOptions[0];
   const ActiveShapeIcon = activeShapeOption.icon;
 
@@ -151,12 +155,61 @@ export function CanvasCreationToolbar({
   }
 
   return (
-    <div
-      data-pan-block="true"
-      data-wheel-block="true"
-      className="pointer-events-auto absolute bottom-5 left-1/2 z-20 -translate-x-1/2 rounded-full border border-slate-200 bg-white/95 px-2 py-2 shadow-soft backdrop-blur"
-      onPointerDown={(event) => event.stopPropagation()}
-    >
+    <>
+      {isResetConfirmOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onPointerDown={() => setIsResetConfirmOpen(false)}
+        >
+          <div
+            className="mx-4 w-full max-w-sm rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold text-slate-800">Reset Beta Workspace?</h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              This will permanently delete all projects, folders, pages, notes, and canvas objects stored in this
+              browser. This cannot be undone.
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-slate-600">
+              Download a backup first to save a copy of your current work.
+            </p>
+            <button
+              className="mt-3 flex items-center gap-1.5 text-sm text-leaf-600 hover:text-leaf-800 hover:underline"
+              type="button"
+              onClick={onExportBackup}
+            >
+              <Download aria-hidden="true" className="h-3.5 w-3.5" />
+              Download Backup
+            </button>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="rounded-md border border-slate-200 px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-50"
+                type="button"
+                onClick={() => setIsResetConfirmOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700"
+                type="button"
+                onClick={() => {
+                  onResetWorkspace();
+                  setIsResetConfirmOpen(false);
+                  setIsBetaOpen(false);
+                }}
+              >
+                Reset Workspace
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <div
+        data-pan-block="true"
+        data-wheel-block="true"
+        className="pointer-events-auto absolute bottom-5 left-1/2 z-20 -translate-x-1/2 rounded-full border border-slate-200 bg-white/95 px-2 py-2 shadow-soft backdrop-blur"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
       <div className="flex items-center gap-1.5">
         {tools.slice(0, 2).map((tool) => {
           const Icon = tool.icon;
@@ -475,6 +528,16 @@ export function CanvasCreationToolbar({
                 </button>
               </div>
               <div className="border-t border-slate-100 pt-2">
+                <button
+                  className="flex h-9 w-full items-center gap-2 rounded px-2 text-left text-red-600 transition hover:bg-red-50"
+                  type="button"
+                  onClick={() => setIsResetConfirmOpen(true)}
+                >
+                  <Trash2 aria-hidden="true" className="h-4 w-4" />
+                  Reset Beta Workspace
+                </button>
+              </div>
+              <div className="border-t border-slate-100 pt-2">
                 <a
                   className="flex h-9 w-full items-center gap-2 rounded px-2 text-left text-slate-600 transition hover:bg-slate-50"
                   href="mailto:theycallmehodg@gmail.com?subject=ThinkLeaf%20Beta%20Feedback"
@@ -489,6 +552,7 @@ export function CanvasCreationToolbar({
         </div>
       </div>
     </div>
+    </>
   );
 }
 

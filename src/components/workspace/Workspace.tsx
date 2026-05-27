@@ -76,6 +76,7 @@ type WorkspaceProps = {
   onDeletePage: (pageId: string) => void;
   onExportBackup: () => void;
   onImportBackup: () => void;
+  onResetWorkspace: () => void;
   onPenSettingsChange: Dispatch<SetStateAction<CanvasPenSettings>>;
   onRedoCanvas: () => void;
   onResetView: () => void;
@@ -119,6 +120,7 @@ export function Workspace({
   onDeletePage,
   onExportBackup,
   onImportBackup,
+  onResetWorkspace,
   onPenSettingsChange,
   onRedoCanvas,
   onResetView,
@@ -802,6 +804,7 @@ export function Workspace({
         onToggleSnapToGrid={onToggleSnapToGrid}
         onExportBackup={onExportBackup}
         onImportBackup={onImportBackup}
+        onResetWorkspace={onResetWorkspace}
         onToolChange={onToolChange}
         onShapeTypeChange={onShapeTypeChange}
         onUndoCanvas={onUndoCanvas}

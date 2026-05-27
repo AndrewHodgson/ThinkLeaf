@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { sampleWorkspace } from "@/lib/sampleWorkspace";
+import { createBetaResetWorkspace, sampleWorkspace } from "@/lib/sampleWorkspace";
 import { createDefaultCanvasViewState, defaultCanvasStyle, defaultPenSettings } from "@/lib/canvasStyle";
 import { safeSetLocalStorage } from "@/lib/storage";
 import { createId, defaultProfileId, defaultProfileName, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
@@ -1121,6 +1121,13 @@ export function useWorkspace() {
     setCorruptedStorageKey(null);
   }
 
+  function resetWorkspace() {
+    const next = createBetaResetWorkspace();
+    safeSetLocalStorage(STORAGE_KEY, JSON.stringify(next));
+    setData(next);
+    setActivePageId(next.pages[0]?.id ?? "");
+  }
+
   return {
     data,
     activeProfile,
@@ -1153,5 +1160,6 @@ export function useWorkspace() {
     deletePage,
     importWorkspaceData,
     clearCorruptedData,
+    resetWorkspace,
   };
 }

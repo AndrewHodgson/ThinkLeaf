@@ -1,6 +1,6 @@
 import type { WorkspaceData } from "@/types/workspace";
 import { createDefaultCanvasViewState } from "@/lib/canvasStyle";
-import { defaultProfileId, defaultProfileName } from "@/lib/workspaceUtils";
+import { createId, defaultProfileId, defaultProfileName, timestamp } from "@/lib/workspaceUtils";
 
 const now = "2026-05-21T12:00:00.000Z";
 
@@ -53,3 +53,35 @@ export const sampleWorkspace: WorkspaceData = {
   ],
   recentPageIds: ["page-planning-meeting"],
 };
+
+export function createBetaResetWorkspace(): WorkspaceData {
+  const now = timestamp();
+  const projectId = createId("project");
+  const folderId = createId("folder");
+  const pageId = createId("page");
+
+  return {
+    profiles: [{ id: defaultProfileId, name: defaultProfileName, createdAt: now, updatedAt: now }],
+    activeProfileId: defaultProfileId,
+    projects: [{ id: projectId, profileId: defaultProfileId, name: "Test Project", createdAt: now, updatedAt: now }],
+    folders: [{ id: folderId, profileId: defaultProfileId, projectId, name: "Test Folder", createdAt: now, updatedAt: now }],
+    pages: [
+      {
+        id: pageId,
+        profileId: defaultProfileId,
+        projectId,
+        folderId,
+        title: "Test Page",
+        body: "",
+        noteDate: now.slice(0, 10),
+        canvasViewState: createDefaultCanvasViewState(),
+        canvasObjects: [],
+        tags: [],
+        isFavorite: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    recentPageIds: [pageId],
+  };
+}

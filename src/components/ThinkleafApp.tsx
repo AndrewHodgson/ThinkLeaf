@@ -444,6 +444,13 @@ export function ThinkleafApp() {
     exportWorkspaceBackup(workspace.data);
   }
 
+  function resetBetaWorkspace() {
+    workspace.resetWorkspace();
+    setCanvasHistoryByPage({});
+    recordedCanvasHistoryKeysRef.current = new Set();
+    imageAssetsByPageRef.current = {};
+  }
+
   function downloadCorruptedWorkspace() {
     try {
       // Try the stashed copy first, fall back to the main key (autosave is gated
@@ -652,6 +659,7 @@ export function ThinkleafApp() {
           onUndoCanvas={undoCanvas}
           onExportBackup={exportBackupFile}
           onImportBackup={requestImportBackupFile}
+          onResetWorkspace={resetBetaWorkspace}
           onUpdateCanvasObjects={updateCanvasObjects}
           onUpdatePage={workspace.updatePage}
           onSelectionChange={setSelectedObjectId}
