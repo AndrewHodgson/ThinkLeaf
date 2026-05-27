@@ -942,7 +942,7 @@ function getBreadcrumbPath(data: WorkspaceData, page: Page) {
   const foldersById = new Map(data.folders.map((item) => [item.id, item]));
   const folderNames: string[] = [];
   const visitedFolderIds = new Set<string>();
-  let folder = foldersById.get(page.folderId);
+  let folder = page.folderId ? foldersById.get(page.folderId) : undefined;
 
   while (folder && !visitedFolderIds.has(folder.id)) {
     folderNames.unshift(folder.name);

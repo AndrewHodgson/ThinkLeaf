@@ -1222,6 +1222,7 @@ export function CanvasLayer({
 
       if (object?.type === "textBox") {
         startTextEditing(object.id);
+        onToolChange("Select");
       } else if (
         isFlowchartShape(object) ||
         object?.type === "line" ||

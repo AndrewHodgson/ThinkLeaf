@@ -11,6 +11,7 @@ import {
   HelpCircle,
   Image as ImageIcon,
   Download,
+  Mail,
   Upload,
   Magnet,
   Redo2,
@@ -92,7 +93,11 @@ export function CanvasCreationToolbar({
   onZoomOut,
 }: CanvasCreationToolbarProps) {
   const shapeDropdownRef = useRef<HTMLDivElement>(null);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const betaRef = useRef<HTMLDivElement>(null);
   const [isShapeMenuOpen, setIsShapeMenuOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isBetaOpen, setIsBetaOpen] = useState(false);
   const activeShapeOption = shapeOptions.find((option) => option.value === activeShapeType) ?? shapeOptions[0];
   const ActiveShapeIcon = activeShapeOption.icon;
 
@@ -107,6 +112,35 @@ export function CanvasCreationToolbar({
 
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (!(event.target instanceof globalThis.Node)) {
+        return;
+      }
+      if (!settingsRef.current?.contains(event.target)) {
+        setIsSettingsOpen(false);
+      }
+      if (!betaRef.current?.contains(event.target)) {
+        setIsBetaOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsSettingsOpen(false);
+        setIsBetaOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
 
@@ -330,92 +364,129 @@ export function CanvasCreationToolbar({
         >
           <HelpCircle aria-hidden="true" className="h-4 w-4" />
         </button>
-        <details className="relative">
-          <summary
+        <div ref={settingsRef} className="relative">
+          <button
+            aria-expanded={isSettingsOpen}
             aria-label="Canvas settings"
-            className="inline-flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
             title="Canvas settings"
+            type="button"
+            onClick={() => {
+              setIsSettingsOpen((v) => !v);
+              setIsBetaOpen(false);
+            }}
           >
             <Settings2 aria-hidden="true" className="h-4 w-4" />
-          </summary>
-          <div className="absolute bottom-12 right-0 z-30 w-52 rounded-md border border-slate-200 bg-white p-2 text-sm shadow-soft">
-            <button
-              aria-label={isSnapToGridEnabled ? "Disable snap to grid" : "Enable snap to grid"}
-              className={[
-                "flex h-9 w-full items-center justify-between gap-2 rounded px-2 text-left transition",
-                isSnapToGridEnabled ? "bg-leaf-50 text-leaf-700" : "text-slate-600 hover:bg-slate-50",
-              ].join(" ")}
-              type="button"
-              onClick={onToggleSnapToGrid}
-            >
-              <span className="inline-flex items-center gap-2">
-                <Magnet aria-hidden="true" className="h-4 w-4" />
-                Snap
-              </span>
-              <span className="text-xs font-semibold">{isSnapToGridEnabled ? "On" : "Off"}</span>
-            </button>
-            <button
-              aria-label={isGridVisible ? "Hide grid" : "Show grid"}
-              className={[
-                "mt-1 flex h-9 w-full items-center justify-between gap-2 rounded px-2 text-left transition",
-                isGridVisible ? "bg-leaf-50 text-leaf-700" : "text-slate-600 hover:bg-slate-50",
-              ].join(" ")}
-              type="button"
-              onClick={onToggleGrid}
-            >
-              <span className="inline-flex items-center gap-2">
-                <Grid3X3 aria-hidden="true" className="h-4 w-4" />
-                Grid
-              </span>
-              <span className="text-xs font-semibold">{isGridVisible ? "On" : "Off"}</span>
-            </button>
-            <button
-              aria-label={
-                isFlowchartConnectorArrowEnabled
-                  ? "Disable default flowchart connector arrows"
-                  : "Enable default flowchart connector arrows"
-              }
-              className={[
-                "mt-1 flex h-9 w-full items-center justify-between gap-2 rounded px-2 text-left transition",
-                isFlowchartConnectorArrowEnabled ? "bg-leaf-50 text-leaf-700" : "text-slate-600 hover:bg-slate-50",
-              ].join(" ")}
-              type="button"
-              onClick={onToggleFlowchartConnectorArrow}
-            >
-              <span className="inline-flex items-center gap-2">
-                <ArrowRight aria-hidden="true" className="h-4 w-4" />
-                Flow arrows
-              </span>
-              <span className="text-xs font-semibold">{isFlowchartConnectorArrowEnabled ? "On" : "Off"}</span>
-            </button>
-            <div className="my-2 border-t border-slate-100 pt-2">
-              <div className="px-2 pb-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                Data & Backup
-              </div>
-              <p className="px-2 pb-2 text-[11px] leading-relaxed text-slate-400">
-                Notes are stored locally in this browser only — not synced to the cloud. Anyone with
-                access to this browser may be able to view them. Export a backup to save a copy to
-                your device.
-              </p>
+          </button>
+          {isSettingsOpen ? (
+            <div className="absolute bottom-12 right-0 z-30 w-52 rounded-md border border-slate-200 bg-white p-2 text-sm shadow-soft">
               <button
-                className="flex h-9 w-full items-center gap-2 rounded px-2 text-left text-slate-600 transition hover:bg-slate-50"
+                aria-label={isSnapToGridEnabled ? "Disable snap to grid" : "Enable snap to grid"}
+                className={[
+                  "flex h-9 w-full items-center justify-between gap-2 rounded px-2 text-left transition",
+                  isSnapToGridEnabled ? "bg-leaf-50 text-leaf-700" : "text-slate-600 hover:bg-slate-50",
+                ].join(" ")}
                 type="button"
-                onClick={onExportBackup}
+                onClick={onToggleSnapToGrid}
               >
-                <Download aria-hidden="true" className="h-4 w-4" />
-                Export backup file
+                <span className="inline-flex items-center gap-2">
+                  <Magnet aria-hidden="true" className="h-4 w-4" />
+                  Snap
+                </span>
+                <span className="text-xs font-semibold">{isSnapToGridEnabled ? "On" : "Off"}</span>
               </button>
               <button
-                className="mt-1 flex h-9 w-full items-center gap-2 rounded px-2 text-left text-slate-600 transition hover:bg-slate-50"
+                aria-label={isGridVisible ? "Hide grid" : "Show grid"}
+                className={[
+                  "mt-1 flex h-9 w-full items-center justify-between gap-2 rounded px-2 text-left transition",
+                  isGridVisible ? "bg-leaf-50 text-leaf-700" : "text-slate-600 hover:bg-slate-50",
+                ].join(" ")}
                 type="button"
-                onClick={onImportBackup}
+                onClick={onToggleGrid}
               >
-                <Upload aria-hidden="true" className="h-4 w-4" />
-                Import backup file
+                <span className="inline-flex items-center gap-2">
+                  <Grid3X3 aria-hidden="true" className="h-4 w-4" />
+                  Grid
+                </span>
+                <span className="text-xs font-semibold">{isGridVisible ? "On" : "Off"}</span>
+              </button>
+              <button
+                aria-label={
+                  isFlowchartConnectorArrowEnabled
+                    ? "Disable default flowchart connector arrows"
+                    : "Enable default flowchart connector arrows"
+                }
+                className={[
+                  "mt-1 flex h-9 w-full items-center justify-between gap-2 rounded px-2 text-left transition",
+                  isFlowchartConnectorArrowEnabled ? "bg-leaf-50 text-leaf-700" : "text-slate-600 hover:bg-slate-50",
+                ].join(" ")}
+                type="button"
+                onClick={onToggleFlowchartConnectorArrow}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <ArrowRight aria-hidden="true" className="h-4 w-4" />
+                  Flow arrows
+                </span>
+                <span className="text-xs font-semibold">{isFlowchartConnectorArrowEnabled ? "On" : "Off"}</span>
               </button>
             </div>
-          </div>
-        </details>
+          ) : null}
+        </div>
+        <div ref={betaRef} className="relative">
+          <button
+            aria-expanded={isBetaOpen}
+            aria-label="Beta info and tools"
+            className="inline-flex h-9 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-500 transition hover:border-slate-300 hover:bg-slate-50"
+            title="Beta info and tools"
+            type="button"
+            onClick={() => {
+              setIsBetaOpen((v) => !v);
+              setIsSettingsOpen(false);
+            }}
+          >
+            Beta
+          </button>
+          {isBetaOpen ? (
+            <div className="absolute bottom-12 right-0 z-30 w-56 rounded-md border border-slate-200 bg-white p-2 text-sm shadow-soft">
+              <div className="px-2 pb-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                Desktop Beta
+              </div>
+              <p className="px-2 pb-2 text-[11px] leading-relaxed text-slate-400">
+                Notes are stored locally in this browser only — not synced to the cloud. Download a
+                backup regularly to keep a copy on your device. Clearing browser data may remove your
+                notes.
+              </p>
+              <div className="border-t border-slate-100 pt-2">
+                <button
+                  className="flex h-9 w-full items-center gap-2 rounded px-2 text-left text-slate-600 transition hover:bg-slate-50"
+                  type="button"
+                  onClick={onExportBackup}
+                >
+                  <Download aria-hidden="true" className="h-4 w-4" />
+                  Download Backup
+                </button>
+                <button
+                  className="mt-1 flex h-9 w-full items-center gap-2 rounded px-2 text-left text-slate-600 transition hover:bg-slate-50"
+                  type="button"
+                  onClick={onImportBackup}
+                >
+                  <Upload aria-hidden="true" className="h-4 w-4" />
+                  Restore Backup
+                </button>
+              </div>
+              <div className="border-t border-slate-100 pt-2">
+                <a
+                  className="flex h-9 w-full items-center gap-2 rounded px-2 text-left text-slate-600 transition hover:bg-slate-50"
+                  href="mailto:theycallmehodg@gmail.com?subject=ThinkLeaf%20Beta%20Feedback"
+                >
+                  <Mail aria-hidden="true" className="h-4 w-4" />
+                  Send Feedback
+                </a>
+              </div>
+              <p className="px-2 pb-1 pt-2 text-[11px] text-slate-400">ThinkLeaf Beta v0.1</p>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );

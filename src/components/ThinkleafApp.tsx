@@ -609,6 +609,8 @@ export function ThinkleafApp() {
         onDeletePage={workspace.deletePage}
         onDeleteFolder={workspace.deleteFolder}
         onDeleteProject={workspace.deleteProject}
+        onMovePage={workspace.movePage}
+        onMoveFolder={workspace.moveFolder}
         onDuplicateFolder={workspace.duplicateFolder}
         onDuplicatePage={workspace.duplicatePage}
         onDuplicateProject={workspace.duplicateProject}

@@ -106,12 +106,34 @@ The following beta-readiness issues have been addressed since the last maintaina
 - **Error Boundary**: `src/components/ErrorBoundary.tsx` wraps the full app tree; render crashes show a clean fallback with Download Backup and Reload buttons. See `codex-notes/error-boundary.md`.
 - **Corrupted storage recovery**: if `thinkleaf.workspace.v1` fails JSON parsing or shape validation, the raw value is preserved under a timestamped key, autosave is gated, and the user sees a recovery screen with a Download and Start Fresh option. See `codex-notes/corrupted-storage-recovery.md`.
 - **Undo history memory**: `imageDataUrl` is now stripped from undo/redo history snapshots; a per-page image asset registry (React ref) re-injects data on restore. History entries no longer pin image strings in memory beyond their use lifetime. History remains session-only (never persisted to localStorage). See `codex-notes/undo-history-memory.md`.
-- **Data storage disclosure**: A plain-language note explaining local-only storage, no cloud sync, and browser-access risk was added to the Settings menu's "Data & Backup" section. No encryption or backend added — beta scope is disclosure only.
+- **Beta panel**: A dedicated "Beta" pill button sits to the right of Settings in the bottom toolbar. It opens a separate dropdown containing: beta/local-storage disclosure text (desktop beta, local-only, no cloud sync, clear-browser warning), Download Backup, Restore Backup, Send Feedback mailto link (theycallmehodg@gmail.com, subject pre-filled), and "ThinkLeaf Beta v0.1" version label. Settings is left with only its three canvas controls (Snap, Grid, Flow arrows). The Beta panel is self-contained and easy to remove post-beta. See `codex-notes/beta-panel.md`.
 - **Security headers**: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy` added to `next.config.ts`. CSP intentionally deferred — requires nonce middleware to be useful alongside Next.js inline scripts and Tiptap inline styles. See `codex-notes/security-headers.md`.
 - **Export separation**: JSON backup (editable restore) and PDF export (print/share, with canvas on its own page) are distinct functions with no confusion between them.
 - **PDF canvas fidelity (2026-05-26)**: Canvas SVG export rebuilt from scratch. Arrowheads are now explicit `<polygon>` elements (SVG `<marker>` dropped — unreliable in print contexts). Elbow and curve connector paths compute correct routes. Double-line connectors render two offset parallel strokes. Endpoint coordinates use `getLineRenderPoints` for accuracy. See `codex-notes/pdf-export-canvas.md`.
 - **Mobile/tablet**: intentionally not a beta priority. No responsive work planned until core QA is complete.
 - **CanvasLayer runtime errors**: confirmed resolved — `getConnectorLineMode`, `getDoubleLinePathData`, and `getLineMarkerUrl` are all hoisted function declarations; `markerEnd` is a JSX SVG prop name, not a variable.
+
+## Sidebar Polish (2026-05-26)
+
+- **"New..." button**: A contextual "New..." button appears at the top of the sidebar content area (above Search Results and Profiles). It opens a mini dropdown with "New Page" and "New Folder". Creation context is resolved from the active page's folder — if a page is active, new items go into that same folder; if nothing is active, falls back to the first top-level folder of the first project.
+- **Decluttered rows**: Inline visible action icons removed from folder rows (FolderPlus + FilePlus moved into the folder three-dot menu as "New Page Here" and "New Subfolder") and project rows (FolderPlus moved into project three-dot as "New Folder"). Page rows now show only the three-dot menu.
+- **Favorite moved to three-dot**: The star toggle button (previously a visible icon on every page row) is now inside the three-dot menu as "Add to Favorites" / "Remove from Favorites". The star/file icon in the page title area still shows the favorite state visually.
+- **Click-outside**: The "New..." dropdown uses the existing `openActionMenuId` + `data-sidebar-action-menu` system, so the existing pointerdown listener closes it on outside click.
+
+## Sidebar Alignment and Selection Context (2026-05-26)
+
+- **Alignment fixed**: Project rows, folder rows, and page rows all changed from `items-start` to `items-center` on their flex containers. Manual `mt-0.5` offset on project/folder chevron buttons removed. `mt-px` on folder icon removed. `PageButton` outer and inner icon+text divs both changed to `items-center`. All row elements now align on their vertical midpoint.
+- **Selection-driven New**: Clicking a project name or folder name in the sidebar selects it (highlighted in green). The "New..." button then creates inside the selected context. Priority: (1) selected folder → new items go inside that folder; (2) selected project → new folder goes at project root, new page uses first top-level folder of that project; (3) fall back to active page's folder; (4) fall back to first project.
+- **Context hint in dropdown**: When the "New..." dropdown opens, a small label at the top shows where items will be created (e.g. `in "Design"`). Updates live as selection changes.
+- **Clearing selection on page click**: Clicking any page button clears the folder/project selection so the active page becomes the context again.
+- **Expand on select**: Clicking a folder or project name that was collapsed automatically expands it.
+
+## Move To (2026-05-26)
+
+- **Move page**: "Move to..." appears in the page three-dot menu (after Duplicate). Shows a numbered list of all other folders in the active profile (same-project folders unlabelled; cross-project folders labelled with the project name). Selecting a number moves the page's `projectId` and `folderId`. Page content, canvas, tags, favorites, and timestamps are preserved. Page ID is unchanged, so favorites and search continue to work.
+- **Move folder**: "Move to..." appears in the folder three-dot menu (after Duplicate). Shows valid destinations in the same project: project root (if currently nested), and all peer/parent folders excluding self and all descendants. Cycle detection is handled in `useWorkspace.moveFolder` via the existing `isValidParentFolder` validator. Only same-project moves; cross-project folder moves not supported (would require cascading `projectId` updates).
+- **Cross-profile moves**: not supported (out of scope; Sidebar only receives active-profile data).
+- **UI**: `window.prompt` with a numbered list — consistent with existing creation flows, zero new component state.
 
 ## Current Recommended Next
 
@@ -130,7 +152,36 @@ Priority QA checklist:
 - Test undo/redo: canvas actions, cross-page, after page switch.
 - Test localStorage persistence: edit, refresh, confirm data survived.
 - Verify security headers appear in DevTools → Network → response headers for any document request.
-- Verify the data storage disclosure text appears in Settings → Data & Backup.
+- Verify "New..." button appears at the top of the sidebar content area and opens a dropdown with "New Page" and "New Folder".
+- Verify project rows, folder rows, and page rows all look visually aligned (chevrons, icons, and text share the same midpoint).
+- Click a project name → verify it highlights green and the "New..." dropdown shows `in "ProjectName"` context hint.
+- Click a folder name → verify it highlights green and the "New..." dropdown shows `in "FolderName"` context hint.
+- Click a project name → click New → New Folder → confirm a top-level folder is created in that project.
+- Click a project name → click New → New Page → confirm a page is created in the first folder of that project (or alerts if no folders).
+- Click a folder name → click New → New Page → confirm a page is created inside that folder.
+- Click a folder name → click New → New Folder → confirm a subfolder is created inside that folder.
+- Click a page inside a folder → verify the project/folder selection clears and the context falls back to the active page's folder.
+- Select a page inside a folder → click New → New Page → confirm new page is created in the same folder.
+- Select a page inside a folder → click New → New Folder → confirm new subfolder is created inside that folder.
+- With no page selected and no sidebar selection → click New → confirm context falls back to first project's first folder.
+- Click folder three-dot → confirm "New Page Here" and "New Subfolder" appear and work.
+- Click project three-dot → confirm "New Folder" appears and works.
+- Click page three-dot → confirm "Add to Favorites" / "Remove from Favorites" appears and works; confirm the star icon in the page title updates.
+- Confirm "New..." dropdown closes when clicking outside it.
+- Confirm opening the three-dot menu closes "New..." and vice versa.
+- Verify Settings opens with only Snap, Grid, and Flow arrows — no backup or feedback items.
+- Verify Settings closes when clicking outside it.
+- Verify "Beta" pill button appears to the right of Settings in the bottom toolbar.
+- Verify Beta dropdown opens with disclosure text, Download Backup, Restore Backup, Send Feedback, and version label.
+- Verify Beta closes when clicking outside it.
+- Verify Settings and Beta close each other when one is opened while the other is open.
+- Verify pressing Escape closes whichever of Settings or Beta is open.
+- Verify Download Backup triggers the JSON export.
+- Verify Restore Backup opens a file picker and restores workspace from a valid JSON backup.
+- Verify Send Feedback opens mailto:theycallmehodg@gmail.com with subject pre-filled.
+- Verify "ThinkLeaf Beta v0.1" appears at the bottom of the Beta dropdown.
+- Create a text box with the Text Box tool; verify the tool returns to Select immediately after creation and the text box is in edit mode.
+- Verify existing text boxes can still be double-clicked to enter edit mode.
 - Trigger the storage error banner manually via the DevTools console snippet in `codex-notes/safe-localstorage.md`.
 - Trigger the corrupted storage recovery screen via the DevTools steps in `codex-notes/corrupted-storage-recovery.md`.
 - Trigger the error boundary fallback via the temporary-throw method in `codex-notes/error-boundary.md`.

@@ -27,7 +27,7 @@ export type Page = {
   id: string;
   profileId: string;
   projectId: string;
-  folderId: string;
+  folderId?: string;
   title: string;
   body: string;
   noteDate: string;

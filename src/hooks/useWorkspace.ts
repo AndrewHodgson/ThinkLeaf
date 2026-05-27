@@ -216,7 +216,7 @@ function normalizeWorkspace(data: Partial<WorkspaceData>): WorkspaceData {
       profileId:
         page.profileId && profileIds.has(page.profileId)
           ? page.profileId
-          : projectProfileIds.get(page.projectId) ?? folderProfileIds.get(page.folderId) ?? activeProfileId,
+          : projectProfileIds.get(page.projectId) ?? (page.folderId ? folderProfileIds.get(page.folderId) : undefined) ?? activeProfileId,
       noteDate: page.noteDate ?? toDateInputValue(page.createdAt),
       canvasViewState: page.canvasViewState ?? createDefaultCanvasViewState(),
       canvasObjects: Array.isArray(page.canvasObjects)
@@ -560,13 +560,13 @@ export function useWorkspace() {
         .map((page) => {
           const nextPageId = createId("page");
           pageIdMap.set(page.id, nextPageId);
-          const nextFolderId = folderIdMap.get(page.folderId);
+          const nextFolderId = page.folderId ? folderIdMap.get(page.folderId) : undefined;
           return {
             ...page,
             id: nextPageId,
             projectId: projectCopyId,
             profileId: sourceProject.profileId,
-            folderId: nextFolderId ?? copiedFolders[0]?.id ?? page.folderId,
+            folderId: nextFolderId,
             title: `${page.title || "Untitled meeting note"} Copy`,
             body: page.body,
             noteDate: page.noteDate,
@@ -725,7 +725,7 @@ export function useWorkspace() {
           updatedAt: now,
         }));
       const copiedPages = current.pages
-        .filter((page) => folderIdsToCopy.has(page.folderId))
+        .filter((page) => page.folderId !== undefined && folderIdsToCopy.has(page.folderId))
         .map((page) => {
           const nextPageId = createId("page");
           return {
@@ -733,7 +733,7 @@ export function useWorkspace() {
             id: nextPageId,
             profileId: sourceFolder.profileId,
             projectId: sourceFolder.projectId,
-            folderId: folderIdMap.get(page.folderId) ?? nextRootFolderId,
+            folderId: folderIdMap.get(page.folderId!) ?? nextRootFolderId,
             title: `${page.title || "Untitled meeting note"} Copy`,
             body: page.body,
             noteDate: page.noteDate,
@@ -787,9 +787,9 @@ export function useWorkspace() {
       const sourceFolder = current.folders.find((folder) => folder.id === folderId);
       const deletedFolderIds = getDescendantFolderIds(current.folders, folderId);
       const deletedPageIds = new Set(
-        current.pages.filter((page) => deletedFolderIds.has(page.folderId)).map((page) => page.id),
+        current.pages.filter((page) => page.folderId !== undefined && deletedFolderIds.has(page.folderId)).map((page) => page.id),
       );
-      const nextPages = current.pages.filter((page) => !deletedFolderIds.has(page.folderId));
+      const nextPages = current.pages.filter((page) => page.folderId === undefined || !deletedFolderIds.has(page.folderId));
       const nextActivePageId =
         sourceFolder?.profileId === current.activeProfileId
           ? pickFallbackPageId(getProfilePages({ ...current, pages: nextPages }, current.activeProfileId), activePageId)
@@ -806,8 +806,69 @@ export function useWorkspace() {
     });
   }
 
-  function createPage(projectId: string, folderId: string, title = "Untitled meeting note", template?: PageTemplate) {
-    if (!projectId || !folderId) {
+  function movePage(pageId: string, targetProjectId: string, targetFolderId: string | undefined) {
+    setData((current) => {
+      const page = current.pages.find((p) => p.id === pageId);
+      if (!page) return current;
+
+      const targetProject = current.projects.find((p) => p.id === targetProjectId);
+      if (!targetProject) return current;
+      if (page.folderId === targetFolderId && page.projectId === targetProjectId) return current;
+
+      let targetProfileId = targetProject.profileId;
+      if (targetFolderId !== undefined) {
+        const targetFolder = current.folders.find(
+          (f) => f.id === targetFolderId && f.projectId === targetProjectId && f.profileId === page.profileId,
+        );
+        if (!targetFolder) return current;
+        targetProfileId = targetFolder.profileId;
+      }
+
+      const now = timestamp();
+      return {
+        ...current,
+        pages: current.pages.map((p) =>
+          p.id === pageId
+            ? {
+                ...p,
+                projectId: targetProjectId,
+                folderId: targetFolderId,
+                profileId: targetProfileId,
+                updatedAt: now,
+              }
+            : p,
+        ),
+      };
+    });
+  }
+
+  function moveFolder(folderId: string, targetParentFolderId: string | null) {
+    setData((current) => {
+      const folder = current.folders.find((f) => f.id === folderId);
+      if (!folder) return current;
+
+      const currentParentId = folder.parentFolderId ?? null;
+      if (currentParentId === targetParentFolderId) return current;
+
+      if (targetParentFolderId !== null) {
+        const foldersById = new Map(current.folders.map((f) => [f.id, f]));
+        if (!isValidParentFolder(foldersById, folder, targetParentFolderId)) return current;
+      }
+
+      const now = timestamp();
+      return {
+        ...current,
+        folders: current.folders.map((f) =>
+          f.id === folderId
+            ? { ...f, parentFolderId: targetParentFolderId ?? undefined, updatedAt: now }
+            : f,
+        ),
+      };
+    });
+  }
+
+  function createPage(projectId: string, folderId: string | undefined, title = "Untitled meeting note", template?: PageTemplate) {
+    if (!projectId) {
       return;
     }
 
@@ -816,17 +877,22 @@ export function useWorkspace() {
 
     setData((current) => {
       const project = current.projects.find((item) => item.id === projectId);
-      const folder = current.folders.find(
-        (item) => item.id === folderId && item.projectId === projectId && item.profileId === project?.profileId,
-      );
-      if (!project || !folder) {
+      if (!project) {
+        return current;
+      }
+      const folder = folderId
+        ? current.folders.find(
+            (item) => item.id === folderId && item.projectId === projectId && item.profileId === project.profileId,
+          )
+        : undefined;
+      if (folderId !== undefined && !folder) {
         return current;
       }
 
       const now = timestamp();
       const page: Page = {
         id: pageId,
-        profileId: folder.profileId,
+        profileId: folder?.profileId ?? project.profileId,
         projectId,
         folderId,
         title: cleanTitle,
@@ -843,9 +909,9 @@ export function useWorkspace() {
       return {
         ...current,
         pages: [...current.pages, page],
-        folders: current.folders.map((item) =>
-          item.id === folderId ? { ...item, updatedAt: now } : item,
-        ),
+        folders: folderId
+          ? current.folders.map((item) => item.id === folderId ? { ...item, updatedAt: now } : item)
+          : current.folders,
         projects: current.projects.map((item) =>
           item.id === projectId ? { ...item, updatedAt: now } : item,
         ),
@@ -1014,6 +1080,8 @@ export function useWorkspace() {
     renameFolder,
     deleteFolder,
     duplicateFolder,
+    movePage,
+    moveFolder,
     createPage,
     renamePage,
     duplicatePage,

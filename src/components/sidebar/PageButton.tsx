@@ -15,14 +15,14 @@ export function PageButton({ compact = false, isActive, page, actions, onClick }
   return (
     <div
       className={[
-        "group flex items-start gap-2 rounded-md border px-2 py-2 transition",
+        "group flex items-center gap-2 rounded-md border px-2 py-2 transition",
         isActive
           ? "border-leaf-200 bg-leaf-50 text-leaf-700"
           : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50",
       ].join(" ")}
     >
       <button className="min-w-0 flex-1 text-left" type="button" onClick={onClick}>
-        <div className="flex min-w-0 items-start gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           {page.isFavorite ? (
             <Star aria-hidden="true" className="h-3.5 w-3.5 shrink-0 fill-leaf-500 text-leaf-600" />
           ) : (

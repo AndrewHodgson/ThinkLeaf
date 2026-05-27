@@ -6,6 +6,7 @@ import type { PageTemplate } from "@/types/workspace";
 import type { MouseEvent, ReactNode } from "react";
 import { PageButton } from "@/components/sidebar/PageButton";
 import {
+  ArrowRight,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -35,7 +36,7 @@ type SidebarProps = {
   templates: PageTemplate[];
   onCreateProfile: (name: string) => void;
   onCreateFolder: (projectId: string, name: string, parentFolderId?: string) => void;
-  onCreatePage: (projectId: string, folderId: string, title?: string, template?: PageTemplate) => void;
+  onCreatePage: (projectId: string, folderId: string | undefined, title?: string, template?: PageTemplate) => void;
   onCreateProject: (name: string) => void;
   onDeleteProfile: (profileId: string) => void;
   onDuplicateFolder: (folderId: string) => void;
@@ -50,6 +51,8 @@ type SidebarProps = {
   onRenamePage: (pageId: string, name: string) => void;
   onSavePageAsTemplate: (page: Page) => void;
   onToggleFavoritePage: (pageId: string) => void;
+  onMovePage: (pageId: string, targetProjectId: string, targetFolderId: string | undefined) => void;
+  onMoveFolder: (folderId: string, targetParentFolderId: string | null) => void;
   onSearchChange: (value: string) => void;
   onSelectProfile: (profileId: string) => void;
   onSelectPage: (pageId: string) => void;
@@ -84,6 +87,21 @@ function loadSidebarState(): SidebarState {
   }
 }
 
+function getFolderDescendantIds(folders: WorkspaceFolder[], folderId: string): Set<string> {
+  const ids = new Set<string>([folderId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const f of folders) {
+      if (!ids.has(f.id) && f.parentFolderId && ids.has(f.parentFolderId)) {
+        ids.add(f.id);
+        changed = true;
+      }
+    }
+  }
+  return ids;
+}
+
 export function Sidebar({
   activePageId,
   activeProfileId,
@@ -109,6 +127,8 @@ export function Sidebar({
   onRenameProfile,
   onRenameProject,
   onRenamePage,
+  onMovePage,
+  onMoveFolder,
   onSavePageAsTemplate,
   onToggleFavoritePage,
   onSearchChange,
@@ -120,6 +140,8 @@ export function Sidebar({
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([]);
   const [expandedFolderIds, setExpandedFolderIds] = useState<string[]>([]);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+  const [selectedSidebarId, setSelectedSidebarId] = useState<string | null>(null);
+  const [selectedSidebarType, setSelectedSidebarType] = useState<"project" | "folder" | null>(null);
 
   useEffect(() => {
     const state = loadSidebarState();
@@ -221,7 +243,7 @@ export function Sidebar({
     onCreateFolder(projectId, name, parentFolderId);
   }
 
-  function promptPage(projectId: string, folderId: string) {
+  function promptPage(projectId: string, folderId: string | undefined) {
     let selectedTemplate: PageTemplate | undefined;
     const creationChoice = window.prompt("Create page:\n1. Blank Page\n2. From Template", "1");
 
@@ -300,6 +322,85 @@ export function Sidebar({
     onRenamePage(pageId, nextName);
   }
 
+  function promptMovePage(page: Page) {
+    type MoveDestination = { label: string; projectId: string; folderId: string | undefined };
+    const destinations: MoveDestination[] = [];
+
+    if (page.folderId) {
+      const currentProject = data.projects.find((p) => p.id === page.projectId);
+      destinations.push({
+        label: `${currentProject?.name ?? "Project"} (project root)`,
+        projectId: page.projectId,
+        folderId: undefined,
+      });
+    }
+
+    for (const f of data.folders) {
+      if (f.id === page.folderId && f.projectId === page.projectId) continue;
+      const project = data.projects.find((p) => p.id === f.projectId);
+      const inOtherProject = f.projectId !== page.projectId;
+      destinations.push({
+        label: `${f.name}${inOtherProject && project ? ` (${project.name})` : ""}`,
+        projectId: f.projectId,
+        folderId: f.id,
+      });
+    }
+
+    if (!destinations.length) {
+      window.alert("No valid destinations to move this page to.");
+      return;
+    }
+
+    const lines = destinations.map((d, i) => `${i + 1}. ${d.label}`);
+    const choice = window.prompt(`Move "${page.title || "Untitled"}" to:\n${lines.join("\n")}`, "1");
+    if (choice === null) return;
+
+    const index = Number.parseInt(choice, 10) - 1;
+    if (!Number.isInteger(index) || index < 0 || index >= destinations.length) {
+      window.alert("Invalid selection.");
+      return;
+    }
+
+    const target = destinations[index];
+    onMovePage(page.id, target.projectId, target.folderId);
+  }
+
+  function promptMoveFolder(folder: WorkspaceFolder) {
+    const descendantIds = getFolderDescendantIds(data.folders, folder.id);
+    const project = data.projects.find((p) => p.id === folder.projectId);
+    const currentParentId = folder.parentFolderId ?? null;
+
+    const destinations: Array<{ label: string; parentFolderId: string | null }> = [];
+
+    if (currentParentId !== null) {
+      destinations.push({ label: `${project?.name ?? "Project"} (project root)`, parentFolderId: null });
+    }
+
+    for (const f of data.folders) {
+      if (f.projectId !== folder.projectId) continue;
+      if (descendantIds.has(f.id)) continue;
+      if (f.id === currentParentId) continue;
+      destinations.push({ label: f.name, parentFolderId: f.id });
+    }
+
+    if (!destinations.length) {
+      window.alert("No valid destinations to move this folder to.");
+      return;
+    }
+
+    const lines = destinations.map((d, i) => `${i + 1}. ${d.label}`);
+    const choice = window.prompt(`Move "${folder.name}" to:\n${lines.join("\n")}`, "1");
+    if (choice === null) return;
+
+    const index = Number.parseInt(choice, 10) - 1;
+    if (!Number.isInteger(index) || index < 0 || index >= destinations.length) {
+      window.alert("Invalid selection.");
+      return;
+    }
+
+    onMoveFolder(folder.id, destinations[index].parentFolderId);
+  }
+
   function toggleProject(projectId: string) {
     setExpandedProjectIds((current) =>
       current.includes(projectId) ? current.filter((id) => id !== projectId) : [...current, projectId],
@@ -310,6 +411,27 @@ export function Sidebar({
     setExpandedFolderIds((current) =>
       current.includes(folderId) ? current.filter((id) => id !== folderId) : [...current, folderId],
     );
+  }
+
+  function getCreationContext(): { projectId: string; folderId: string | null } | null {
+    if (selectedSidebarType === "folder" && selectedSidebarId) {
+      const folder = data.folders.find((f) => f.id === selectedSidebarId);
+      if (folder) return { projectId: folder.projectId, folderId: folder.id };
+    }
+    if (selectedSidebarType === "project" && selectedSidebarId) {
+      const project = data.projects.find((p) => p.id === selectedSidebarId);
+      if (project) return { projectId: project.id, folderId: null };
+    }
+    const activePage = data.pages.find((p) => p.id === activePageId);
+    if (activePage) {
+      return { projectId: activePage.projectId, folderId: activePage.folderId ?? null };
+    }
+    const firstProject = data.projects[0];
+    if (!firstProject) {
+      return null;
+    }
+    const firstFolder = data.folders.find((f) => f.projectId === firstProject.id && !f.parentFolderId);
+    return { projectId: firstProject.id, folderId: firstFolder?.id ?? null };
   }
 
   function actionButton(
@@ -409,10 +531,12 @@ export function Sidebar({
   }
 
   function pageActions(page: Page, menuScope: string) {
-    return (
+    return actionMenu(
+      `${menuScope}-page-${page.id}`,
+      `Page actions for ${page.title || "Untitled"}`,
       <>
-        {actionButton(
-          page.isFavorite ? "Remove favorite" : "Mark favorite",
+        {menuActionButton(
+          page.isFavorite ? "Remove from Favorites" : "Add to Favorites",
           <Star
             aria-hidden="true"
             className={["h-3.5 w-3.5", page.isFavorite ? "fill-leaf-500 text-leaf-600" : ""].join(" ")}
@@ -421,30 +545,32 @@ export function Sidebar({
             onToggleFavoritePage(page.id);
           },
         )}
-        {actionMenu(
-          `${menuScope}-page-${page.id}`,
-          `Page actions for ${page.title || "Untitled"}`,
-          <>
-            {menuActionButton("Save as template", <Copy aria-hidden="true" className="h-3.5 w-3.5" />, () => {
-              onSavePageAsTemplate(page);
-            })}
-            {menuActionButton("Duplicate", <Copy aria-hidden="true" className="h-3.5 w-3.5" />, () => {
-              onDuplicatePage(page.id);
-            })}
-            {menuActionButton("Rename", <Pencil aria-hidden="true" className="h-3.5 w-3.5" />, () => {
-              promptPageRename(page.id, page.title || "Untitled");
-            })}
-            {menuActionButton("Delete", <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />, () => {
-              const shouldDelete = window.confirm(
-                `Delete page "${page.title || "Untitled"}"? This will remove the page and its canvas objects.`,
-              );
-              if (shouldDelete) {
-                onDeletePage(page.id);
-              }
-            }, "danger")}
-          </>,
+        {menuActionButton("Save as template", <Copy aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+          onSavePageAsTemplate(page);
+        })}
+        {menuActionButton("Duplicate", <Copy aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+          onDuplicatePage(page.id);
+        })}
+        {menuActionButton("Move to...", <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+          promptMovePage(page);
+        })}
+        {menuActionButton("Rename", <Pencil aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+          promptPageRename(page.id, page.title || "Untitled");
+        })}
+        {menuActionButton(
+          "Delete",
+          <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />,
+          () => {
+            const shouldDelete = window.confirm(
+              `Delete page "${page.title || "Untitled"}"? This will remove the page and its canvas objects.`,
+            );
+            if (shouldDelete) {
+              onDeletePage(page.id);
+            }
+          },
+          "danger",
         )}
-      </>
+      </>,
     );
   }
 
@@ -458,10 +584,10 @@ export function Sidebar({
 
     return (
       <div key={folder.id} className="border-l border-slate-200 pl-3" style={{ marginLeft: depth ? 8 : 0 }}>
-        <div className="group flex items-start gap-2">
+        <div className="group flex items-center gap-2 py-0.5">
           <button
             aria-label={`${folderExpanded ? "Collapse" : "Expand"} folder ${folder.name}`}
-            className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
             title={`${folderExpanded ? "Collapse" : "Expand"} folder`}
             type="button"
             onClick={() => toggleFolder(folder.id)}
@@ -472,43 +598,58 @@ export function Sidebar({
               <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
             )}
           </button>
-          <div className="flex min-w-0 flex-1 items-start gap-1.5 break-words text-xs font-semibold uppercase leading-4 tracking-wide text-slate-500">
-            <Folder aria-hidden="true" className="mt-px h-3.5 w-3.5 shrink-0" />
+          <button
+            className={[
+              "flex min-w-0 flex-1 items-center gap-1.5 break-words rounded px-1 text-left text-xs font-semibold uppercase leading-4 tracking-wide transition",
+              selectedSidebarType === "folder" && selectedSidebarId === folder.id
+                ? "bg-leaf-50 text-leaf-700"
+                : "text-slate-500 hover:bg-slate-100 hover:text-slate-700",
+            ].join(" ")}
+            type="button"
+            onClick={() => {
+              setSelectedSidebarId(folder.id);
+              setSelectedSidebarType("folder");
+              if (!expandedFolderSet.has(folder.id)) {
+                setExpandedFolderIds((current) => [...current, folder.id]);
+              }
+            }}
+          >
+            <Folder aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0">{folder.name}</span>
-          </div>
+          </button>
           <div className="flex shrink-0 items-center gap-1">
-            {actionButton(
-              `Create folder in ${folder.name}`,
-              <FolderPlus aria-hidden="true" className="h-3.5 w-3.5" />,
-              () => {
-                promptFolder(projectId, folder.id);
-              },
-            )}
-            {actionButton(
-              `Create page in ${folder.name}`,
-              <FilePlus aria-hidden="true" className="h-3.5 w-3.5" />,
-              () => {
-                promptPage(projectId, folder.id);
-              },
-            )}
             {actionMenu(
               `folder-${folder.id}`,
               `Folder actions for ${folder.name}`,
               <>
+                {menuActionButton("New Page Here", <FilePlus aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+                  promptPage(projectId, folder.id);
+                })}
+                {menuActionButton("New Subfolder", <FolderPlus aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+                  promptFolder(projectId, folder.id);
+                })}
                 {menuActionButton("Duplicate", <Copy aria-hidden="true" className="h-3.5 w-3.5" />, () => {
                   onDuplicateFolder(folder.id);
+                })}
+                {menuActionButton("Move to...", <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+                  promptMoveFolder(folder);
                 })}
                 {menuActionButton("Rename", <Pencil aria-hidden="true" className="h-3.5 w-3.5" />, () => {
                   promptFolderRename(folder.id, folder.name);
                 })}
-                {menuActionButton("Delete", <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />, () => {
-                  const shouldDelete = window.confirm(
-                    `Delete folder "${folder.name}"? This will remove all nested folders and pages inside it.`,
-                  );
-                  if (shouldDelete) {
-                    onDeleteFolder(folder.id);
-                  }
-                }, "danger")}
+                {menuActionButton(
+                  "Delete",
+                  <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />,
+                  () => {
+                    const shouldDelete = window.confirm(
+                      `Delete folder "${folder.name}"? This will remove all nested folders and pages inside it.`,
+                    );
+                    if (shouldDelete) {
+                      onDeleteFolder(folder.id);
+                    }
+                  },
+                  "danger",
+                )}
               </>,
             )}
           </div>
@@ -524,7 +665,11 @@ export function Sidebar({
                 actions={pageActions(page, "project-tree")}
                 page={page}
                 compact
-                onClick={() => onSelectPage(page.id)}
+                onClick={() => {
+                  setSelectedSidebarId(null);
+                  setSelectedSidebarType(null);
+                  onSelectPage(page.id);
+                }}
               />
             ))}
             {!hasChildren ? <p className="px-2 py-1 text-xs text-slate-400">No pages yet.</p> : null}
@@ -533,6 +678,27 @@ export function Sidebar({
       </div>
     );
   }
+
+  const creationContextLabel: string = (() => {
+    if (selectedSidebarType === "folder" && selectedSidebarId) {
+      const folder = data.folders.find((f) => f.id === selectedSidebarId);
+      return folder ? `in "${folder.name}"` : "";
+    }
+    if (selectedSidebarType === "project" && selectedSidebarId) {
+      const project = data.projects.find((p) => p.id === selectedSidebarId);
+      return project ? `in "${project.name}"` : "";
+    }
+    const activePage = data.pages.find((p) => p.id === activePageId);
+    if (activePage) {
+      if (activePage.folderId) {
+        const folder = data.folders.find((f) => f.id === activePage.folderId);
+        return folder ? `in "${folder.name}"` : "";
+      }
+      const project = data.projects.find((p) => p.id === activePage.projectId);
+      return project ? `in "${project.name}"` : "";
+    }
+    return "";
+  })();
 
   if (isCollapsed) {
     return (
@@ -595,6 +761,51 @@ export function Sidebar({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+        <div className="mb-4" data-sidebar-action-menu="true">
+          <div className="relative">
+            <button
+              aria-expanded={openActionMenuId === "new-item"}
+              aria-label="Create new page or folder"
+              className="flex w-full items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpenActionMenuId((current) => (current === "new-item" ? null : "new-item"));
+              }}
+            >
+              <Plus aria-hidden="true" className="h-4 w-4 text-leaf-600" />
+              New...
+            </button>
+            {openActionMenuId === "new-item" ? (
+              <div className="absolute left-0 top-10 z-30 grid min-w-44 gap-1 rounded-md border border-slate-200 bg-white p-1 shadow-soft">
+                {creationContextLabel ? (
+                  <div className="truncate border-b border-slate-100 px-2 pb-1 pt-0.5 text-[10px] text-slate-400">
+                    {creationContextLabel}
+                  </div>
+                ) : null}
+                {menuActionButton("New Page", <FilePlus aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+                  const ctx = getCreationContext();
+                  if (!ctx) {
+                    window.alert("Create a project first.");
+                    return;
+                  }
+                  promptPage(ctx.projectId, ctx.folderId ?? undefined);
+                })}
+                {menuActionButton("New Folder", <FolderPlus aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+                  const ctx = getCreationContext();
+                  if (!ctx) {
+                    window.alert("Create a project first.");
+                    return;
+                  }
+                  promptFolder(ctx.projectId, ctx.folderId ?? undefined);
+                })}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
         {searchQuery.trim() ? (
           <section className="mb-5">
             <div className="mb-2 flex items-center justify-between px-1">
@@ -608,7 +819,11 @@ export function Sidebar({
                     isActive={page.id === activePageId}
                     actions={pageActions(page, "search")}
                     page={page}
-                    onClick={() => onSelectPage(page.id)}
+                    onClick={() => {
+                  setSelectedSidebarId(null);
+                  setSelectedSidebarType(null);
+                  onSelectPage(page.id);
+                }}
                   />
                 ))}
               </div>
@@ -706,10 +921,10 @@ export function Sidebar({
 
               return (
                 <div key={project.id} className="rounded-md border border-slate-200 bg-white p-2">
-                  <div className="group flex items-start gap-2">
+                  <div className="group flex items-center gap-2">
                     <button
                       aria-label={`${isExpanded ? "Collapse" : "Expand"} project ${project.name}`}
-                      className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
                       title={`${isExpanded ? "Collapse" : "Expand"} project`}
                       type="button"
                       onClick={() => toggleProject(project.id)}
@@ -720,45 +935,77 @@ export function Sidebar({
                         <ChevronRight aria-hidden="true" className="h-4 w-4" />
                       )}
                     </button>
-                    <div className="min-w-0 flex-1 break-words text-sm font-semibold leading-5 text-slate-800">
+                    <button
+                      className={[
+                        "min-w-0 flex-1 break-words rounded px-1 text-left text-sm font-semibold leading-5 transition",
+                        selectedSidebarType === "project" && selectedSidebarId === project.id
+                          ? "bg-leaf-50 text-leaf-700"
+                          : "text-slate-800 hover:bg-slate-100 hover:text-slate-600",
+                      ].join(" ")}
+                      type="button"
+                      onClick={() => {
+                        setSelectedSidebarId(project.id);
+                        setSelectedSidebarType("project");
+                        if (!expandedProjectSet.has(project.id)) {
+                          setExpandedProjectIds((current) => [...current, project.id]);
+                        }
+                      }}
+                    >
                       {project.name}
-                    </div>
+                    </button>
                     <div className="flex shrink-0 items-center gap-1">
-                      {actionButton(
-                        `Create folder in ${project.name}`,
-                        <FolderPlus aria-hidden="true" className="h-3.5 w-3.5" />,
-                        () => {
-                          promptFolder(project.id);
-                        },
-                      )}
                       {actionMenu(
                         `project-${project.id}`,
                         `Project actions for ${project.name}`,
                         <>
+                          {menuActionButton("New Folder", <FolderPlus aria-hidden="true" className="h-3.5 w-3.5" />, () => {
+                            promptFolder(project.id);
+                          })}
                           {menuActionButton("Duplicate", <Copy aria-hidden="true" className="h-3.5 w-3.5" />, () => {
                             onDuplicateProject(project.id);
                           })}
                           {menuActionButton("Rename", <Pencil aria-hidden="true" className="h-3.5 w-3.5" />, () => {
                             promptProjectRename(project.id, project.name);
                           })}
-                          {menuActionButton("Delete", <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />, () => {
-                            const shouldDelete = window.confirm(
-                              `Delete project "${project.name}"? This will remove all folders and pages inside the project.`,
-                            );
-                            if (shouldDelete) {
-                              onDeleteProject(project.id);
-                            }
-                          }, "danger")}
+                          {menuActionButton(
+                            "Delete",
+                            <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />,
+                            () => {
+                              const shouldDelete = window.confirm(
+                                `Delete project "${project.name}"? This will remove all folders and pages inside the project.`,
+                              );
+                              if (shouldDelete) {
+                                onDeleteProject(project.id);
+                              }
+                            },
+                            "danger",
+                          )}
                         </>,
                       )}
                     </div>
                   </div>
 
                   {isExpanded ? (
-                    <div className="mt-2 space-y-2">
+                    <div className="mt-1 space-y-1">
+                      {data.pages
+                        .filter((page) => page.projectId === project.id && !page.folderId)
+                        .map((page) => (
+                          <PageButton
+                            key={page.id}
+                            isActive={page.id === activePageId}
+                            actions={pageActions(page, "project-tree")}
+                            page={page}
+                            compact
+                            onClick={() => {
+                              setSelectedSidebarId(null);
+                              setSelectedSidebarType(null);
+                              onSelectPage(page.id);
+                            }}
+                          />
+                        ))}
                       {folders.map((folder) => renderFolder(project.id, folder))}
-                      {!folders.length ? (
-                        <p className="px-2 py-1 text-xs text-slate-400">Add a folder to start pages.</p>
+                      {!folders.length && !data.pages.some((page) => page.projectId === project.id && !page.folderId) ? (
+                        <p className="px-2 py-1 text-xs text-slate-400">No pages yet.</p>
                       ) : null}
                     </div>
                   ) : null}
@@ -783,7 +1030,11 @@ export function Sidebar({
                     isActive={page.id === activePageId}
                     actions={pageActions(page, "favorites")}
                     page={page}
-                    onClick={() => onSelectPage(page.id)}
+                    onClick={() => {
+                  setSelectedSidebarId(null);
+                  setSelectedSidebarType(null);
+                  onSelectPage(page.id);
+                }}
                   />
                 ))}
             </div>
