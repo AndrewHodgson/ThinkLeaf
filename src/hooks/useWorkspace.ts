@@ -15,6 +15,7 @@ import type {
   PageTemplate,
   Profile,
   Project,
+  SidebarItemColor,
   WorkspaceData,
 } from "@/types/workspace";
 
@@ -300,7 +301,7 @@ function getDescendantFolderIds(folders: Folder[], folderId: string) {
   return ids;
 }
 
-function cloneCanvasObjects(objects: CanvasObject[]) {
+function cloneCanvasObjectsWithNewIds(objects: CanvasObject[]) {
   const objectIdMap = new Map<string, string>();
 
   for (const object of objects) {
@@ -571,7 +572,7 @@ export function useWorkspace() {
             body: page.body,
             noteDate: page.noteDate,
             canvasViewState: page.canvasViewState,
-            canvasObjects: cloneCanvasObjects(page.canvasObjects),
+            canvasObjects: cloneCanvasObjectsWithNewIds(page.canvasObjects),
             tags: [...page.tags],
             isFavorite: false,
             createdAt: now,
@@ -738,7 +739,7 @@ export function useWorkspace() {
             body: page.body,
             noteDate: page.noteDate,
             canvasViewState: page.canvasViewState,
-            canvasObjects: cloneCanvasObjects(page.canvasObjects),
+            canvasObjects: cloneCanvasObjectsWithNewIds(page.canvasObjects),
             tags: [...page.tags],
             isFavorite: false,
             createdAt: now,
@@ -842,28 +843,86 @@ export function useWorkspace() {
     });
   }
 
-  function moveFolder(folderId: string, targetParentFolderId: string | null) {
+  function moveFolder(folderId: string, targetParentFolderId: string | null, targetProjectId?: string) {
     setData((current) => {
       const folder = current.folders.find((f) => f.id === folderId);
       if (!folder) return current;
 
-      const currentParentId = folder.parentFolderId ?? null;
-      if (currentParentId === targetParentFolderId) return current;
+      const resolvedProjectId = targetProjectId ?? folder.projectId;
+      const isCrossProject = resolvedProjectId !== folder.projectId;
 
-      if (targetParentFolderId !== null) {
-        const foldersById = new Map(current.folders.map((f) => [f.id, f]));
-        if (!isValidParentFolder(foldersById, folder, targetParentFolderId)) return current;
+      const targetProject = current.projects.find((p) => p.id === resolvedProjectId);
+      if (!targetProject) return current;
+
+      // Profile boundary: only allow moves within the same profile
+      if (targetProject.profileId !== folder.profileId) return current;
+
+      const currentParentId = folder.parentFolderId ?? null;
+
+      // No-op: same project, same parent
+      if (!isCrossProject && currentParentId === targetParentFolderId) return current;
+
+      if (isCrossProject) {
+        // Cross-project: validate the target parent folder belongs to the target project
+        if (targetParentFolderId !== null) {
+          const targetParent = current.folders.find(
+            (f) => f.id === targetParentFolderId && f.projectId === resolvedProjectId,
+          );
+          if (!targetParent) return current;
+        }
+      } else {
+        // Same-project: use existing cycle-safe validator
+        if (targetParentFolderId !== null) {
+          const foldersById = new Map(current.folders.map((f) => [f.id, f]));
+          if (!isValidParentFolder(foldersById, folder, targetParentFolderId)) return current;
+        }
       }
 
       const now = timestamp();
-      return {
-        ...current,
-        folders: current.folders.map((f) =>
-          f.id === folderId
-            ? { ...f, parentFolderId: targetParentFolderId ?? undefined, updatedAt: now }
-            : f,
-        ),
-      };
+
+      if (!isCrossProject) {
+        // Same project: simple parentFolderId update, no cascade needed
+        return {
+          ...current,
+          folders: current.folders.map((f) =>
+            f.id === folderId
+              ? { ...f, parentFolderId: targetParentFolderId ?? undefined, updatedAt: now }
+              : f,
+          ),
+        };
+      }
+
+      // Cross-project: collect all descendant folder IDs (BFS) and cascade projectId
+      const movedFolderIds = new Set<string>([folderId]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const f of current.folders) {
+          if (!movedFolderIds.has(f.id) && f.parentFolderId && movedFolderIds.has(f.parentFolderId)) {
+            movedFolderIds.add(f.id);
+            changed = true;
+          }
+        }
+      }
+
+      const nextFolders = current.folders.map((f) => {
+        if (f.id === folderId) {
+          return { ...f, projectId: resolvedProjectId, parentFolderId: targetParentFolderId ?? undefined, updatedAt: now };
+        }
+        if (movedFolderIds.has(f.id)) {
+          return { ...f, projectId: resolvedProjectId, updatedAt: now };
+        }
+        return f;
+      });
+
+      // Cascade projectId to all pages contained in the moved folders
+      const nextPages = current.pages.map((p) =>
+        p.folderId !== undefined && movedFolderIds.has(p.folderId)
+          ? { ...p, projectId: resolvedProjectId, updatedAt: now }
+          : p,
+      );
+
+      return { ...current, folders: nextFolders, pages: nextPages };
     });
   }
 
@@ -899,7 +958,7 @@ export function useWorkspace() {
         body: template?.body ?? "",
         noteDate: toDateInputValue(now),
         canvasViewState: template?.canvasViewState ?? createDefaultCanvasViewState(),
-        canvasObjects: template ? cloneCanvasObjects(template.canvasObjects) : [],
+        canvasObjects: template ? cloneCanvasObjectsWithNewIds(template.canvasObjects) : [],
         tags: template ? [...template.tags] : [],
         isFavorite: false,
         createdAt: now,
@@ -936,7 +995,7 @@ export function useWorkspace() {
       body: sourcePage.body,
       noteDate: sourcePage.noteDate,
       canvasViewState: sourcePage.canvasViewState,
-      canvasObjects: cloneCanvasObjects(sourcePage.canvasObjects),
+      canvasObjects: cloneCanvasObjectsWithNewIds(sourcePage.canvasObjects),
       tags: [...sourcePage.tags],
       isFavorite: false,
       createdAt: now,
@@ -995,23 +1054,6 @@ export function useWorkspace() {
     }));
   }
 
-  function updateCanvasViewState(pageId: string, canvasViewState: Page["canvasViewState"]) {
-    const now = timestamp();
-
-    setData((current) => ({
-      ...current,
-      pages: current.pages.map((page) =>
-        page.id === pageId
-          ? {
-              ...page,
-              canvasViewState,
-              updatedAt: now,
-            }
-          : page,
-      ),
-    }));
-  }
-
   function deletePage(pageId: string) {
     setData((current) => {
       const nextPages = current.pages.filter((page) => page.id !== pageId);
@@ -1029,6 +1071,26 @@ export function useWorkspace() {
         recentPageIds: current.recentPageIds.filter((id) => id !== pageId),
       };
     });
+  }
+
+  function colorProject(projectId: string, color: SidebarItemColor | undefined) {
+    const now = timestamp();
+    setData((current) => ({
+      ...current,
+      projects: current.projects.map((project) =>
+        project.id === projectId ? { ...project, color, updatedAt: now } : project,
+      ),
+    }));
+  }
+
+  function colorFolder(folderId: string, color: SidebarItemColor | undefined) {
+    const now = timestamp();
+    setData((current) => ({
+      ...current,
+      folders: current.folders.map((folder) =>
+        folder.id === folderId ? { ...folder, color, updatedAt: now } : folder,
+      ),
+    }));
   }
 
   function importWorkspaceData(value: unknown) {
@@ -1080,13 +1142,14 @@ export function useWorkspace() {
     renameFolder,
     deleteFolder,
     duplicateFolder,
+    colorProject,
+    colorFolder,
     movePage,
     moveFolder,
     createPage,
     renamePage,
     duplicatePage,
     updatePage,
-    updateCanvasViewState,
     deletePage,
     importWorkspaceData,
     clearCorruptedData,

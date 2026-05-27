@@ -4,6 +4,20 @@ Audited 2026-05-26.
 
 ## Completed refactors
 
+### Safety cleanup — Rename ID-remapping clone + dead code removal (2026-05-27)
+
+Three items from the post-beta refactor backlog were low-risk enough to do before beta and were completed:
+
+1. **Renamed `cloneCanvasObjects` → `cloneCanvasObjectsWithNewIds`** in `useWorkspace.ts`. This is the function that deep-clones canvas objects and remaps all IDs (including `sourceObjectId`/`targetObjectId` for connectors). The shallow-clone helpers in `ThinkleafApp.tsx` are unrelated and unchanged. Four call sites updated (all within `useWorkspace.ts`).
+
+2. **Deleted `updateCanvasViewState`** from `useWorkspace.ts`. The function was exported on the return object but had zero external callsites. Canvas view state is updated via the generic `updatePage` hook.
+
+3. **Deleted `SidebarSection.tsx`** — a component file that was defined and exported but never imported anywhere in the codebase.
+
+Build confirmed clean after all three changes.
+
+---
+
 ### Refactors 1 + 2 — Move geometry math block + eliminate duplicate helpers (2026-05-26)
 
 Moved all 21 module-scope pure functions from `CanvasLayer.tsx` lines 114–426 into `canvasGeometry.ts`. This eliminated the five functions that were duplicated between `CanvasLayer.tsx` and `CanvasObjectToolbar.tsx`. Both files now import from `canvasGeometry.ts`.
@@ -28,20 +42,22 @@ Build confirmed clean: `npm run build` passes with no TypeScript errors.
 
 ---
 
-## File sizes at time of audit (2026-05-26)
+## File sizes — updated 2026-05-27
 
-| File | Lines |
-|---|---|
-| `src/components/workspace/CanvasLayer.tsx` | 2411 |
-| `src/components/workspace/CanvasObjectToolbar.tsx` | 1056 |
-| `src/hooks/useWorkspace.ts` | 1026 |
-| `src/components/workspace/Workspace.tsx` | 968 |
-| `src/components/sidebar/Sidebar.tsx` | 797 |
-| `src/components/ThinkleafApp.tsx` | 849 |
-| `src/lib/exportUtils.ts` | 487 |
-| `src/components/workspace/CanvasCreationToolbar.tsx` | 447 |
+| File | Lines | Notes |
+|---|---|---|
+| `src/components/workspace/CanvasLayer.tsx` | 2106 | Down from 2411 after geometry extraction |
+| `src/components/workspace/RichTextEditor.tsx` | 1632 | Not previously audited |
+| `src/components/sidebar/Sidebar.tsx` | 1383 | Up from 797 — grew significantly since May 26 audit |
+| `src/hooks/useWorkspace.ts` | ~1160 | Down slightly after dead code removal |
+| `src/components/workspace/CanvasObjectToolbar.tsx` | 1034 | |
+| `src/components/workspace/Workspace.tsx` | 968 | |
+| `src/components/workspace/canvas/canvasGeometry.ts` | 850 | Up from 533 after geometry extraction |
+| `src/components/ThinkleafApp.tsx` | 852 | |
+| `src/lib/exportUtils.ts` | 676 | |
+| `src/components/workspace/CanvasCreationToolbar.tsx` | 518 | |
 
-Canvas helper files in `canvas/`: canvasGeometry.ts (533), penRendering.ts (308), canvasObjectViews.tsx (308), canvasLayerTypes.ts (129), eraserHitTesting.ts (102), laserRendering.ts (54), PenStrokeLayer.tsx (131).
+Canvas helper files in `canvas/`: canvasObjectViews.tsx (308), penRendering.ts (308 est.), canvasLayerTypes.ts (129 est.), PenStrokeLayer.tsx (131 est.), eraserHitTesting.ts (102 est.), laserRendering.ts (54 est.).
 
 ---
 
@@ -81,25 +97,13 @@ Moving these to `canvasGeometry.ts` reduces `CanvasLayer.tsx` by ~310 lines and 
 
 **Fix**: Move to `src/lib/workspaceUtils.ts` or a new `src/lib/domUtils.ts` and import from both. Three-line function.
 
-### 4. Rename cloneCanvasObjects variants to prevent confusion
+### 4. Rename cloneCanvasObjects variants to prevent confusion ✅ Partially done (2026-05-27)
 
-Three functions share similar names but do very different things:
+The dangerous half is resolved: `cloneCanvasObjects` in `useWorkspace.ts` was renamed to `cloneCanvasObjectsWithNewIds`. The two shallow-clone helpers in `ThinkleafApp.tsx` (inner `cloneCanvasObjects` and module-level `cloneStoredCanvasObjects`) still exist as duplicate identical functions but are harmless — they are both shallow-clone, same-IDs. One of them could be deleted post-beta.
 
-| Location | Name | What it does |
-|---|---|---|
-| `ThinkleafApp.tsx` (inner, line 270) | `cloneCanvasObjects` | Shallow clone, same IDs |
-| `ThinkleafApp.tsx` (module, line 788) | `cloneStoredCanvasObjects` | Also shallow clone, same IDs — identical to the inner function |
-| `useWorkspace.ts` (line 303) | `cloneCanvasObjects` | Deep clone, **remaps all IDs**, for duplicating pages/folders |
+### 5. Remove dead updateCanvasViewState from useWorkspace ✅ Done (2026-05-27)
 
-The ID-remapping clone is the dangerous one — calling the wrong one when duplicating content would silently produce objects with duplicate IDs that share connector references.
-
-**Fix**: Rename the useWorkspace version to `cloneCanvasObjectsWithNewIds`. Rename ThinkleafApp's module-level `cloneStoredCanvasObjects` to match the inner function or delete one. No behavior change; just naming clarity.
-
-### 5. Remove dead updateCanvasViewState from useWorkspace
-
-`updateCanvasViewState` (useWorkspace.ts line 932) is exported from the hook return (line 1021) but is never called anywhere in the codebase. Canvas view state is updated via `workspace.updatePage(pageId, { canvasViewState: ... })` instead.
-
-**Fix**: Delete the function and remove it from the return object. Safe removal — TypeScript will catch any callsites that don't exist.
+Deleted. No callsites existed outside the hook. Canvas view state continues to be updated via `workspace.updatePage(pageId, { canvasViewState: ... })`.
 
 ---
 
@@ -132,21 +136,23 @@ The file exports 3 components: `PenToolToolbar`, `CanvasToolDefaultsToolbar`, an
 
 ## Files most in need of cleanup
 
-1. **`CanvasLayer.tsx`** — primary concern. The ~310-line geometry block at the top (items 1–2 above) is the cleanest extraction point. The component body itself is a longer-term project.
-2. **`CanvasObjectToolbar.tsx`** — duplicated helpers are the main issue; solvable by refactor #1 above.
-3. **`ThinkleafApp.tsx`** — two versions of shallow clone, one unused. Clean up as described in refactor #4.
-4. **`useWorkspace.ts`** — dead export (refactor #5). Otherwise well-structured.
+1. **`CanvasLayer.tsx`** — 2,106 lines; ~1,800-line component body is the longer-term project. Geometry extraction already done.
+2. **`RichTextEditor.tsx`** — 1,632 lines; not yet audited for split opportunities. Worth reviewing post-beta.
+3. **`Sidebar.tsx`** — 1,383 lines (up from 797 six sessions ago). Coherent but growing fast.
+4. **`CanvasObjectToolbar.tsx`** — 1,034 lines; three components sharing local helpers; medium-effort split possible.
+5. **`ThinkleafApp.tsx`** — two identical shallow-clone helpers; minor cleanup, low risk.
 
 ---
 
 ## Recommended refactor order (post-beta)
 
-1. **Refactors 1 + 2 together**: Move all module-scope geometry functions from `CanvasLayer.tsx` lines 114–426 into `canvasGeometry.ts`. This simultaneously eliminates the duplicate `getSecondLine*` functions, reduces CanvasLayer.tsx by ~310 lines, and makes the geometry independently testable. Mechanical, TypeScript-safe.
-2. **Refactor 3**: Extract `isEditableTarget` to shared utility.
-3. **Refactor 4**: Rename clone functions.
-4. **Refactor 5**: Remove `updateCanvasViewState`.
-5. **Later**: Split `CanvasObjectToolbar.tsx` into focused files.
-6. **Last**: The `CanvasLayer` component body — requires a useCanvasInteraction hook design first.
+1. ~~**Refactors 1 + 2 together**: Move geometry functions from `CanvasLayer.tsx` into `canvasGeometry.ts`.~~ Done 2026-05-26.
+2. **Refactor 3**: Extract `isEditableTarget` to shared utility (`src/lib/domUtils.ts`). Three-line function currently duplicated in `ThinkleafApp.tsx` and `CanvasLayer.tsx`.
+3. ~~**Refactor 4**: Rename `cloneCanvasObjects` in `useWorkspace.ts`.~~ Done 2026-05-27. Remaining: consolidate the two identical shallow-clone helpers in `ThinkleafApp.tsx`.
+4. ~~**Refactor 5**: Remove `updateCanvasViewState`.~~ Done 2026-05-27.
+5. **New**: Audit `RichTextEditor.tsx` (1,632 lines) for split opportunities — not previously in the plan.
+6. **Later**: Split `CanvasObjectToolbar.tsx` into focused files.
+7. **Last**: The `CanvasLayer` component body — requires a `useCanvasInteraction` hook design first.
 
 ---
 

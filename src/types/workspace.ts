@@ -1,3 +1,5 @@
+export type SidebarItemColor = "green" | "blue" | "purple" | "orange" | "red" | "gray";
+
 export type Profile = {
   id: string;
   name: string;
@@ -9,6 +11,7 @@ export type Project = {
   id: string;
   profileId: string;
   name: string;
+  color?: SidebarItemColor;
   createdAt: string;
   updatedAt: string;
 };
@@ -19,6 +22,7 @@ export type Folder = {
   projectId: string;
   parentFolderId?: string;
   name: string;
+  color?: SidebarItemColor;
   createdAt: string;
   updatedAt: string;
 };

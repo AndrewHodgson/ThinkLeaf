@@ -13,7 +13,7 @@ Next.js 16 (App Router), React, TypeScript, Tailwind CSS, Tiptap, custom canvas/
 **Notes**
 - Tiptap rich text editor: headings, bold, italic, underline, lists, checklists, links, tables, callouts, images, text color, highlight, text size, alignment, and vertical alignment
 - Note date, tags, favorite toggle, breadcrumb path
-- Page templates: save from row menu, create from template
+- Page templates: save from row menu; new page creation currently creates normal blank pages only
 
 **Canvas / Whiteboard**
 - Shapes: rectangle, circle, diamond (with editable text, labels, and formatting)

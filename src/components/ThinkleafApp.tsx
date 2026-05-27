@@ -600,7 +600,6 @@ export function ThinkleafApp() {
         profiles={workspace.data.profiles}
         searchQuery={searchQuery}
         searchResults={searchResults}
-        templates={pageTemplates}
         onCreateProfile={workspace.createProfile}
         onCreateFolder={workspace.createFolder}
         onCreatePage={workspace.createPage}
@@ -609,6 +608,8 @@ export function ThinkleafApp() {
         onDeletePage={workspace.deletePage}
         onDeleteFolder={workspace.deleteFolder}
         onDeleteProject={workspace.deleteProject}
+        onColorProject={workspace.colorProject}
+        onColorFolder={workspace.colorFolder}
         onMovePage={workspace.movePage}
         onMoveFolder={workspace.moveFolder}
         onDuplicateFolder={workspace.duplicateFolder}

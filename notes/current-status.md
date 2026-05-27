@@ -13,7 +13,7 @@ Thinkleaf is a note-first visual workspace prototype running on Next.js, React, 
 - Sidebar branding uses the Thinkleaf horizontal logo when expanded and the vertical logo when collapsed; the app favicon uses the brand favicon asset.
 - Deleting a folder removes all descendant folders and pages after confirmation; duplicating a folder copies descendant folders and pages with new IDs.
 - Tag suggestions are built from tags already used in the active profile and appear only after typed prefix matches, keeping tag reuse and tag search scoped to the selected profile.
-- Page templates can be saved from page row action menus and reused when creating new pages; templates persist in localStorage and copy title, body, tags, canvas objects, and canvas view state into the destination folder.
+- Page templates can be saved from page row action menus and persist in localStorage, but new page creation currently creates normal blank pages only.
 - Active profile, sidebar collapsed state, Snap to Grid, document vertical alignment, Pen settings, canvas creation defaults, default flowchart connector arrow behavior, page content, canvas objects, images, and canvas view state persist in localStorage.
 
 ## Main Document
@@ -122,11 +122,56 @@ The following beta-readiness issues have been addressed since the last maintaina
 
 ## Sidebar Alignment and Selection Context (2026-05-26)
 
-- **Alignment fixed**: Project rows, folder rows, and page rows all changed from `items-start` to `items-center` on their flex containers. Manual `mt-0.5` offset on project/folder chevron buttons removed. `mt-px` on folder icon removed. `PageButton` outer and inner icon+text divs both changed to `items-center`. All row elements now align on their vertical midpoint.
+- **Alignment and padding fixed**: Project rows, folder rows, and page rows all changed from `items-start` to `items-center` on their flex containers. Manual `mt-0.5` offset on project/folder chevron buttons removed. `mt-px` on folder icon removed. `PageButton` outer and inner icon+text divs both changed to `items-center`. Page, folder, and project row labels now share the same compact balanced padding, and row elements align on their vertical midpoint.
 - **Selection-driven New**: Clicking a project name or folder name in the sidebar selects it (highlighted in green). The "New..." button then creates inside the selected context. Priority: (1) selected folder → new items go inside that folder; (2) selected project → new folder goes at project root, new page uses first top-level folder of that project; (3) fall back to active page's folder; (4) fall back to first project.
 - **Context hint in dropdown**: When the "New..." dropdown opens, a small label at the top shows where items will be created (e.g. `in "Design"`). Updates live as selection changes.
 - **Clearing selection on page click**: Clicking any page button clears the folder/project selection so the active page becomes the context again.
 - **Expand on select**: Clicking a folder or project name that was collapsed automatically expands it.
+
+## Sidebar Inline Rename (2026-05-27)
+
+Project names, folder names, and page titles in the left sidebar can be renamed by double-clicking the item name. An inline input replaces the name text immediately, without a dialog.
+
+- **Enter** saves the new name.
+- **Escape** cancels and reverts to the original name.
+- **Clicking outside** (blur) saves the name.
+- Empty names are not saved; the previous name is preserved.
+- The three-dot **Rename** option also triggers inline rename (no longer uses a prompt).
+- Drag-and-drop and expand/collapse are unaffected.
+- Works in the project tree, Favorites section, and Search results section.
+
+## Sidebar Color Organization (2026-05-27)
+
+Projects and folders can be assigned an optional accent color from their three-dot menu:
+
+- **Project color** — tints the project title text. Options: Default, Green, Blue, Purple, Orange, Red, Gray.
+- **Folder color** — tints the folder icon only; folder name text stays neutral.
+- **Pages** — no color option for now.
+- Selecting "Default" (the first swatch) restores the original neutral styling.
+- Colors are stored as an optional field on project and folder data and survive reload, backup/restore, and folder moves.
+- Existing hover and selected (green active) states are unaffected.
+
+## Sidebar Expand + Active Page Fix (2026-05-27)
+
+Two behavior fixes to the left sidebar:
+
+- **Selective folder expansion**: Previously, opening or editing any note caused the entire folder tree to expand (all projects and folders auto-opened). The root cause was a `useEffect` with `for` loops that re-added every project/folder to the expanded set whenever `data.folders` or `data.projects` changed reference — which happened on every keystroke due to `useMemo` producing new array references. The effect is now prune-only (it removes IDs for deleted items only). A separate `useEffect([activePageId])` expands only the ancestor folder chain needed to reveal the active page when the active page changes.
+- **Active page row outline style**: The active (open) page row previously used a filled green background (`bg-leaf-50 border-leaf-200`), identical to selected project and folder rows. It now uses a green border outline only (`border-leaf-400`, no fill) so active pages and selected sidebar items are visually distinct.
+
+Files changed: `src/components/sidebar/Sidebar.tsx`, `src/components/sidebar/PageButton.tsx`.
+
+## Drag-and-Drop Move (2026-05-27)
+
+Pages and folders in the project tree can be repositioned by left-click dragging:
+
+- **Page drag** — drag a page row onto a folder header (drop into that folder) or onto a project name (drop at project root). Cross-project page moves within the same profile are supported.
+- **Folder drag** — drag a folder onto any folder or project name within the same profile. Cross-project folder moves cascade `projectId` to all descendant folders and pages automatically.
+- **Visual feedback** — a ghost label follows the cursor; valid drop targets highlight green; invalid targets (cycle, self, current no-op location) are not highlighted and drops are ignored.
+- **Click safety** — a 5 px movement threshold prevents accidental drags when clicking, renaming, expanding/collapsing, or opening menus.
+- **"Move to…" preserved** — the existing `window.prompt` fallback is still available from every page and folder three-dot menu.
+- **Not supported**: drag from Favorites/Search sections, cross-project folder drag, mobile/tablet.
+
+Implementation is entirely in `Sidebar.tsx` using pointer events and `elementFromPoint`. See `codex-notes/move-to.md` for full details.
 
 ## Move To (2026-05-26)
 
@@ -148,7 +193,7 @@ Priority QA checklist:
 - Test Tiptap tables: create, edit, merge cells, header rows, delete.
 - Test profiles: create, rename, delete, switch.
 - Test nested folders: create, rename, duplicate, delete with confirmation.
-- Test page templates: save, create from template.
+- Test page template persistence: save an existing page as a template and confirm normal new page creation still creates a blank page.
 - Test undo/redo: canvas actions, cross-page, after page switch.
 - Test localStorage persistence: edit, refresh, confirm data survived.
 - Verify security headers appear in DevTools → Network → response headers for any document request.
@@ -197,6 +242,31 @@ Priority QA checklist:
   - Dashed/dotted connectors show the correct stroke style.
   - Colored shapes and connectors preserve their colors.
   - Connector labels appear at the correct midpoint or bend.
+
+Sidebar expand + active page QA additions:
+
+- Open a page inside a nested folder → confirm only that folder's ancestor path expands; other folders stay collapsed.
+- Type in an open note → confirm no folders collapse or expand while editing.
+- Click a page in a different folder → confirm only that folder's ancestor path expands.
+- Confirm the active (open) page row shows a green border outline with no filled background.
+- Confirm selected project/folder rows still use the filled green background.
+- Confirm the active page row in Favorites and Search sections also shows the green border outline.
+
+Drag-and-drop QA additions:
+
+- Drag a page from project root onto a folder → confirm it moves inside the folder.
+- Drag a page from a folder onto another folder → confirm correct destination.
+- Drag a page from a folder onto a project name → confirm it moves to project root.
+- Drag a folder onto another folder (same project) → confirm nesting.
+- Drag a nested folder onto the project name → confirm it returns to project root.
+- Drag a folder onto itself or a descendant → confirm no highlight and no move.
+- Drag a page across projects (same profile) → confirm page appears in new project.
+- Drag a folder from Project A into Project B root → confirm folder and all its descendants (subfolders + pages) appear in Project B after reload.
+- Drag a folder from Project A into a folder inside Project B → confirm nesting + cascade.
+- Single-click a folder name, page, chevron, and three-dot after dragging → confirm click still works (no accidental suppress).
+- Confirm "Move to…" three-dot option still works after drag tests.
+- Confirm search finds moved pages. Confirm reload persists moves.
+- Confirm Favorites section shows moved pages correctly.
 
 After manual QA confirms stable behavior, the only remaining deferred beta issue is #9 (sidebar/search performance at scale), which is acceptable for a small beta and can be addressed post-launch if needed.
 
