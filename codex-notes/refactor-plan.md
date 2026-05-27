@@ -1,8 +1,34 @@
 # Maintainability Refactor Plan
 
-Audited 2026-05-26. No code changes were made — this is planning only.
+Audited 2026-05-26.
 
-## File sizes at time of audit
+## Completed refactors
+
+### Refactors 1 + 2 — Move geometry math block + eliminate duplicate helpers (2026-05-26)
+
+Moved all 21 module-scope pure functions from `CanvasLayer.tsx` lines 114–426 into `canvasGeometry.ts`. This eliminated the five functions that were duplicated between `CanvasLayer.tsx` and `CanvasObjectToolbar.tsx`. Both files now import from `canvasGeometry.ts`.
+
+**Functions exported from canvasGeometry.ts** (needed by CanvasLayer component body or CanvasObjectToolbar):
+`getConnectorLineMode`, `getSecondLineStrokeColor`, `getSecondLineStrokeWidth`, `getSecondLineStrokeStyle`, `getSecondLineArrowDirection`, `getSecondLineStrokeDashArray`, `getLineMarkerUrl`, `getDoubleLinePathData`
+
+**Functions added as unexported helpers** (only called by functions within canvasGeometry.ts):
+`getDoubleCurvePathData`, `getDoubleElbowPathData`, `getDoubleLineOffsetDistance`, `getStraightDoubleLineNormal`, `getEndpointSeparatedPoint`, `getAnchorTangent`, `getOffsetQuadraticCurvePoints`, `getQuadraticCurvePoint`, `getQuadraticCurveTangent`, `getPointPathData`, `getOffsetPolylinePoints`, `getOffsetSegment`, `getLineIntersection`
+
+**Behavior change**: None. `getConnectorLineMode` in CanvasObjectToolbar was missing an `isConnectedLine` guard — the canonical version (with the guard) is now the single source of truth.
+
+**File sizes after**:
+
+| File | Before | After | Delta |
+|---|---|---|---|
+| `CanvasLayer.tsx` | 2411 | 2105 | −306 |
+| `CanvasObjectToolbar.tsx` | 1056 | 1034 | −22 |
+| `canvasGeometry.ts` | 533 | 850 | +317 |
+
+Build confirmed clean: `npm run build` passes with no TypeScript errors.
+
+---
+
+## File sizes at time of audit (2026-05-26)
 
 | File | Lines |
 |---|---|
@@ -143,7 +169,7 @@ The file exports 3 components: `PenToolToolbar`, `CanvasToolDefaultsToolbar`, an
 
 ## Not worth touching
 
-- `exportUtils.ts` inline CSS template — functional, isolated; cosmetic-only improvement possible
+- `exportUtils.ts` inline CSS template — functional, isolated; cosmetic-only improvement possible. Note: the canvas SVG renderer in this file was substantially rewritten 2026-05-26 to fix arrowheads, double-line connectors, elbow/curve paths, and stroke-dasharray in PDF export. See `codex-notes/pdf-export-canvas.md`.
 - `CanvasCreationToolbar.tsx` (447 lines) — reasonable for a feature-rich toolbar
 - `Sidebar.tsx` (797 lines) — medium-large but sidebar complexity is real; no urgent split needed
 - `ColorPicker.tsx`, `TagEditor.tsx`, `RichTextEditor.tsx` — appropriate sizes

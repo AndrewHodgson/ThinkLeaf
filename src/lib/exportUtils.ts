@@ -1,5 +1,23 @@
-import type { CanvasObject, Page, WorkspaceData } from "@/types/workspace";
+import type { CanvasConnectorArrowDirection, CanvasObject, Page, WorkspaceData } from "@/types/workspace";
 import { normalizeEditorContent } from "@/lib/editorContent";
+import { defaultCanvasStyle } from "@/lib/canvasStyle";
+import {
+  getArrowDirection,
+  getConnectorLineMode,
+  getConnectorStyle,
+  getCurveConnectorControlPoint,
+  getDoubleLinePathData,
+  getElbowConnectorPoints,
+  getLineLabelPoint,
+  getLinePoints,
+  getLineRenderPoints,
+  getSecondLineArrowDirection,
+  getSecondLineStrokeColor,
+  getSecondLineStrokeDashArray,
+  getSecondLineStrokeWidth,
+  getStrokeDashArray,
+  isConnectedLine,
+} from "@/components/workspace/canvas/canvasGeometry";
 
 export function exportWorkspaceBackup(data: WorkspaceData) {
   const date = new Date().toISOString().slice(0, 10);
@@ -340,6 +358,52 @@ function getPrintablePageHtml(page: Page, breadcrumbPath: string[]) {
 </html>`;
 }
 
+type LineRenderEntry = {
+  arrowDirection: CanvasConnectorArrowDirection;
+  pathData: string;
+  strokeColor: string;
+  strokeDasharray: string | undefined;
+  strokeWidth: number;
+  startPt: { x: number; y: number };
+  startAngle: number;
+  endPt: { x: number; y: number };
+  endAngle: number;
+};
+
+// Parse the first M-command point from an SVG path string.
+function parsePathStartPt(pathData: string): { x: number; y: number } {
+  const m = pathData.match(/M\s+([\d.e+\-]+)\s+([\d.e+\-]+)/);
+  return m ? { x: parseFloat(m[1]), y: parseFloat(m[2]) } : { x: 0, y: 0 };
+}
+
+// Parse the last endpoint from an SVG path string (handles L and Q commands).
+function parsePathEndPt(pathData: string): { x: number; y: number } {
+  // Greedily match to the last L command (polyline / elbow / offset-curve paths).
+  const lMatch = pathData.match(/.*L\s+([\d.e+\-]+)\s+([\d.e+\-]+)/);
+  if (lMatch) return { x: parseFloat(lMatch[1]), y: parseFloat(lMatch[2]) };
+  // Quadratic bezier endpoint: last two args of Q.
+  const qMatch = pathData.match(/Q\s+[\d.e+\-]+\s+[\d.e+\-]+\s+([\d.e+\-]+)\s+([\d.e+\-]+)/);
+  if (qMatch) return { x: parseFloat(qMatch[1]), y: parseFloat(qMatch[2]) };
+  // Fallback: last M point.
+  const mMatch = pathData.match(/.*M\s+([\d.e+\-]+)\s+([\d.e+\-]+)/);
+  return mMatch ? { x: parseFloat(mMatch[1]), y: parseFloat(mMatch[2]) } : { x: 0, y: 0 };
+}
+
+// Render an explicit arrowhead triangle at (x, y) pointing in direction `angle` (radians).
+// Geometry matches the live-canvas SVG marker: tip 1sw forward, base 7sw back, 4sw half-width.
+function renderArrowhead(x: number, y: number, angle: number, sw: number, color: string): string {
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+  const tx = x + cosA * sw;
+  const ty = y + sinA * sw;
+  const ax = x - cosA * 7 * sw + sinA * 4 * sw;
+  const ay = y - sinA * 7 * sw - cosA * 4 * sw;
+  const bx = x - cosA * 7 * sw - sinA * 4 * sw;
+  const by = y - sinA * 7 * sw + cosA * 4 * sw;
+  const pts = `${Math.round(tx * 10) / 10},${Math.round(ty * 10) / 10} ${Math.round(ax * 10) / 10},${Math.round(ay * 10) / 10} ${Math.round(bx * 10) / 10},${Math.round(by * 10) / 10}`;
+  return `<polygon points="${pts}" fill="${escapeAttribute(color)}" stroke="none" />`;
+}
+
 function getCanvasSvg(objects: CanvasObject[]) {
   if (!objects.length) {
     return '<p class="canvas-empty">No canvas objects on this page.</p>';
@@ -357,8 +421,112 @@ function getCanvasSvg(objects: CanvasObject[]) {
 
   return `<svg viewBox="${viewBox}" width="900" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <rect x="${bounds.x - padding}" y="${bounds.y - padding}" width="${bounds.width + padding * 2}" height="${bounds.height + padding * 2}" fill="#ffffff" />
-    ${objects.map(renderCanvasObject).join("")}
+    ${objects.map((o) => renderCanvasObject(o, objects)).join("")}
   </svg>`;
+}
+
+function getLineRenderEntries(object: CanvasObject, objects: CanvasObject[]): LineRenderEntry[] {
+  const points = getLineRenderPoints(object, objects);
+  const { x1, y1, x2, y2 } = points;
+  const strokeColor = object.strokeColor ?? defaultCanvasStyle.strokeColor;
+  const strokeWidth = object.strokeWidth ?? defaultCanvasStyle.strokeWidth;
+  const arrowDirection = getArrowDirection(object);
+  const lineMode = getConnectorLineMode(object);
+
+  if (lineMode === "double" && isConnectedLine(object)) {
+    const secondStrokeWidth = getSecondLineStrokeWidth(object);
+    const primaryPath = getDoubleLinePathData(object, points, 1, strokeWidth, secondStrokeWidth);
+    const secondaryPath = getDoubleLinePathData(object, points, -1, strokeWidth, secondStrokeWidth);
+
+    // Angles are the same as the single-line routing (paths are parallel offsets).
+    const connectorStyle = getConnectorStyle(object);
+    let startAngle: number;
+    let endAngle: number;
+
+    if (connectorStyle === "curve") {
+      const cp = getCurveConnectorControlPoint(points, object);
+      endAngle = Math.atan2(y2 - cp.y, x2 - cp.x);
+      startAngle = Math.atan2(y1 - cp.y, x1 - cp.x);
+    } else if (connectorStyle === "elbow") {
+      const rp = getElbowConnectorPoints(points, object);
+      const n = rp.length;
+      endAngle = n >= 2 ? Math.atan2(rp[n - 1].y - rp[n - 2].y, rp[n - 1].x - rp[n - 2].x) : 0;
+      startAngle = n >= 2 ? Math.atan2(rp[0].y - rp[1].y, rp[0].x - rp[1].x) : Math.PI;
+    } else {
+      const a = Math.atan2(y2 - y1, x2 - x1);
+      endAngle = a;
+      startAngle = a + Math.PI;
+    }
+
+    return [
+      {
+        arrowDirection,
+        pathData: primaryPath,
+        strokeColor,
+        strokeDasharray: getStrokeDashArray(object),
+        strokeWidth,
+        startPt: parsePathStartPt(primaryPath),
+        startAngle,
+        endPt: parsePathEndPt(primaryPath),
+        endAngle,
+      },
+      {
+        arrowDirection: getSecondLineArrowDirection(object),
+        pathData: secondaryPath,
+        strokeColor: getSecondLineStrokeColor(object),
+        strokeDasharray: getSecondLineStrokeDashArray(object),
+        strokeWidth: secondStrokeWidth,
+        startPt: parsePathStartPt(secondaryPath),
+        startAngle,
+        endPt: parsePathEndPt(secondaryPath),
+        endAngle,
+      },
+    ];
+  }
+
+  // Single line — straight, curve, or elbow.
+  let pathData: string;
+  let startPt: { x: number; y: number };
+  let endPt: { x: number; y: number };
+  let startAngle: number;
+  let endAngle: number;
+
+  if (isConnectedLine(object)) {
+    const connectorStyle = getConnectorStyle(object);
+    if (connectorStyle === "curve") {
+      const cp = getCurveConnectorControlPoint(points, object);
+      pathData = `M ${x1} ${y1} Q ${cp.x} ${cp.y} ${x2} ${y2}`;
+      endAngle = Math.atan2(y2 - cp.y, x2 - cp.x);
+      startAngle = Math.atan2(y1 - cp.y, x1 - cp.x);
+      startPt = { x: x1, y: y1 };
+      endPt = { x: x2, y: y2 };
+    } else if (connectorStyle === "elbow") {
+      const rp = getElbowConnectorPoints(points, object);
+      pathData = rp.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+      const n = rp.length;
+      endAngle = n >= 2 ? Math.atan2(rp[n - 1].y - rp[n - 2].y, rp[n - 1].x - rp[n - 2].x) : 0;
+      startAngle = n >= 2 ? Math.atan2(rp[0].y - rp[1].y, rp[0].x - rp[1].x) : Math.PI;
+      startPt = rp[0] ?? { x: x1, y: y1 };
+      endPt = rp[n - 1] ?? { x: x2, y: y2 };
+    } else {
+      pathData = `M ${x1} ${y1} L ${x2} ${y2}`;
+      const a = Math.atan2(y2 - y1, x2 - x1);
+      endAngle = a;
+      startAngle = a + Math.PI;
+      startPt = { x: x1, y: y1 };
+      endPt = { x: x2, y: y2 };
+    }
+  } else {
+    // Freeform (unconnected) line or arrow — always straight.
+    pathData = `M ${x1} ${y1} L ${x2} ${y2}`;
+    const a = Math.atan2(y2 - y1, x2 - x1);
+    endAngle = a;
+    startAngle = a + Math.PI;
+    startPt = { x: x1, y: y1 };
+    endPt = { x: x2, y: y2 };
+  }
+
+  return [{ arrowDirection, pathData, strokeColor, strokeDasharray: getStrokeDashArray(object), strokeWidth, startPt, startAngle, endPt, endAngle }];
 }
 
 function renderBreadcrumb(breadcrumbPath: string[]) {
@@ -386,9 +554,10 @@ function formatDateTime(value: string) {
 function getCanvasBounds(objects: CanvasObject[]) {
   const points = objects.flatMap((object) => {
     if (object.type === "line" || object.type === "arrow") {
+      const lp = getLinePoints(object);
       return [
-        { x: object.x1 ?? object.x, y: object.y1 ?? object.y },
-        { x: object.x2 ?? object.x + object.width, y: object.y2 ?? object.y + object.height },
+        { x: lp.x1, y: lp.y1 },
+        { x: lp.x2, y: lp.y2 },
       ];
     }
 
@@ -410,9 +579,9 @@ function getCanvasBounds(objects: CanvasObject[]) {
   };
 }
 
-function renderCanvasObject(object: CanvasObject) {
+function renderCanvasObject(object: CanvasObject, objects: CanvasObject[]) {
   if (object.type === "line" || object.type === "arrow") {
-    return renderLine(object);
+    return renderLine(object, objects);
   }
 
   if (object.type === "penStroke") {
@@ -423,13 +592,19 @@ function renderCanvasObject(object: CanvasObject) {
     return `<image href="${escapeAttribute(object.imageDataUrl)}" x="${object.x}" y="${object.y}" width="${object.width}" height="${object.height}" preserveAspectRatio="xMidYMid meet" />`;
   }
 
+  const fillColor = object.fillColor ?? defaultCanvasStyle.fillColor;
+  const strokeColor = object.strokeColor ?? defaultCanvasStyle.strokeColor;
+  const strokeWidth = object.strokeWidth ?? defaultCanvasStyle.strokeWidth;
+  const textColor = object.textColor ?? defaultCanvasStyle.textColor;
+  const strokeDasharray = getStrokeDashArray(object);
+  const dashAttr = strokeDasharray != null ? ` stroke-dasharray="${strokeDasharray}"` : "";
   const label = object.text || "";
   const text = label
-    ? `<text x="${object.x + object.width / 2}" y="${object.y + object.height / 2}" dominant-baseline="middle" fill="${escapeAttribute(object.textColor)}" font-size="${object.fontSize ?? 16}" font-weight="${object.textBold ? 700 : 400}" text-anchor="middle">${escapeHtml(label)}</text>`
+    ? `<text x="${object.x + object.width / 2}" y="${object.y + object.height / 2}" dominant-baseline="middle" fill="${escapeAttribute(textColor)}" font-size="${object.fontSize ?? defaultCanvasStyle.fontSize}" font-weight="${object.textBold ? 700 : 400}" text-anchor="middle">${escapeHtml(label)}</text>`
     : "";
 
   if (object.type === "circle") {
-    return `<g>${textBeforeLabel(object)}<ellipse cx="${object.x + object.width / 2}" cy="${object.y + object.height / 2}" rx="${object.width / 2}" ry="${object.height / 2}" fill="${escapeAttribute(object.fillColor)}" stroke="${escapeAttribute(object.strokeColor)}" stroke-width="${object.strokeWidth}" />${text}</g>`;
+    return `<g>${textBeforeLabel(object)}<ellipse cx="${object.x + object.width / 2}" cy="${object.y + object.height / 2}" rx="${object.width / 2}" ry="${object.height / 2}" fill="${escapeAttribute(fillColor)}" stroke="${escapeAttribute(strokeColor)}" stroke-width="${strokeWidth}" stroke-linecap="round"${dashAttr} />${text}</g>`;
   }
 
   if (object.type === "diamond") {
@@ -439,22 +614,36 @@ function renderCanvasObject(object: CanvasObject) {
       `${object.x + object.width / 2},${object.y + object.height}`,
       `${object.x},${object.y + object.height / 2}`,
     ].join(" ");
-    return `<g>${textBeforeLabel(object)}<polygon points="${points}" fill="${escapeAttribute(object.fillColor)}" stroke="${escapeAttribute(object.strokeColor)}" stroke-width="${object.strokeWidth}" />${text}</g>`;
+    return `<g>${textBeforeLabel(object)}<polygon points="${points}" fill="${escapeAttribute(fillColor)}" stroke="${escapeAttribute(strokeColor)}" stroke-width="${strokeWidth}" stroke-linecap="round"${dashAttr} />${text}</g>`;
   }
 
-  return `<g>${textBeforeLabel(object)}<rect x="${object.x}" y="${object.y}" width="${object.width}" height="${object.height}" rx="6" fill="${escapeAttribute(object.fillColor)}" stroke="${escapeAttribute(object.strokeColor)}" stroke-width="${object.strokeWidth}" />${text}</g>`;
+  return `<g>${textBeforeLabel(object)}<rect x="${object.x}" y="${object.y}" width="${object.width}" height="${object.height}" rx="6" fill="${escapeAttribute(fillColor)}" stroke="${escapeAttribute(strokeColor)}" stroke-width="${strokeWidth}" stroke-linecap="round"${dashAttr} />${text}</g>`;
 }
 
-function renderLine(object: CanvasObject) {
-  const x1 = object.x1 ?? object.x;
-  const y1 = object.y1 ?? object.y;
-  const x2 = object.x2 ?? object.x + object.width;
-  const y2 = object.y2 ?? object.y + object.height;
-  const label = object.connectorLabel
-    ? `<text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 8}" fill="#334155" font-size="13" text-anchor="middle">${escapeHtml(object.connectorLabel)}</text>`
-    : "";
+function renderLine(object: CanvasObject, objects: CanvasObject[]) {
+  const entries = getLineRenderEntries(object, objects);
+  const pathsHtml = entries
+    .map((entry) => {
+      const dashAttr = entry.strokeDasharray != null ? ` stroke-dasharray="${entry.strokeDasharray}"` : "";
+      const pathHtml = `<path d="${entry.pathData}" fill="none" stroke="${escapeAttribute(entry.strokeColor)}" stroke-width="${entry.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"${dashAttr} />`;
+      let arrowsHtml = "";
+      if (entry.arrowDirection === "forward" || entry.arrowDirection === "both") {
+        arrowsHtml += renderArrowhead(entry.endPt.x, entry.endPt.y, entry.endAngle, entry.strokeWidth, entry.strokeColor);
+      }
+      if (entry.arrowDirection === "backward" || entry.arrowDirection === "both") {
+        arrowsHtml += renderArrowhead(entry.startPt.x, entry.startPt.y, entry.startAngle, entry.strokeWidth, entry.strokeColor);
+      }
+      return pathHtml + arrowsHtml;
+    })
+    .join("");
 
-  return `<g><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" fill="none" stroke="${escapeAttribute(object.strokeColor)}" stroke-width="${object.strokeWidth}" stroke-linecap="round" />${label}</g>`;
+  let labelHtml = "";
+  if (object.connectorLabel?.trim()) {
+    const labelPt = getLineLabelPoint(object, objects);
+    labelHtml = `<text x="${labelPt.x}" y="${labelPt.y - 8}" fill="#334155" font-size="13" text-anchor="middle">${escapeHtml(object.connectorLabel)}</text>`;
+  }
+
+  return `<g>${pathsHtml}${labelHtml}</g>`;
 }
 
 function renderPenStroke(object: CanvasObject) {

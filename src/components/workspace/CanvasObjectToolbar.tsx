@@ -44,6 +44,13 @@ import type {
   CanvasTool,
 } from "@/types/workspace";
 import type { CanvasShapeType } from "@/types/workspace";
+import {
+  getConnectorLineMode,
+  getSecondLineArrowDirection,
+  getSecondLineStrokeColor,
+  getSecondLineStrokeStyle,
+  getSecondLineStrokeWidth,
+} from "@/components/workspace/canvas/canvasGeometry";
 
 type CanvasObjectToolbarProps = {
   object: CanvasObject;
@@ -993,35 +1000,6 @@ function getArrowDirectionValue(object: CanvasObject) {
   }
 
   return object.type === "arrow" ? "forward" : "none";
-}
-
-function getConnectorLineMode(object: CanvasObject) {
-  return object.connectorLineMode === "double" ? "double" : "single";
-}
-
-function getSecondLineStrokeColor(object: CanvasObject) {
-  return object.secondLineStrokeColor ?? object.strokeColor;
-}
-
-function getSecondLineStrokeWidth(object: CanvasObject) {
-  return object.secondLineStrokeWidth ?? object.strokeWidth;
-}
-
-function getSecondLineStrokeStyle(object: CanvasObject) {
-  return object.secondLineStrokeStyle ?? object.strokeStyle ?? defaultCanvasStyle.strokeStyle;
-}
-
-function getSecondLineArrowDirection(object: CanvasObject) {
-  if (
-    object.secondLineArrowDirection === "none" ||
-    object.secondLineArrowDirection === "forward" ||
-    object.secondLineArrowDirection === "backward" ||
-    object.secondLineArrowDirection === "both"
-  ) {
-    return object.secondLineArrowDirection;
-  }
-
-  return "backward";
 }
 
 function getConnectorAnchorLabel(anchor: CanvasConnectorAnchor | undefined) {

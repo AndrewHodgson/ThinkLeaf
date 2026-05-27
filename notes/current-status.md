@@ -109,6 +109,7 @@ The following beta-readiness issues have been addressed since the last maintaina
 - **Data storage disclosure**: A plain-language note explaining local-only storage, no cloud sync, and browser-access risk was added to the Settings menu's "Data & Backup" section. No encryption or backend added — beta scope is disclosure only.
 - **Security headers**: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy` added to `next.config.ts`. CSP intentionally deferred — requires nonce middleware to be useful alongside Next.js inline scripts and Tiptap inline styles. See `codex-notes/security-headers.md`.
 - **Export separation**: JSON backup (editable restore) and PDF export (print/share, with canvas on its own page) are distinct functions with no confusion between them.
+- **PDF canvas fidelity (2026-05-26)**: Canvas SVG export rebuilt from scratch. Arrowheads are now explicit `<polygon>` elements (SVG `<marker>` dropped — unreliable in print contexts). Elbow and curve connector paths compute correct routes. Double-line connectors render two offset parallel strokes. Endpoint coordinates use `getLineRenderPoints` for accuracy. See `codex-notes/pdf-export-canvas.md`.
 - **Mobile/tablet**: intentionally not a beta priority. No responsive work planned until core QA is complete.
 - **CanvasLayer runtime errors**: confirmed resolved — `getConnectorLineMode`, `getDoubleLinePathData`, and `getLineMarkerUrl` are all hoisted function declarations; `markerEnd` is a JSX SVG prop name, not a variable.
 
@@ -134,16 +135,28 @@ Priority QA checklist:
 - Trigger the corrupted storage recovery screen via the DevTools steps in `codex-notes/corrupted-storage-recovery.md`.
 - Trigger the error boundary fallback via the temporary-throw method in `codex-notes/error-boundary.md`.
 - Test JSON backup export and re-import.
-- Test PDF export: confirm note body and canvas each appear on their own pages.
+- Test PDF export (save file and open directly — not just print preview):
+  - Note body and canvas each appear on their own pages.
+  - Straight arrows show arrowheads at correct endpoints.
+  - Both-direction arrows show arrowheads at both ends.
+  - Elbow connectors route with correct right-angle bends.
+  - Curve connectors route with the correct arc.
+  - Double-line connectors show two parallel strokes.
+  - Arrowheads on elbow/curve connectors point along the path tangent.
+  - Dashed/dotted connectors show the correct stroke style.
+  - Colored shapes and connectors preserve their colors.
+  - Connector labels appear at the correct midpoint or bend.
 
 After manual QA confirms stable behavior, the only remaining deferred beta issue is #9 (sidebar/search performance at scale), which is acceptable for a small beta and can be addressed post-launch if needed.
 
 ## Post-Beta Refactor Priorities
 
-A maintainability audit was completed 2026-05-26. The full plan is in `codex-notes/refactor-plan.md`. Do not start these before manual QA is complete.
+A maintainability audit was completed 2026-05-26. The full plan is in `codex-notes/refactor-plan.md`.
 
-Top priorities in order:
-1. Move ~310 lines of pure geometry math out of `CanvasLayer.tsx` into `canvasGeometry.ts` — also eliminates five duplicated helper functions shared with `CanvasObjectToolbar.tsx`.
+Completed:
+1. ~~Move ~310 lines of pure geometry math out of `CanvasLayer.tsx` into `canvasGeometry.ts` — also eliminates five duplicated helper functions shared with `CanvasObjectToolbar.tsx`.~~ Done 2026-05-26. CanvasLayer.tsx: 2411 → 2105 lines.
+
+Remaining (safe to do in any order):
 2. Extract `isEditableTarget` to a shared utility (currently defined in both `ThinkleafApp.tsx` and `CanvasLayer.tsx`).
 3. Rename the three `cloneCanvasObjects` variants to prevent confusion (two shallow-clone variants with same-IDs, one ID-remapping variant — different behaviors, easy to misuse).
 4. Remove dead `updateCanvasViewState` export from `useWorkspace.ts`.

@@ -43,13 +43,16 @@ import {
   alignCanvasSize,
   alignCanvasX,
   alignCanvasY,
+  getConnectorLineMode,
   getCreationDefaultsForType,
   getArrowDirection,
   getConnectorAnchorPoint,
   getConnectorStyle,
   getCurveConnectorControlPoint,
+  getDoubleLinePathData,
   getElbowConnectorPoints,
   getElbowConnectorControlPoints,
+  getLineMarkerUrl,
   getLineRenderSegments,
   getLineRenderPoints,
   getLineLabelPoint,
@@ -57,6 +60,10 @@ import {
   getMinimumCanvasSize,
   getOppositeConnectorAnchor,
   getResizeUpdates,
+  getSecondLineArrowDirection,
+  getSecondLineStrokeColor,
+  getSecondLineStrokeDashArray,
+  getSecondLineStrokeWidth,
   getStrokeDashArray,
   isConnectedLine,
   normalizeLineBounds,
@@ -110,319 +117,6 @@ const toolToObjectType: Partial<Record<CanvasTool, CanvasObjectType>> = {
 };
 const canvasHitMarginX = virtualBoardWidth;
 const canvasHitMarginY = virtualBoardHeight;
-
-function getConnectorLineMode(object: CanvasObject) {
-  return isConnectedLine(object) && object.connectorLineMode === "double" ? "double" : "single";
-}
-
-function getSecondLineStrokeColor(object: CanvasObject) {
-  return object.secondLineStrokeColor ?? object.strokeColor;
-}
-
-function getSecondLineStrokeWidth(object: CanvasObject) {
-  return object.secondLineStrokeWidth ?? object.strokeWidth;
-}
-
-function getSecondLineStrokeStyle(object: CanvasObject) {
-  return object.secondLineStrokeStyle ?? object.strokeStyle ?? defaultCanvasStyle.strokeStyle;
-}
-
-function getSecondLineArrowDirection(object: CanvasObject) {
-  if (
-    object.secondLineArrowDirection === "none" ||
-    object.secondLineArrowDirection === "forward" ||
-    object.secondLineArrowDirection === "backward" ||
-    object.secondLineArrowDirection === "both"
-  ) {
-    return object.secondLineArrowDirection;
-  }
-
-  return "backward";
-}
-
-function getSecondLineStrokeDashArray(object: CanvasObject) {
-  return getStrokeDashArray({
-    ...object,
-    strokeStyle: getSecondLineStrokeStyle(object),
-    strokeWidth: getSecondLineStrokeWidth(object),
-  });
-}
-
-function getLineMarkerUrl(
-  arrowDirection: CanvasConnectorArrowDirection,
-  markerId: string,
-  endpoint: "start" | "end",
-) {
-  if (endpoint === "start") {
-    return arrowDirection === "backward" || arrowDirection === "both" ? `url(#${markerId})` : undefined;
-  }
-
-  return arrowDirection === "forward" || arrowDirection === "both" ? `url(#${markerId})` : undefined;
-}
-
-function getDoubleLinePathData(
-  object: CanvasObject & {
-    sourceAnchor: CanvasConnectorAnchor;
-    targetAnchor: CanvasConnectorAnchor;
-  },
-  points: { x1: number; x2: number; y1: number; y2: number },
-  side: 1 | -1,
-  firstLineStrokeWidth: number,
-  secondLineStrokeWidth: number,
-) {
-  const offsetDistance = getDoubleLineOffsetDistance(firstLineStrokeWidth, secondLineStrokeWidth);
-  const connectorStyle = getConnectorStyle(object);
-
-  if (connectorStyle === "curve") {
-    return getDoubleCurvePathData(object, points, side, offsetDistance);
-  }
-
-  if (connectorStyle === "elbow") {
-    return getDoubleElbowPathData(object, points, side, offsetDistance);
-  }
-
-  const offset = getStraightDoubleLineNormal(points, offsetDistance * side);
-  const sourcePoint = getEndpointSeparatedPoint(
-    { x: points.x1, y: points.y1 },
-    object.sourceAnchor,
-    offset,
-    offsetDistance,
-    side,
-  );
-  const targetPoint = getEndpointSeparatedPoint(
-    { x: points.x2, y: points.y2 },
-    object.targetAnchor,
-    offset,
-    offsetDistance,
-    side,
-  );
-
-  return `M ${sourcePoint.x} ${sourcePoint.y} L ${targetPoint.x} ${targetPoint.y}`;
-}
-
-function getDoubleCurvePathData(
-  object: CanvasObject & {
-    sourceAnchor: CanvasConnectorAnchor;
-    targetAnchor: CanvasConnectorAnchor;
-  },
-  points: { x1: number; x2: number; y1: number; y2: number },
-  side: 1 | -1,
-  offsetDistance: number,
-) {
-  const centerControlPoint = getCurveConnectorControlPoint(points, object);
-  const controlPoint = {
-    x: centerControlPoint.x,
-    y: centerControlPoint.y,
-  };
-  const samplePoints = getOffsetQuadraticCurvePoints(
-    { x: points.x1, y: points.y1 },
-    controlPoint,
-    { x: points.x2, y: points.y2 },
-    offsetDistance * side,
-  );
-
-  return getPointPathData(samplePoints);
-}
-
-function getDoubleElbowPathData(
-  object: CanvasObject & {
-    sourceAnchor: CanvasConnectorAnchor;
-    targetAnchor: CanvasConnectorAnchor;
-  },
-  points: { x1: number; x2: number; y1: number; y2: number },
-  side: 1 | -1,
-  offsetDistance: number,
-) {
-  const routePoints = getElbowConnectorPoints(points, object);
-  const offsetPoints = getOffsetPolylinePoints(routePoints, offsetDistance * side);
-
-  if (offsetPoints.length < 2) {
-    return `M ${points.x1} ${points.y1} L ${points.x2} ${points.y2}`;
-  }
-
-  return offsetPoints.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
-}
-
-function getDoubleLineOffsetDistance(firstLineStrokeWidth: number, secondLineStrokeWidth: number) {
-  return Math.max(8, (firstLineStrokeWidth + secondLineStrokeWidth) / 2 + 5);
-}
-
-function getStraightDoubleLineNormal(
-  points: { x1: number; x2: number; y1: number; y2: number },
-  distance: number,
-) {
-  const dx = points.x2 - points.x1;
-  const dy = points.y2 - points.y1;
-  const length = Math.hypot(dx, dy);
-
-  if (length < 0.001) {
-    return { x: 0, y: 0 };
-  }
-
-  return {
-    x: (-dy / length) * distance,
-    y: (dx / length) * distance,
-  };
-}
-
-function getEndpointSeparatedPoint(
-  point: { x: number; y: number },
-  anchor: CanvasConnectorAnchor,
-  preferredOffset: { x: number; y: number },
-  distance: number,
-  side: 1 | -1,
-) {
-  const tangent = getAnchorTangent(anchor);
-  const projectedDistance = preferredOffset.x * tangent.x + preferredOffset.y * tangent.y;
-  const direction = Math.abs(projectedDistance) > 0.5 ? Math.sign(projectedDistance) : side;
-
-  return {
-    x: point.x + tangent.x * distance * direction,
-    y: point.y + tangent.y * distance * direction,
-  };
-}
-
-function getAnchorTangent(anchor: CanvasConnectorAnchor) {
-  if (anchor === "top" || anchor === "bottom") {
-    return { x: 1, y: 0 };
-  }
-
-  return { x: 0, y: 1 };
-}
-
-function getOffsetQuadraticCurvePoints(
-  start: { x: number; y: number },
-  control: { x: number; y: number },
-  end: { x: number; y: number },
-  distance: number,
-) {
-  const sampleCount = 28;
-  const fallbackTangent = {
-    x: end.x - start.x,
-    y: end.y - start.y,
-  };
-
-  return Array.from({ length: sampleCount + 1 }, (_, index) => {
-    const t = index / sampleCount;
-    const point = getQuadraticCurvePoint(start, control, end, t);
-    const tangent = getQuadraticCurveTangent(start, control, end, t, fallbackTangent);
-    const tangentLength = Math.hypot(tangent.x, tangent.y);
-
-    if (tangentLength < 0.001) {
-      return point;
-    }
-
-    return {
-      x: point.x + (-tangent.y / tangentLength) * distance,
-      y: point.y + (tangent.x / tangentLength) * distance,
-    };
-  });
-}
-
-function getQuadraticCurvePoint(
-  start: { x: number; y: number },
-  control: { x: number; y: number },
-  end: { x: number; y: number },
-  t: number,
-) {
-  const oneMinusT = 1 - t;
-
-  return {
-    x: oneMinusT * oneMinusT * start.x + 2 * oneMinusT * t * control.x + t * t * end.x,
-    y: oneMinusT * oneMinusT * start.y + 2 * oneMinusT * t * control.y + t * t * end.y,
-  };
-}
-
-function getQuadraticCurveTangent(
-  start: { x: number; y: number },
-  control: { x: number; y: number },
-  end: { x: number; y: number },
-  t: number,
-  fallbackTangent: { x: number; y: number },
-) {
-  const oneMinusT = 1 - t;
-  const tangent = {
-    x: 2 * oneMinusT * (control.x - start.x) + 2 * t * (end.x - control.x),
-    y: 2 * oneMinusT * (control.y - start.y) + 2 * t * (end.y - control.y),
-  };
-
-  return Math.hypot(tangent.x, tangent.y) < 0.001 ? fallbackTangent : tangent;
-}
-
-function getPointPathData(points: Array<{ x: number; y: number }>) {
-  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
-}
-
-function getOffsetPolylinePoints(points: Array<{ x: number; y: number }>, distance: number) {
-  const offsetSegments = points
-    .slice(0, -1)
-    .map((point, index) => getOffsetSegment(point, points[index + 1], distance))
-    .filter((segment): segment is NonNullable<typeof segment> => Boolean(segment));
-
-  if (!offsetSegments.length) {
-    return [];
-  }
-
-  return offsetSegments.map((segment, index) => {
-    if (index === 0) {
-      return segment.start;
-    }
-
-    const previousSegment = offsetSegments[index - 1];
-    return getLineIntersection(previousSegment.start, previousSegment.end, segment.start, segment.end) ?? {
-      x: (previousSegment.end.x + segment.start.x) / 2,
-      y: (previousSegment.end.y + segment.start.y) / 2,
-    };
-  }).concat(offsetSegments[offsetSegments.length - 1].end);
-}
-
-function getOffsetSegment(
-  start: { x: number; y: number },
-  end: { x: number; y: number },
-  distance: number,
-) {
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const length = Math.hypot(dx, dy);
-
-  if (length < 0.001) {
-    return null;
-  }
-
-  const offset = {
-    x: (-dy / length) * distance,
-    y: (dx / length) * distance,
-  };
-
-  return {
-    end: { x: end.x + offset.x, y: end.y + offset.y },
-    start: { x: start.x + offset.x, y: start.y + offset.y },
-  };
-}
-
-function getLineIntersection(
-  lineAStart: { x: number; y: number },
-  lineAEnd: { x: number; y: number },
-  lineBStart: { x: number; y: number },
-  lineBEnd: { x: number; y: number },
-) {
-  const aDx = lineAEnd.x - lineAStart.x;
-  const aDy = lineAEnd.y - lineAStart.y;
-  const bDx = lineBEnd.x - lineBStart.x;
-  const bDy = lineBEnd.y - lineBStart.y;
-  const denominator = aDx * bDy - aDy * bDx;
-
-  if (Math.abs(denominator) < 0.001) {
-    return null;
-  }
-
-  const t = ((lineBStart.x - lineAStart.x) * bDy - (lineBStart.y - lineAStart.y) * bDx) / denominator;
-
-  return {
-    x: lineAStart.x + t * aDx,
-    y: lineAStart.y + t * aDy,
-  };
-}
 
 export function CanvasLayer({
   activeTool,
@@ -1855,7 +1549,7 @@ export function CanvasLayer({
       Boolean(pendingConnectorStart) ||
       isSpacePressed ||
       interaction?.kind === "pendingLine");
-  const shouldUseExpandedDrawingHitLayer = activeTool === "Pen" || activeTool === "Eraser";
+  const shouldUseExpandedDrawingHitLayer = shouldUseCanvasHitLayer;
   const activeToolCursor = getActiveToolCursor(activeTool, interaction?.kind === "pan");
 
   return (
