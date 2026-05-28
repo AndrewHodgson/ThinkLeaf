@@ -1,5 +1,5 @@
 import { db, type AssetRecord } from "@/lib/db";
-import { markRecordsSynced } from "@/lib/storageAdapter";
+import { markRecordsSynced, setLastPulledAt } from "@/lib/storageAdapter";
 import { supabase } from "@/lib/supabase";
 import type { Folder, Page, Profile, Project } from "@/types/workspace";
 
@@ -237,4 +237,151 @@ function toCloudPage(r: Page, userId: string) {
     created_at: r.createdAt,
     updated_at: r.updatedAt,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Linked userId helpers  (persistent account binding stored in IDB settings)
+// ---------------------------------------------------------------------------
+
+export async function getLinkedUserId(): Promise<string | null> {
+  const row = await db.settings.get("sync.linkedUserId");
+  return typeof row?.value === "string" ? row.value : null;
+}
+
+export async function setLinkedUserId(userId: string): Promise<void> {
+  await db.settings.put({ key: "sync.linkedUserId", value: userId });
+}
+
+// ---------------------------------------------------------------------------
+// Full cloud download
+// ---------------------------------------------------------------------------
+
+export type DownloadResult = {
+  records: { profiles: Profile[]; projects: Project[]; folders: Folder[]; pages: Page[] };
+  assets: Array<{ id: string; data: string }>;
+  error: string | null;
+};
+
+/**
+ * Downloads ALL records and assets for userId from Supabase, writes them to IDB
+ * (bulkPut — cloud rows win over local by primary key), advances pull watermarks,
+ * and returns the data so React state can be updated without a DB round-trip.
+ */
+export async function downloadFullWorkspaceFromCloud(userId: string): Promise<DownloadResult> {
+  if (!supabase) {
+    return { records: { profiles: [], projects: [], folders: [], pages: [] }, assets: [], error: "Supabase not configured" };
+  }
+
+  const empty = { profiles: [] as Profile[], projects: [] as Project[], folders: [] as Folder[], pages: [] as Page[] };
+
+  const [
+    { data: rawProfiles, error: e1 },
+    { data: rawProjects, error: e2 },
+    { data: rawFolders, error: e3 },
+    { data: rawPages, error: e4 },
+  ] = await Promise.all([
+    supabase.from("profiles").select("*").eq("user_id", userId),
+    supabase.from("projects").select("*").eq("user_id", userId),
+    supabase.from("folders").select("*").eq("user_id", userId),
+    supabase.from("pages").select("*").eq("user_id", userId),
+  ]);
+
+  const firstError = e1 ?? e2 ?? e3 ?? e4;
+  if (firstError) return { records: empty, assets: [], error: firstError.message };
+
+  const profiles = (rawProfiles ?? []).map(fromCloudProfile);
+  const projects = (rawProjects ?? []).map(fromCloudProject);
+  const folders = (rawFolders ?? []).map(fromCloudFolder);
+  const pages = (rawPages ?? []).map(fromCloudPage);
+
+  // Write to IDB — cloud records win (bulkPut overwrites by primary key).
+  await Promise.all([
+    db.profiles.bulkPut(profiles),
+    db.projects.bulkPut(projects),
+    db.folders.bulkPut(folders),
+    db.pages.bulkPut(pages),
+  ]);
+
+  // Advance pull watermarks so incremental sync only fetches future changes.
+  const now = new Date().toISOString();
+  await Promise.all([
+    setLastPulledAt("profiles", now),
+    setLastPulledAt("projects", now),
+    setLastPulledAt("folders", now),
+    setLastPulledAt("pages", now),
+  ]);
+
+  // Download asset blobs; skip any already cached in IDB.
+  const { data: assetMeta, error: assetMetaError } = await supabase
+    .from("assets")
+    .select("id, mime_type")
+    .eq("user_id", userId);
+
+  if (assetMetaError) {
+    console.warn("[ThinkLeaf] Asset metadata fetch failed during hydration:", assetMetaError.message);
+  }
+
+  const assets: Array<{ id: string; data: string }> = [];
+  for (const meta of (assetMeta ?? [])) {
+    const cached = await db.assets.get(meta.id as string);
+    if (cached?.data) continue;
+
+    const { data: blob, error: blobError } = await supabase.storage
+      .from("assets")
+      .download(`${userId}/${meta.id as string}`);
+
+    if (blobError || !blob) {
+      console.warn(`[ThinkLeaf] Asset ${meta.id as string} download failed:`, blobError?.message);
+      continue;
+    }
+
+    const dataUrl = await blobToDataUrl(blob);
+    const assetNow = new Date().toISOString();
+    await db.assets.put({
+      id: meta.id as string,
+      mimeType: meta.mime_type as string,
+      data: dataUrl,
+      version: 1,
+      deletedAt: null,
+      syncedAt: assetNow,
+      createdAt: assetNow,
+      updatedAt: assetNow,
+    });
+    assets.push({ id: meta.id as string, data: dataUrl });
+  }
+
+  return { records: { profiles, projects, folders, pages }, assets, error: null };
+}
+
+// ---------------------------------------------------------------------------
+// Cloud → local mappers  (snake_case → camelCase)
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fromCloudProfile(r: any): Profile {
+  return { id: r.id, name: r.name, version: r.version, deletedAt: r.deleted_at ?? null, syncedAt: r.synced_at ?? null, createdAt: r.created_at, updatedAt: r.updated_at };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fromCloudProject(r: any): Project {
+  return { id: r.id, profileId: r.profile_id, name: r.name, color: r.color ?? undefined, version: r.version, deletedAt: r.deleted_at ?? null, syncedAt: r.synced_at ?? null, createdAt: r.created_at, updatedAt: r.updated_at };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fromCloudFolder(r: any): Folder {
+  return { id: r.id, profileId: r.profile_id, projectId: r.project_id, parentFolderId: r.parent_folder_id ?? undefined, name: r.name, color: r.color ?? undefined, version: r.version, deletedAt: r.deleted_at ?? null, syncedAt: r.synced_at ?? null, createdAt: r.created_at, updatedAt: r.updated_at };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fromCloudPage(r: any): Page {
+  return { id: r.id, profileId: r.profile_id, projectId: r.project_id, folderId: r.folder_id ?? undefined, title: r.title ?? "", body: r.body ?? "", noteDate: r.note_date ?? "", canvasViewState: r.canvas_view_state ?? { panX: 0, panY: 0, zoom: 1 }, canvasObjects: Array.isArray(r.canvas_objects) ? r.canvas_objects : [], tags: Array.isArray(r.tags) ? r.tags : [], isFavorite: r.is_favorite ?? false, version: r.version, deletedAt: r.deleted_at ?? null, syncedAt: r.synced_at ?? null, createdAt: r.created_at, updatedAt: r.updated_at };
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("Failed to read blob"));
+    reader.readAsDataURL(blob);
+  });
 }

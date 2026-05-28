@@ -61,6 +61,15 @@ export function ThinkleafApp() {
   const workspace = useWorkspace();
   const auth = useAuth();
   const firstSignIn = useFirstSignIn(auth.user);
+  // When auto-hydration or "use cloud" completes, apply downloaded records to React state.
+  useEffect(() => {
+    if (firstSignIn.status.stage !== "hydrated") return;
+    workspace.applyRemoteRecords(firstSignIn.status.records);
+    workspace.applyRemoteAssets(firstSignIn.status.assets);
+    firstSignIn.dismiss();
+  // workspace callbacks are stable within a render cycle; status drives the trigger.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstSignIn.status]);
   const syncEngine = useSyncEngine(auth.user, {
     onRecordsSynced: workspace.markSynced,
     onRemoteRecords: workspace.applyRemoteRecords,
@@ -646,6 +655,7 @@ export function ThinkleafApp() {
       <MigrationPrompt
         status={firstSignIn.status}
         onUpload={firstSignIn.upload}
+        onUseCloud={firstSignIn.useCloud}
         onSkip={firstSignIn.skip}
         onDismiss={firstSignIn.dismiss}
       />
