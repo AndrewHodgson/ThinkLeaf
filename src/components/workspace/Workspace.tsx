@@ -58,6 +58,7 @@ import {
 } from "@/components/workspace/CanvasObjectToolbar";
 import { exportPageAsPdf } from "@/lib/exportUtils";
 import { getImageFilesFromClipboard, type ProcessedImage, processImageFile } from "@/lib/imageUtils";
+import { saveAsset } from "@/lib/storageAdapter";
 
 type BoardPanInteraction = {
   pointerX: number;
@@ -505,7 +506,7 @@ export function Workspace({
     };
   }
 
-  function createCanvasImageObject(image: ProcessedImage): CanvasObject {
+  function createCanvasImageObject(image: ProcessedImage, assetId: string): CanvasObject {
     const maxDisplayDimension = 360;
     const displayScale = Math.min(1, maxDisplayDimension / Math.max(image.width, image.height));
     const width = Math.max(80, Math.round(image.width * displayScale));
@@ -521,6 +522,7 @@ export function Workspace({
       width: alignCanvasSize(width, isSnapToGridEnabled),
       height: alignCanvasSize(height, isSnapToGridEnabled),
       imageDataUrl: image.dataUrl,
+      assetId,
       ...defaultCanvasStyle,
       fillColor: "transparent",
       strokeColor: "transparent",
@@ -540,7 +542,10 @@ export function Workspace({
 
       for (const file of files) {
         const image = await processImageFile(file);
-        importedObjects.push(createCanvasImageObject(image));
+        const assetId = createId("asset");
+        const now = timestamp();
+        await saveAsset({ id: assetId, mimeType: "image/jpeg", data: image.dataUrl, createdAt: now, updatedAt: now });
+        importedObjects.push(createCanvasImageObject(image, assetId));
       }
 
       if (!importedObjects.length) {

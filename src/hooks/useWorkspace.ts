@@ -382,6 +382,19 @@ type LoadResult = {
   corruptedKey: string | null;
 };
 
+function applyAssetMappings(data: WorkspaceData, assetMappings: Record<string, string>): WorkspaceData {
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      canvasObjects: page.canvasObjects.map((obj) => {
+        const newAssetId = assetMappings[obj.id];
+        return newAssetId ? { ...obj, assetId: newAssetId } : obj;
+      }),
+    })),
+  };
+}
+
 function preserveCorruptedWorkspace(raw: string): string {
   const key = `${CORRUPTED_KEY_PREFIX}${Date.now()}`;
   try {
@@ -436,12 +449,15 @@ async function loadWorkspace(): Promise<LoadResult> {
   }
 
   // First load or IDB unavailable: read from localStorage and migrate.
-  const result = loadFromLocalStorage();
+  let result = loadFromLocalStorage();
 
   if (result.corruptedKey === null) {
     try {
-      await saveAllToDB(result.data);
+      const assetMappings = await saveAllToDB(result.data);
       window.localStorage.setItem(MIGRATION_DONE_KEY, "true");
+      if (Object.keys(assetMappings).length > 0) {
+        result = { ...result, data: applyAssetMappings(result.data, assetMappings) };
+      }
     } catch (err) {
       // Migration write failed; will retry on next load.
       console.warn("[ThinkLeaf] IndexedDB migration write failed, will retry on next load", err);
@@ -486,10 +502,15 @@ export function useWorkspace() {
 
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null;
-      saveAllToDB(snapshot).catch((err) => {
-        console.warn("[ThinkLeaf] IndexedDB write failed, falling back to localStorage", err);
-        safeSetLocalStorage(STORAGE_KEY, JSON.stringify(snapshot));
-      });
+      saveAllToDB(snapshot)
+        .then((assetMappings) => {
+          if (Object.keys(assetMappings).length === 0) return;
+          setData((current) => applyAssetMappings(current, assetMappings));
+        })
+        .catch((err) => {
+          console.warn("[ThinkLeaf] IndexedDB write failed, falling back to localStorage", err);
+          safeSetLocalStorage(STORAGE_KEY, JSON.stringify(snapshot));
+        });
     }, 500);
   }, [data, hasHydrated, corruptedStorageKey]);
 

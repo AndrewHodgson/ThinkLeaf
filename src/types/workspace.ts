@@ -119,6 +119,7 @@ export type CanvasObject = {
   x2?: number;
   y2?: number;
   imageDataUrl?: string;
+  assetId?: string;
   penPoints?: CanvasPoint[];
   penInkDensity?: CanvasPenInkDensity;
   penMode?: CanvasPenMode;
