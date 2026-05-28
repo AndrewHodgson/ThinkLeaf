@@ -11,10 +11,13 @@ import {
   Bold as BoldIcon,
   ChevronDown,
   Copy,
+  Group,
   Highlighter,
   Italic as ItalicIcon,
+  Plus,
   Trash2,
   Type,
+  Ungroup,
 } from "lucide-react";
 import {
   colorPresets,
@@ -42,6 +45,7 @@ import type {
   CanvasObject,
   CanvasPenSettings,
   CanvasTool,
+  SidebarItemColor,
 } from "@/types/workspace";
 import type { CanvasShapeType } from "@/types/workspace";
 import {
@@ -58,6 +62,9 @@ type CanvasObjectToolbarProps = {
   onCancelConnector: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onGroupColorChange?: (groupColor: SidebarItemColor) => void;
+  onGroupLabelChange?: (groupLabel: string) => void;
+  onRemoveFromGroup?: () => void;
   onStartConnector: (sourceAnchor: CanvasConnectorAnchor) => void;
   onUpdate: (updates: Partial<CanvasObject>) => void;
 };
@@ -71,6 +78,20 @@ type CanvasToolDefaultsToolbarProps = {
   defaults: CanvasCreationDefaultStyle;
   tool: CanvasTool;
   onUpdate: (updates: CanvasCreationDefaultStyle) => void;
+};
+
+type CanvasMultiSelectionToolbarProps = {
+  count: number;
+  groupColor?: SidebarItemColor;
+  groupLabel?: string;
+  showAddToGroup?: boolean;
+  showGroup?: boolean;
+  showRemoveFromGroup?: boolean;
+  onAddToGroup?: () => void;
+  onGroup: () => void;
+  onGroupColorChange?: (groupColor: SidebarItemColor) => void;
+  onGroupLabelChange?: (groupLabel: string) => void;
+  onRemoveFromGroup?: () => void;
 };
 
 const activeControlClass = "border-leaf-200 bg-leaf-50 text-leaf-700";
@@ -95,6 +116,14 @@ const connectorAnchorPresets = [
   { label: "Right", value: "right" as const },
   { label: "Bottom", value: "bottom" as const },
   { label: "Left", value: "left" as const },
+];
+const groupColorOptions: Array<{ label: string; swatch: string; value: SidebarItemColor }> = [
+  { label: "Green", value: "green", swatch: "bg-leaf-500 border-leaf-600" },
+  { label: "Blue", value: "blue", swatch: "bg-blue-500 border-blue-600" },
+  { label: "Purple", value: "purple", swatch: "bg-purple-500 border-purple-600" },
+  { label: "Orange", value: "orange", swatch: "bg-orange-500 border-orange-600" },
+  { label: "Red", value: "red", swatch: "bg-red-500 border-red-600" },
+  { label: "Gray", value: "gray", swatch: "bg-slate-400 border-slate-500" },
 ];
 const shapeTypePresets = [
   { label: "Rectangle", value: "rectangle" as const },
@@ -353,6 +382,9 @@ export function CanvasObjectToolbar({
   onCancelConnector,
   onDelete,
   onDuplicate,
+  onGroupColorChange,
+  onGroupLabelChange,
+  onRemoveFromGroup,
   onStartConnector,
   onUpdate,
 }: CanvasObjectToolbarProps) {
@@ -404,6 +436,34 @@ export function CanvasObjectToolbar({
         <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">SELECTION</div>
         <div className="text-xs font-semibold capitalize text-slate-700">{getObjectLabel(object)}</div>
       </div>
+
+      {object.groupId ? (
+        <>
+          <SegmentLabel>GROUP</SegmentLabel>
+          <ToolbarTextInput
+            ariaLabel="Group label"
+            placeholder="Group label"
+            title="Group label"
+            value={object.groupLabel ?? "Group"}
+            onChange={(groupLabel) => onGroupLabelChange?.(groupLabel)}
+          />
+          <GroupColorControl
+            currentColor={object.groupColor ?? "green"}
+            onChange={(groupColor) => onGroupColorChange?.(groupColor)}
+          />
+          <button
+            aria-label="Remove from group"
+            className={compactButtonClass(false, "min-w-24")}
+            title="Remove from group"
+            type="button"
+            onClick={onRemoveFromGroup}
+          >
+            <Ungroup aria-hidden="true" className="mr-1 h-4 w-4" />
+            Remove
+          </button>
+          <span className="h-6 w-px bg-slate-200" />
+        </>
+      ) : null}
 
       {isPenStroke ? (
         <>
@@ -563,6 +623,78 @@ export function CanvasObjectToolbar({
   );
 }
 
+export function CanvasMultiSelectionToolbar({
+  count,
+  groupColor,
+  groupLabel,
+  showAddToGroup,
+  showGroup = true,
+  showRemoveFromGroup,
+  onAddToGroup,
+  onGroup,
+  onGroupColorChange,
+  onGroupLabelChange,
+  onRemoveFromGroup,
+}: CanvasMultiSelectionToolbarProps) {
+  return (
+    <>
+      <div className="mr-2 min-w-24">
+        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">SELECTION</div>
+        <div className="text-xs font-semibold text-slate-700">{count} objects</div>
+      </div>
+      {groupLabel !== undefined && onGroupLabelChange ? (
+        <>
+          <SegmentLabel>GROUP</SegmentLabel>
+          <ToolbarTextInput
+            ariaLabel="Group label"
+            placeholder="Group label"
+            title="Group label"
+            value={groupLabel}
+            onChange={onGroupLabelChange}
+          />
+          <GroupColorControl currentColor={groupColor ?? "green"} onChange={onGroupColorChange} />
+        </>
+      ) : null}
+      {showAddToGroup ? (
+        <button
+          aria-label="Add selected objects to group"
+          className={compactButtonClass(false, "min-w-28")}
+          title="Add selected objects to group"
+          type="button"
+          onClick={onAddToGroup}
+        >
+          <Plus aria-hidden="true" className="mr-1 h-4 w-4" />
+          Add to Group
+        </button>
+      ) : null}
+      {showGroup ? (
+        <button
+          aria-label="Group selected objects"
+          className={compactButtonClass(false, "min-w-20")}
+          title="Group selected objects"
+          type="button"
+          onClick={onGroup}
+        >
+          <Group aria-hidden="true" className="mr-1 h-4 w-4" />
+          Group
+        </button>
+      ) : null}
+      {showRemoveFromGroup ? (
+        <button
+          aria-label="Remove selected objects from group"
+          className={compactButtonClass(false, "min-w-24")}
+          title="Remove selected objects from group"
+          type="button"
+          onClick={onRemoveFromGroup}
+        >
+          <Ungroup aria-hidden="true" className="mr-1 h-4 w-4" />
+          Remove
+        </button>
+      ) : null}
+    </>
+  );
+}
+
 function ToolbarTextInput({
   ariaLabel,
   placeholder,
@@ -587,6 +719,33 @@ function ToolbarTextInput({
       onChange={(event) => onChange(event.target.value)}
       onPointerDown={(event) => event.stopPropagation()}
     />
+  );
+}
+
+function GroupColorControl({
+  currentColor,
+  onChange,
+}: {
+  currentColor: SidebarItemColor;
+  onChange?: (groupColor: SidebarItemColor) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1" aria-label="Group background color">
+      {groupColorOptions.map((option) => (
+        <button
+          key={option.value}
+          aria-label={`Group background ${option.label}`}
+          className={[
+            "h-6 w-6 rounded-md border transition",
+            option.swatch,
+            currentColor === option.value ? "ring-2 ring-leaf-200 ring-offset-1" : "hover:ring-2 hover:ring-slate-200",
+          ].join(" ")}
+          title={`Group background ${option.label}`}
+          type="button"
+          onClick={() => onChange?.(option.value)}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -972,6 +1131,10 @@ function getObjectLabel(object: CanvasObject) {
 
   if (object.type === "textBox") {
     return "Text box";
+  }
+
+  if (object.type === "group") {
+    return object.groupLabel?.trim() || "Group";
   }
 
   if (object.type === "diamond") {

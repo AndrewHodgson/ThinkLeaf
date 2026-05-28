@@ -490,6 +490,50 @@ export function getLineSelectionBox(points: { x1: number; x2: number; y1: number
   };
 }
 
+export function getCanvasObjectBounds(object: CanvasObject, objects: CanvasObject[]) {
+  if (object.type === "line" || object.type === "arrow") {
+    return getLineSelectionBox(getLineRenderPoints(object, objects));
+  }
+
+  return {
+    height: Math.max(1, object.height),
+    width: Math.max(1, object.width),
+    x: object.x,
+    y: object.y,
+  };
+}
+
+export function getCanvasObjectsBounds(objectsToMeasure: CanvasObject[], allObjects: CanvasObject[], padding = 0) {
+  if (!objectsToMeasure.length) {
+    return null;
+  }
+
+  const bounds = objectsToMeasure.map((object) => getCanvasObjectBounds(object, allObjects));
+  const minX = Math.min(...bounds.map((bound) => bound.x));
+  const minY = Math.min(...bounds.map((bound) => bound.y));
+  const maxX = Math.max(...bounds.map((bound) => bound.x + bound.width));
+  const maxY = Math.max(...bounds.map((bound) => bound.y + bound.height));
+
+  return {
+    height: Math.max(1, maxY - minY + padding * 2),
+    width: Math.max(1, maxX - minX + padding * 2),
+    x: minX - padding,
+    y: minY - padding,
+  };
+}
+
+export function doCanvasBoundsIntersect(
+  first: { height: number; width: number; x: number; y: number },
+  second: { height: number; width: number; x: number; y: number },
+) {
+  return (
+    first.x <= second.x + second.width &&
+    first.x + first.width >= second.x &&
+    first.y <= second.y + second.height &&
+    first.y + first.height >= second.y
+  );
+}
+
 export function getStrokeDashArray(object: CanvasObject) {
   const strokeStyle = object.strokeStyle ?? defaultCanvasStyle.strokeStyle;
 

@@ -14,12 +14,14 @@ import {
   Mail,
   Upload,
   Magnet,
+  Maximize2,
+  Moon,
   Redo2,
-  RotateCcw,
   Settings2,
   MousePointer2,
   ArrowRight,
   Square,
+  Sun,
   Type,
   Minus,
   Pencil,
@@ -51,6 +53,7 @@ type CanvasCreationToolbarProps = {
   activeShapeType: CanvasShapeType;
   canRedoCanvas: boolean;
   canUndoCanvas: boolean;
+  isDarkMode: boolean;
   isGridVisible: boolean;
   isFlowchartConnectorArrowEnabled: boolean;
   isSnapToGridEnabled: boolean;
@@ -61,6 +64,7 @@ type CanvasCreationToolbarProps = {
   onResetWorkspace: () => void;
   onRedoCanvas: () => void;
   onResetView: () => void;
+  onToggleDarkMode: () => void;
   onToggleGrid: () => void;
   onToggleFlowchartConnectorArrow: () => void;
   onToggleSnapToGrid: () => void;
@@ -76,6 +80,7 @@ export function CanvasCreationToolbar({
   activeShapeType,
   canRedoCanvas,
   canUndoCanvas,
+  isDarkMode,
   isGridVisible,
   isFlowchartConnectorArrowEnabled,
   isSnapToGridEnabled,
@@ -86,6 +91,7 @@ export function CanvasCreationToolbar({
   onResetWorkspace,
   onRedoCanvas,
   onResetView,
+  onToggleDarkMode,
   onToggleGrid,
   onToggleFlowchartConnectorArrow,
   onToggleSnapToGrid,
@@ -378,7 +384,7 @@ export function CanvasCreationToolbar({
           type="button"
           onClick={onResetView}
         >
-          <RotateCcw aria-hidden="true" className="h-4 w-4" />
+          <Maximize2 aria-hidden="true" className="h-4 w-4" />
         </button>
         <span className="mx-1 h-6 w-px bg-slate-200" />
         <button
@@ -434,9 +440,28 @@ export function CanvasCreationToolbar({
           {isSettingsOpen ? (
             <div className="absolute bottom-12 right-0 z-30 w-52 rounded-md border border-slate-200 bg-white p-2 text-sm shadow-soft">
               <button
-                aria-label={isSnapToGridEnabled ? "Disable snap to grid" : "Enable snap to grid"}
+                aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
                 className={[
                   "flex h-9 w-full items-center justify-between gap-2 rounded px-2 text-left transition",
+                  isDarkMode ? "bg-leaf-50 text-leaf-700" : "text-slate-600 hover:bg-slate-50",
+                ].join(" ")}
+                type="button"
+                onClick={onToggleDarkMode}
+              >
+                <span className="inline-flex items-center gap-2">
+                  {isDarkMode ? (
+                    <Moon aria-hidden="true" className="h-4 w-4" />
+                  ) : (
+                    <Sun aria-hidden="true" className="h-4 w-4" />
+                  )}
+                  Theme
+                </span>
+                <span className="text-xs font-semibold">{isDarkMode ? "Dark" : "Light"}</span>
+              </button>
+              <button
+                aria-label={isSnapToGridEnabled ? "Disable snap to grid" : "Enable snap to grid"}
+                className={[
+                  "mt-1 flex h-9 w-full items-center justify-between gap-2 rounded px-2 text-left transition",
                   isSnapToGridEnabled ? "bg-leaf-50 text-leaf-700" : "text-slate-600 hover:bg-slate-50",
                 ].join(" ")}
                 type="button"

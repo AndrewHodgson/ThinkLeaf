@@ -49,6 +49,9 @@ function normalizeCanvasObject(object: CanvasObject): CanvasObject {
     connectorStyle: normalizeConnectorStyle(object.connectorStyle),
     arrowDirection: normalizeArrowDirection(object.arrowDirection),
     connectorLabel: typeof object.connectorLabel === "string" ? object.connectorLabel : undefined,
+    groupColor: normalizeSidebarItemColor(object.groupColor),
+    groupId: typeof object.groupId === "string" ? object.groupId : undefined,
+    groupLabel: typeof object.groupLabel === "string" ? object.groupLabel : undefined,
     shapeLabel: typeof object.shapeLabel === "string" ? object.shapeLabel : undefined,
     imageDataUrl: object.imageDataUrl,
     penPoints: Array.isArray(object.penPoints)
@@ -115,6 +118,48 @@ function normalizeArrowDirection(
     arrowDirection === "both"
     ? arrowDirection
     : undefined;
+}
+
+function normalizeSidebarItemColor(color: CanvasObject["groupColor"]): SidebarItemColor | undefined {
+  return color === "green" ||
+    color === "blue" ||
+    color === "purple" ||
+    color === "orange" ||
+    color === "red" ||
+    color === "gray"
+    ? color
+    : undefined;
+}
+
+function normalizeLegacyCanvasGroups(objects: CanvasObject[]) {
+  const nextObjects = objects.filter((object) => object.type !== "group");
+  const nextObjectsById = new Map(nextObjects.map((object) => [object.id, object]));
+
+  for (const legacyGroup of objects) {
+    if (legacyGroup.type !== "group" || !Array.isArray(legacyGroup.groupedObjectIds)) {
+      continue;
+    }
+
+    const groupId = legacyGroup.id;
+    const groupColor = normalizeSidebarItemColor(legacyGroup.groupColor) ?? "green";
+    const groupLabel = legacyGroup.groupLabel?.trim() || "Group";
+
+    for (const objectId of legacyGroup.groupedObjectIds) {
+      const object = nextObjectsById.get(objectId);
+      if (!object) {
+        continue;
+      }
+
+      nextObjectsById.set(objectId, {
+        ...object,
+        groupColor,
+        groupId,
+        groupLabel,
+      });
+    }
+  }
+
+  return nextObjects.map((object) => nextObjectsById.get(object.id) ?? object);
 }
 
 function createDefaultProfile(now = timestamp()): Profile {
@@ -212,18 +257,22 @@ function normalizeWorkspace(data: Partial<WorkspaceData>): WorkspaceData {
     activeProfileId,
     projects,
     folders,
-    pages: (Array.isArray(data.pages) ? data.pages : []).map((page) => ({
-      ...page,
-      profileId:
-        page.profileId && profileIds.has(page.profileId)
-          ? page.profileId
-          : projectProfileIds.get(page.projectId) ?? (page.folderId ? folderProfileIds.get(page.folderId) : undefined) ?? activeProfileId,
-      noteDate: page.noteDate ?? toDateInputValue(page.createdAt),
-      canvasViewState: page.canvasViewState ?? createDefaultCanvasViewState(),
-      canvasObjects: Array.isArray(page.canvasObjects)
-        ? page.canvasObjects.map((object) => normalizeCanvasObject(object))
-        : [],
-    })),
+    pages: (Array.isArray(data.pages) ? data.pages : []).map((page) => {
+      const canvasObjects = Array.isArray(page.canvasObjects)
+        ? normalizeLegacyCanvasGroups(page.canvasObjects.map((object) => normalizeCanvasObject(object)))
+        : [];
+
+      return {
+        ...page,
+        profileId:
+          page.profileId && profileIds.has(page.profileId)
+            ? page.profileId
+            : projectProfileIds.get(page.projectId) ?? (page.folderId ? folderProfileIds.get(page.folderId) : undefined) ?? activeProfileId,
+        noteDate: page.noteDate ?? toDateInputValue(page.createdAt),
+        canvasViewState: page.canvasViewState ?? createDefaultCanvasViewState(),
+        canvasObjects,
+      };
+    }),
     recentPageIds: Array.isArray(data.recentPageIds) ? data.recentPageIds : [],
   };
 }
@@ -303,9 +352,13 @@ function getDescendantFolderIds(folders: Folder[], folderId: string) {
 
 function cloneCanvasObjectsWithNewIds(objects: CanvasObject[]) {
   const objectIdMap = new Map<string, string>();
+  const groupIdMap = new Map<string, string>();
 
   for (const object of objects) {
     objectIdMap.set(object.id, createId("object"));
+    if (object.groupId && !groupIdMap.has(object.groupId)) {
+      groupIdMap.set(object.groupId, createId("group"));
+    }
   }
 
   return objects.map((object) => {
@@ -313,6 +366,7 @@ function cloneCanvasObjectsWithNewIds(objects: CanvasObject[]) {
     return {
       ...object,
       id: nextId,
+      groupId: object.groupId ? groupIdMap.get(object.groupId) : undefined,
       sourceObjectId: object.sourceObjectId ? objectIdMap.get(object.sourceObjectId) : undefined,
       targetObjectId: object.targetObjectId ? objectIdMap.get(object.targetObjectId) : undefined,
       createdAt: timestamp(),

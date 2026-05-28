@@ -14,6 +14,7 @@ import type {
   CanvasShapeType,
   CanvasTool,
   CanvasViewState,
+  SidebarItemColor,
 } from "@/types/workspace";
 import {
   defaultCanvasStyle,
@@ -49,6 +50,7 @@ import {
   getConnectorAnchorPoint,
   getConnectorStyle,
   getCurveConnectorControlPoint,
+  getCanvasObjectBounds,
   getDoubleLinePathData,
   getElbowConnectorPoints,
   getElbowConnectorControlPoints,
@@ -58,6 +60,7 @@ import {
   getLineLabelPoint,
   getLineSelectionBox,
   getMinimumCanvasSize,
+  doCanvasBoundsIntersect,
   getOppositeConnectorAnchor,
   getResizeUpdates,
   getSecondLineArrowDirection,
@@ -71,6 +74,11 @@ import {
   screenToWorldPoint,
   syncConnectedLines,
 } from "@/components/workspace/canvas/canvasGeometry";
+import {
+  getCanvasGroupFrames,
+  normalizeCanvasGroupMemberships,
+  type CanvasGroupFrame,
+} from "@/components/workspace/canvas/canvasGroups";
 import { eraserCursorSize, getEraserTargetObject } from "@/components/workspace/canvas/eraserHitTesting";
 import {
   getLaserColor,
@@ -87,6 +95,7 @@ import type {
   EraserCursorPoint,
   Interaction,
   LaserStroke,
+  MoveSnapshot,
   ResizeHandle,
 } from "@/components/workspace/canvas/canvasLayerTypes";
 
@@ -100,9 +109,11 @@ type CanvasLayerProps = {
   pendingConnectorStart: CanvasConnectorStart | null;
   penSettings: CanvasPenSettings;
   selectedObjectId: string | null;
+  selectedObjectIds: string[];
   viewState: CanvasViewState;
   onChange: (objects: CanvasObject[], options?: CanvasHistoryOptions) => void;
   onConnectorStartChange: (connectorStart: CanvasConnectorStart | null) => void;
+  onMultiSelectionChange: (objectIds: string[]) => void;
   onSelectionChange: (objectId: string | null) => void;
   onShapeTypeChange: (shapeType: CanvasShapeType) => void;
   onToolChange: (tool: CanvasTool) => void;
@@ -117,6 +128,52 @@ const toolToObjectType: Partial<Record<CanvasTool, CanvasObjectType>> = {
 };
 const canvasHitMarginX = virtualBoardWidth;
 const canvasHitMarginY = virtualBoardHeight;
+const groupFrameColorClasses: Record<
+  SidebarItemColor,
+  {
+    border: string;
+    frame: string;
+    label: string;
+    selectedBorder: string;
+  }
+> = {
+  blue: {
+    border: "border-blue-500/40",
+    frame: "bg-blue-500/10",
+    label: "border-blue-500/50 text-blue-700 dark:text-blue-200",
+    selectedBorder: "border-blue-500",
+  },
+  gray: {
+    border: "border-slate-500/40",
+    frame: "bg-slate-500/10",
+    label: "border-slate-500/50 text-slate-700 dark:text-slate-200",
+    selectedBorder: "border-slate-500",
+  },
+  green: {
+    border: "border-leaf-500/40",
+    frame: "bg-leaf-500/10",
+    label: "border-leaf-500/50 text-leaf-700 dark:text-leaf-100",
+    selectedBorder: "border-leaf-500",
+  },
+  orange: {
+    border: "border-orange-500/40",
+    frame: "bg-orange-500/10",
+    label: "border-orange-500/50 text-orange-700 dark:text-orange-200",
+    selectedBorder: "border-orange-500",
+  },
+  purple: {
+    border: "border-purple-500/40",
+    frame: "bg-purple-500/10",
+    label: "border-purple-500/50 text-purple-700 dark:text-purple-200",
+    selectedBorder: "border-purple-500",
+  },
+  red: {
+    border: "border-red-500/40",
+    frame: "bg-red-500/10",
+    label: "border-red-500/50 text-red-700 dark:text-red-200",
+    selectedBorder: "border-red-500",
+  },
+};
 
 export function CanvasLayer({
   activeTool,
@@ -128,9 +185,11 @@ export function CanvasLayer({
   pendingConnectorStart,
   penSettings,
   selectedObjectId,
+  selectedObjectIds,
   viewState,
   onChange,
   onConnectorStartChange,
+  onMultiSelectionChange,
   onSelectionChange,
   onShapeTypeChange,
   onToolChange,
@@ -151,6 +210,8 @@ export function CanvasLayer({
   const laserFadeTimeoutsRef = useRef<number[]>([]);
   const objectsRef = useRef(objects);
   const selectedObject = objects.find((object) => object.id === selectedObjectId) ?? null;
+  const selectedObjectIdSet = new Set(selectedObjectIds);
+  const hasMultiSelection = selectedObjectIds.length > 1;
 
   useEffect(() => {
     objectsRef.current = objects;
@@ -258,11 +319,32 @@ export function CanvasLayer({
           }
         : object,
     );
+
     const shouldSyncConnectors =
       Boolean(changedObject && changedObject.type !== "line" && changedObject.type !== "arrow") &&
       ("x" in updates || "y" in updates || "width" in updates || "height" in updates);
 
-    onChange(shouldSyncConnectors ? syncConnectedLines(nextObjects, new Set([objectId])) : nextObjects, options);
+    onChange(
+      shouldSyncConnectors ? syncConnectedLines(nextObjects, new Set([objectId])) : nextObjects,
+      options,
+    );
+  }
+
+  function selectObject(objectId: string | null, additive = false) {
+    if (!objectId) {
+      onSelectionChange(null);
+      return;
+    }
+
+    if (!additive) {
+      onSelectionChange(objectId);
+      return;
+    }
+
+    const nextSelection = selectedObjectIdSet.has(objectId)
+      ? selectedObjectIds.filter((id) => id !== objectId)
+      : [...selectedObjectIds, objectId];
+    onMultiSelectionChange(nextSelection);
   }
 
   function startTextEditing(objectId: string) {
@@ -296,8 +378,12 @@ export function CanvasLayer({
   }
 
   function deleteObject(objectId: string, options?: CanvasHistoryOptions) {
-    onChange(removeObjectsAndConnectedLines(objects, new Set([objectId])), options);
-    onSelectionChange(null);
+    deleteObjects([objectId], options);
+  }
+
+  function deleteObjects(objectIds: string[], options?: CanvasHistoryOptions) {
+    onChange(normalizeCanvasGroupMemberships(removeObjectsAndConnectedLines(objects, new Set(objectIds))), options);
+    selectObject(null);
     clearTextEditing();
     setInteraction(null);
   }
@@ -939,11 +1025,38 @@ export function CanvasLayer({
     setInteraction(null);
   }
 
+  function commitSelectionBox(selection: Extract<Interaction, { kind: "selectionBox" }>) {
+    const selectionBounds = getSelectionBoxBounds(selection);
+    const didDrag = selectionBounds.width > 4 || selectionBounds.height > 4;
+
+    if (!didDrag) {
+      if (!selection.additive) {
+        selectObject(null);
+      }
+      return;
+    }
+
+    const selectedIds = objects
+      .filter(
+        (object) =>
+          object.type !== "group" && doCanvasBoundsIntersect(selectionBounds, getCanvasObjectBounds(object, objects)),
+      )
+      .map((object) => object.id);
+
+    if (selection.additive) {
+      onMultiSelectionChange(Array.from(new Set([...selectedObjectIds, ...selectedIds])));
+      return;
+    }
+
+    onMultiSelectionChange(selectedIds);
+  }
+
   function shouldPan(event: React.PointerEvent<HTMLElement>) {
     return isSpacePressed || event.button === 1;
   }
 
   function handleCanvasPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    event.stopPropagation();
     canvasRef.current?.focus();
 
     clearTextEditing();
@@ -984,8 +1097,21 @@ export function CanvasLayer({
         return;
       }
 
-      onSelectionChange(null);
-      setInteraction(null);
+      const point = screenToWorld(event.clientX, event.clientY);
+      if (!point) {
+        selectObject(null);
+        return;
+      }
+
+      setInteraction({
+        additive: event.shiftKey,
+        currentX: point.x,
+        currentY: point.y,
+        kind: "selectionBox",
+        startX: point.x,
+        startY: point.y,
+      });
+      event.currentTarget.setPointerCapture(event.pointerId);
     }
   }
 
@@ -1007,6 +1133,23 @@ export function CanvasLayer({
       return;
     }
 
+    if (interaction.kind === "selectionBox") {
+      if (!point) {
+        return;
+      }
+
+      setInteraction((current) =>
+        current?.kind === "selectionBox"
+          ? {
+              ...current,
+              currentX: point.x,
+              currentY: point.y,
+            }
+          : current,
+      );
+      return;
+    }
+
     if (interaction.kind === "eraser") {
       if (eraserTargetObject) {
         queueEraseObject(eraserTargetObject, interaction.historyKey);
@@ -1020,6 +1163,21 @@ export function CanvasLayer({
       }
 
       updateLaserStroke(interaction.id, { t: event.timeStamp, x: point.x, y: point.y });
+      return;
+    }
+
+    if (interaction.kind === "multiMove") {
+      if (!point) {
+        return;
+      }
+
+      const dx = isSnapToGridEnabled
+        ? alignSizeToGrid(point.x - interaction.pointerX)
+        : point.x - interaction.pointerX;
+      const dy = isSnapToGridEnabled
+        ? alignSizeToGrid(point.y - interaction.pointerY)
+        : point.y - interaction.pointerY;
+      moveObjectsFromSnapshots(interaction.ids, interaction.startObjects, dx, dy, interaction.historyKey);
       return;
     }
 
@@ -1236,6 +1394,10 @@ export function CanvasLayer({
       commitConnectedEndpointDrop(interaction);
     }
 
+    if (interaction?.kind === "selectionBox") {
+      commitSelectionBox(interaction);
+    }
+
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -1326,7 +1488,16 @@ export function CanvasLayer({
       return;
     }
 
-    onSelectionChange(object.id);
+    if (activeTool === "Select" && event.shiftKey) {
+      selectObject(object.id, true);
+      clearTextEditing();
+      return;
+    }
+
+    const dragObjectIds = getDragObjectIds(object.id);
+    if (dragObjectIds.length === 1) {
+      selectObject(object.id);
+    }
 
     if (activeTool === "Text Box" && isFlowchartShape(object)) {
       clearTextEditing();
@@ -1343,6 +1514,11 @@ export function CanvasLayer({
     }
 
     clearTextEditing();
+    if (dragObjectIds.length > 1) {
+      startMultiMove(event, dragObjectIds);
+      return;
+    }
+
     setInteraction({
       historyKey: createId("history"),
       kind: "move",
@@ -1351,6 +1527,91 @@ export function CanvasLayer({
       offsetY: point.y - object.y,
     });
     event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function getDragObjectIds(objectId: string) {
+    return selectedObjectIdSet.has(objectId) && selectedObjectIds.length > 1 ? selectedObjectIds : [objectId];
+  }
+
+  function getMoveSnapshot(object: CanvasObject): MoveSnapshot {
+    return {
+      x: object.x,
+      y: object.y,
+      x1: object.x1,
+      y1: object.y1,
+      x2: object.x2,
+      y2: object.y2,
+    };
+  }
+
+  function startMultiMove(event: React.PointerEvent<Element>, objectIds: string[]) {
+    const point = screenToWorld(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+
+    const ids = Array.from(new Set(objectIds.filter((objectId) => objects.some((object) => object.id === objectId))));
+    const startObjects = Object.fromEntries(
+      ids.flatMap((objectId) => {
+        const object = objects.find((item) => item.id === objectId);
+        return object ? [[objectId, getMoveSnapshot(object)]] : [];
+      }),
+    );
+
+    setInteraction({
+      historyKey: createId("history"),
+      ids,
+      kind: "multiMove",
+      pointerX: point.x,
+      pointerY: point.y,
+      startObjects,
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveObjectsFromSnapshots(
+    objectIds: string[],
+    startObjects: Record<string, MoveSnapshot>,
+    dx: number,
+    dy: number,
+    historyKey: string,
+  ) {
+    const ids = new Set(objectIds);
+    const now = new Date().toISOString();
+    const changedShapeIds = new Set<string>();
+    const nextObjects = objects.map((object) => {
+      const startObject = startObjects[object.id];
+      if (!ids.has(object.id) || !startObject) {
+        return object;
+      }
+
+      if (object.type !== "line" && object.type !== "arrow") {
+        changedShapeIds.add(object.id);
+      }
+
+      return translateCanvasObjectFromSnapshot(object, startObject, dx, dy, now);
+    });
+
+    onChange(
+      changedShapeIds.size > 0 ? syncConnectedLines(nextObjects, changedShapeIds) : nextObjects,
+      { historyKey },
+    );
+  }
+
+  function handleGroupFramePointerDown(event: React.PointerEvent<HTMLDivElement>, frame: CanvasGroupFrame) {
+    event.stopPropagation();
+    canvasRef.current?.focus();
+
+    if (activeTool !== "Select") {
+      return;
+    }
+
+    const nextSelection = event.shiftKey
+      ? Array.from(new Set([...selectedObjectIds, ...frame.memberIds]))
+      : frame.memberIds;
+    onMultiSelectionChange(nextSelection);
+    clearTextEditing();
+    startMultiMove(event, nextSelection);
   }
 
   function startResize(event: React.PointerEvent<HTMLButtonElement>, object: CanvasObject, handle: ResizeHandle) {
@@ -1412,12 +1673,26 @@ export function CanvasLayer({
       return;
     }
 
-    onSelectionChange(object.id);
+    if (event.shiftKey) {
+      selectObject(object.id, true);
+      clearTextEditing();
+      return;
+    }
+
+    const dragObjectIds = getDragObjectIds(object.id);
+    if (dragObjectIds.length === 1) {
+      selectObject(object.id);
+    }
     clearTextEditing();
     const point = screenToWorld(event.clientX, event.clientY);
     const points = getLineRenderPoints(object, objects);
 
     if (!point) {
+      return;
+    }
+
+    if (dragObjectIds.length > 1) {
+      startMultiMove(event, dragObjectIds);
       return;
     }
 
@@ -1451,11 +1726,25 @@ export function CanvasLayer({
       return;
     }
 
-    onSelectionChange(object.id);
+    if (event.shiftKey) {
+      selectObject(object.id, true);
+      clearTextEditing();
+      return;
+    }
+
+    const dragObjectIds = getDragObjectIds(object.id);
+    if (dragObjectIds.length === 1) {
+      selectObject(object.id);
+    }
     clearTextEditing();
     const point = screenToWorld(event.clientX, event.clientY);
 
     if (!point) {
+      return;
+    }
+
+    if (dragObjectIds.length > 1) {
+      startMultiMove(event, dragObjectIds);
       return;
     }
 
@@ -1524,7 +1813,7 @@ export function CanvasLayer({
       return;
     }
 
-    if (!selectedObjectId || (event.key !== "Delete" && event.key !== "Backspace")) {
+    if (!selectedObjectIds.length || (event.key !== "Delete" && event.key !== "Backspace")) {
       return;
     }
 
@@ -1533,13 +1822,16 @@ export function CanvasLayer({
     }
 
     event.preventDefault();
-    deleteObject(selectedObjectId);
+    deleteObjects(selectedObjectIds);
   }
 
-  const lineObjects = objects.filter((object) => object.type === "line" || object.type === "arrow");
-  const penObjects = objects.filter((object) => object.type === "penStroke");
+  const renderableObjects = objects.filter((object) => object.type !== "group");
+  const groupFrames = getCanvasGroupFrames(renderableObjects);
+  const lineObjects = renderableObjects.filter((object) => object.type === "line" || object.type === "arrow");
+  const penObjects = renderableObjects.filter((object) => object.type === "penStroke");
   const boxObjects = objects.filter(
-    (object) => object.type !== "line" && object.type !== "arrow" && object.type !== "penStroke",
+    (object) =>
+      object.type !== "line" && object.type !== "arrow" && object.type !== "penStroke" && object.type !== "group",
   );
   const shouldUseCanvasHitLayer =
     activeTool !== "Pan" &&
@@ -1550,8 +1842,11 @@ export function CanvasLayer({
       Boolean(pendingConnectorStart) ||
       isSpacePressed ||
       interaction?.kind === "pendingLine");
+  const shouldUseSelectionHitLayer =
+    activeTool === "Select" && !pendingConnectorStart && !isSpacePressed && interaction?.kind !== "pendingLine";
   const shouldUseExpandedDrawingHitLayer = shouldUseCanvasHitLayer;
   const activeToolCursor = getActiveToolCursor(activeTool, interaction?.kind === "pan");
+  const selectionBoxBounds = interaction?.kind === "selectionBox" ? getSelectionBoxBounds(interaction) : null;
 
   return (
     <div
@@ -1591,6 +1886,28 @@ export function CanvasLayer({
         onPointerDown={handleCanvasPointerDown}
       />
       <div
+        className={["absolute", shouldUseSelectionHitLayer ? "pointer-events-auto" : "pointer-events-none"].join(" ")}
+        style={{
+          height: virtualBoardHeight - objectCanvasOriginY,
+          left: objectCanvasOriginX,
+          top: objectCanvasOriginY,
+          width: virtualBoardWidth - objectCanvasOriginX,
+        }}
+        onPointerDown={handleCanvasPointerDown}
+      />
+      {selectionBoxBounds ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute z-30 rounded-sm border border-leaf-500 bg-leaf-500/10 shadow-sm"
+          style={{
+            height: selectionBoxBounds.height,
+            left: objectCanvasOriginX + selectionBoxBounds.x,
+            top: objectCanvasOriginY + selectionBoxBounds.y,
+            width: selectionBoxBounds.width,
+          }}
+        />
+      ) : null}
+      <div
         className="pointer-events-none absolute origin-top-left"
         style={{
           height: virtualBoardHeight - objectCanvasOriginY,
@@ -1599,11 +1916,34 @@ export function CanvasLayer({
           width: virtualBoardWidth - objectCanvasOriginX,
         }}
       >
+        {groupFrames.map((frame) => {
+          const isSelected = frame.memberIds.every((objectId) => selectedObjectIdSet.has(objectId));
+
+          return (
+            <div
+              key={frame.id}
+              className={[
+                activeTool === "Select" ? "pointer-events-auto" : "pointer-events-none",
+                "absolute touch-none",
+                activeTool === "Eraser" ? "" : getObjectCursorClass(activeTool, false, interaction?.kind === "pan"),
+              ].join(" ")}
+              style={{
+                height: frame.bounds.height,
+                left: frame.bounds.x,
+                top: frame.bounds.y,
+                width: frame.bounds.width,
+              }}
+              onPointerDown={(event) => handleGroupFramePointerDown(event, frame)}
+            >
+              <GroupObjectView frame={frame} isSelected={isSelected} />
+            </div>
+          );
+        })}
         <svg className="absolute inset-0 h-full w-full overflow-visible">
           {lineObjects.map((object) => {
             const previewPoints = getLinePreviewPoints(object);
             const segments = getLineRenderSegments(object, objects, previewPoints);
-            const isSelected = selectedObjectId === object.id && activeTool !== "Eraser";
+            const isSelected = selectedObjectIdSet.has(object.id) && activeTool !== "Eraser";
             const isEraserPreviewed = activeTool === "Eraser" && eraserPreviewObjectIds.includes(object.id);
             const lineMode = getConnectorLineMode(object);
             const renderLines =
@@ -1706,11 +2046,11 @@ export function CanvasLayer({
         </svg>
 
         {lineObjects.map((object) => {
-          const isSelected = selectedObjectId === object.id && activeTool !== "Eraser";
+          const isSelected = selectedObjectIdSet.has(object.id) && activeTool !== "Eraser";
           const points = getLinePreviewPoints(object);
           const box = getLineSelectionBox(points);
 
-          if (!isSelected) {
+          if (!isSelected || hasMultiSelection) {
             return null;
           }
 
@@ -1754,7 +2094,7 @@ export function CanvasLayer({
         })}
 
         {boxObjects.map((object) => {
-          const isSelected = selectedObjectId === object.id;
+          const isSelected = selectedObjectIdSet.has(object.id);
           const isEditing = editingTextId === object.id;
           const isEraserPreviewed = activeTool === "Eraser" && eraserPreviewObjectIds.includes(object.id);
           const isConnectorEndpointTarget =
@@ -1804,7 +2144,7 @@ export function CanvasLayer({
               {isFlowchartShape(object) && isConnectorEndpointTarget ? (
                 <ConnectorAnchorTargets activeAnchor={connectorEndpointPreview.targetAnchor} zoom={viewState.zoom} />
               ) : null}
-              {isSelected && activeTool !== "Eraser" ? (
+              {isSelected && activeTool !== "Eraser" && !hasMultiSelection ? (
                 <>
                   {isFlowchartShape(object) ||
                   object.type === "textBox" ||
@@ -1853,7 +2193,7 @@ export function CanvasLayer({
           activeToolCursor={activeToolCursor}
           eraserPreviewObjectIds={eraserPreviewObjectIds}
           penObjects={penObjects}
-          selectedObjectId={selectedObjectId}
+          selectedObjectIds={selectedObjectIds}
           onContinueObjectErase={continueObjectErase}
           onStartObjectErase={startObjectErase}
           onStartPenMove={startPenMove}
@@ -1925,6 +2265,60 @@ function isEditableTarget(target: EventTarget | null) {
   }
 
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+}
+
+function GroupObjectView({ frame, isSelected }: { frame: CanvasGroupFrame; isSelected: boolean }) {
+  const colorClasses = groupFrameColorClasses[frame.color];
+
+  return (
+    <div
+      className={[
+        "h-full w-full rounded-md border shadow-sm backdrop-blur-[1px]",
+        colorClasses.frame,
+        isSelected ? colorClasses.selectedBorder : colorClasses.border,
+      ].join(" ")}
+    >
+      <div
+        className={[
+          "absolute left-2 top-0 -translate-y-1/2 rounded-full border bg-white/95 px-2 py-0.5 text-[11px] font-semibold shadow-sm dark:bg-slate-950/95",
+          colorClasses.label,
+        ].join(" ")}
+      >
+        {frame.label}
+      </div>
+    </div>
+  );
+}
+
+function getSelectionBoxBounds(selection: Extract<Interaction, { kind: "selectionBox" }>) {
+  const x = Math.min(selection.startX, selection.currentX);
+  const y = Math.min(selection.startY, selection.currentY);
+
+  return {
+    height: Math.abs(selection.currentY - selection.startY),
+    width: Math.abs(selection.currentX - selection.startX),
+    x,
+    y,
+  };
+}
+
+function translateCanvasObjectFromSnapshot(
+  object: CanvasObject,
+  startObject: MoveSnapshot,
+  dx: number,
+  dy: number,
+  updatedAt: string,
+): CanvasObject {
+  return {
+    ...object,
+    x: startObject.x + dx,
+    y: startObject.y + dy,
+    x1: startObject.x1 === undefined ? undefined : startObject.x1 + dx,
+    y1: startObject.y1 === undefined ? undefined : startObject.y1 + dy,
+    x2: startObject.x2 === undefined ? undefined : startObject.x2 + dx,
+    y2: startObject.y2 === undefined ? undefined : startObject.y2 + dy,
+    updatedAt,
+  };
 }
 
 function isFlowchartShape(object: CanvasObject | null | undefined): object is CanvasObject & { type: CanvasShapeType } {

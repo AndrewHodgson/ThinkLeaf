@@ -153,8 +153,8 @@ export function EraserCursorRing({
     <div
       className="absolute rounded-full bg-white/20"
       style={{
-        border: `${borderWidth}px solid rgba(15, 23, 42, 0.88)`,
-        boxShadow: `0 0 0 ${Math.max(2 / zoom, 1)}px rgba(255, 255, 255, 0.86), 0 4px ${Math.max(
+        border: `${borderWidth}px solid var(--tl-eraser-ring)`,
+        boxShadow: `0 0 0 ${Math.max(2 / zoom, 1)}px var(--tl-eraser-halo), 0 4px ${Math.max(
           12 / zoom,
           4,
         )}px rgba(15, 23, 42, 0.18)`,
@@ -190,7 +190,7 @@ export function ResizeHandleButton({
   return (
     <button
       aria-label={`Resize ${handle}`}
-      className={`absolute h-3.5 w-3.5 rounded-full border border-leaf-600 bg-white shadow-sm ${position}`}
+      className={`absolute h-3.5 w-3.5 rounded-full border border-leaf-600 bg-white shadow-sm dark:border-leaf-300 dark:bg-slate-950 ${position}`}
       title="Resize"
       type="button"
       onPointerDown={onPointerDown}
@@ -215,7 +215,7 @@ export function FlowchartConnectorHandle({
   return (
     <button
       aria-label={`Add connected shape ${anchor}`}
-      className={`absolute flex h-6 w-6 items-center justify-center rounded-full border border-leaf-600 bg-white text-sm font-bold leading-none text-leaf-700 shadow-sm ring-4 ring-white/80 transition hover:bg-leaf-50 ${position}`}
+      className={`absolute flex h-6 w-6 items-center justify-center rounded-full border border-leaf-600 bg-white text-sm font-bold leading-none text-leaf-700 shadow-sm ring-4 ring-white/80 transition hover:bg-leaf-50 dark:border-leaf-300 dark:bg-slate-950 dark:text-leaf-100 dark:ring-slate-950/80 dark:hover:bg-slate-800 ${position}`}
       title="Add connected shape"
       type="button"
       onPointerDown={(event) => onPointerDown(event, anchor)}
@@ -239,7 +239,7 @@ export function EndpointHandle({
   return (
     <button
       aria-label={`Move ${endpoint} endpoint`}
-      className="pointer-events-auto absolute h-7 w-7 rounded-full border border-leaf-600 bg-white shadow-sm ring-4 ring-white/70"
+      className="pointer-events-auto absolute h-7 w-7 rounded-full border border-leaf-600 bg-white shadow-sm ring-4 ring-white/70 dark:border-leaf-300 dark:bg-slate-950 dark:ring-slate-950/80"
       style={{ left: point.x - 14, top: point.y - 14 }}
       title="Move endpoint"
       type="button"
@@ -271,8 +271,10 @@ export function ConnectorAnchorTargets({
             key={anchor}
             aria-hidden="true"
             className={[
-              "pointer-events-none absolute rounded-full border shadow-sm ring-4 ring-white/80",
-              isActive ? "border-leaf-700 bg-leaf-600" : "border-leaf-600 bg-white",
+              "pointer-events-none absolute rounded-full border shadow-sm ring-4 ring-white/80 dark:ring-slate-950/80",
+              isActive
+                ? "border-leaf-700 bg-leaf-600 dark:border-leaf-200 dark:bg-leaf-500"
+                : "border-leaf-600 bg-white dark:border-leaf-300 dark:bg-slate-950",
               position,
             ].join(" ")}
             style={{
@@ -298,7 +300,7 @@ export function ConnectorPathHandle({
   return (
     <button
       aria-label={label}
-      className="pointer-events-auto absolute h-6 w-6 rounded-full border border-leaf-700 bg-white shadow-sm ring-4 ring-white/70 transition hover:bg-leaf-50"
+      className="pointer-events-auto absolute h-6 w-6 rounded-full border border-leaf-700 bg-white shadow-sm ring-4 ring-white/70 transition hover:bg-leaf-50 dark:border-leaf-300 dark:bg-slate-950 dark:ring-slate-950/80 dark:hover:bg-slate-800"
       style={{ left: point.x - 12, top: point.y - 12 }}
       title={label}
       type="button"

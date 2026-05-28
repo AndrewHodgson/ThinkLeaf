@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Workspace } from "@/components/workspace/Workspace";
 import {
@@ -45,6 +45,7 @@ const CREATION_TOOL_DEFAULTS_STORAGE_KEY = "thinkleaf.canvasCreationToolDefaults
 const ACTIVE_SHAPE_TYPE_STORAGE_KEY = "thinkleaf.activeShapeType.v1";
 const FLOWCHART_CONNECTOR_ARROW_STORAGE_KEY = "thinkleaf.flowchartConnectorArrow.v1";
 const PAGE_TEMPLATES_STORAGE_KEY = "thinkleaf.pageTemplates.v1";
+const THEME_STORAGE_KEY = "thinkleaf.theme.v1";
 const CANVAS_HISTORY_LIMIT = 25;
 
 type CanvasPageHistory = {
@@ -67,8 +68,9 @@ export function ThinkleafApp() {
   );
   const [imageImportRequestId, setImageImportRequestId] = useState(0);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [hasLoadedUiPreferences, setHasLoadedUiPreferences] = useState(false);
-  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
+  const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
   const [zoomIndicatorTick, setZoomIndicatorTick] = useState(0);
   const [canvasHistoryByPage, setCanvasHistoryByPage] = useState<Record<string, CanvasPageHistory>>({});
   const [pageTemplates, setPageTemplates] = useState<PageTemplate[]>([]);
@@ -89,12 +91,22 @@ export function ThinkleafApp() {
         window.localStorage.getItem(FLOWCHART_CONNECTOR_ARROW_STORAGE_KEY) !== "off",
       );
       setPageTemplates(normalizeStoredPageTemplates(window.localStorage.getItem(PAGE_TEMPLATES_STORAGE_KEY)));
+      setIsDarkMode(getStoredThemePreference());
     } catch {
       // Ignore storage errors in private/incognito modes.
     } finally {
       setHasLoadedUiPreferences(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!hasLoadedUiPreferences) {
+      return;
+    }
+
+    document.documentElement.classList.toggle("dark", isDarkMode);
+    document.documentElement.style.colorScheme = isDarkMode ? "dark" : "light";
+  }, [hasLoadedUiPreferences, isDarkMode]);
 
   useEffect(() => {
     function handleStorageWriteError() {
@@ -167,10 +179,22 @@ export function ThinkleafApp() {
     safeSetLocalStorage(PAGE_TEMPLATES_STORAGE_KEY, JSON.stringify(pageTemplates));
   }, [hasLoadedUiPreferences, pageTemplates]);
 
+  useEffect(() => {
+    if (!hasLoadedUiPreferences) {
+      return;
+    }
+
+    safeSetLocalStorage(THEME_STORAGE_KEY, isDarkMode ? "dark" : "light");
+  }, [hasLoadedUiPreferences, isDarkMode]);
+
   const canvasViewState = workspace.activePage?.canvasViewState ?? defaultCanvasViewState;
   const activeCanvasHistory = workspace.activePage ? canvasHistoryByPage[workspace.activePage.id] : undefined;
   const canUndoCanvas = Boolean(activeCanvasHistory?.undoStack.length);
   const canRedoCanvas = Boolean(activeCanvasHistory?.redoStack.length);
+  const selectedObjectId = selectedObjectIds[0] ?? null;
+  const handleSelectionChange = useCallback((objectId: string | null) => {
+    setSelectedObjectIds(objectId ? [objectId] : []);
+  }, []);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -356,7 +380,7 @@ export function ThinkleafApp() {
     }
 
     collectPageImageAssets(page.id, page.canvasObjects);
-    setSelectedObjectId(null);
+    setSelectedObjectIds([]);
     setCanvasHistoryByPage((current) => {
       const currentHistory = current[page.id] ?? { redoStack: [], undoStack: [] };
 
@@ -386,7 +410,7 @@ export function ThinkleafApp() {
     }
 
     collectPageImageAssets(page.id, page.canvasObjects);
-    setSelectedObjectId(null);
+    setSelectedObjectIds([]);
     setCanvasHistoryByPage((current) => {
       const currentHistory = current[page.id] ?? { redoStack: [], undoStack: [] };
 
@@ -647,6 +671,7 @@ export function ThinkleafApp() {
           canRedoCanvas={canRedoCanvas}
           canUndoCanvas={canUndoCanvas}
           imageImportRequestId={imageImportRequestId}
+          isDarkMode={isDarkMode}
           isFlowchartConnectorArrowEnabled={isFlowchartConnectorArrowEnabled}
           isGridVisible={isGridVisible}
           isSnapToGridEnabled={isSnapToGridEnabled}
@@ -662,13 +687,16 @@ export function ThinkleafApp() {
           onResetWorkspace={resetBetaWorkspace}
           onUpdateCanvasObjects={updateCanvasObjects}
           onUpdatePage={workspace.updatePage}
-          onSelectionChange={setSelectedObjectId}
+          onMultiSelectionChange={setSelectedObjectIds}
+          onSelectionChange={handleSelectionChange}
           onShapeTypeChange={setActiveShapeType}
+          onToggleDarkMode={() => setIsDarkMode((current) => !current)}
           onToggleFlowchartConnectorArrow={() => setIsFlowchartConnectorArrowEnabled((value) => !value)}
           onToggleSnapToGrid={() => setIsSnapToGridEnabled((value) => !value)}
           onToggleGrid={() => setIsGridVisible((value) => !value)}
           penSettings={penSettings}
           selectedObjectId={selectedObjectId}
+          selectedObjectIds={selectedObjectIds}
           tagSuggestions={tagSuggestions}
           onToolChange={setActiveTool}
           onZoomIn={() => updateZoom(canvasViewState.zoom + zoomStep)}
@@ -765,6 +793,19 @@ function normalizeStoredCreationToolDefaults(value: string | null): CanvasCreati
 
 function normalizeStoredShapeType(value: string | null): CanvasShapeType {
   return value === "circle" || value === "diamond" || value === "rectangle" ? value : "rectangle";
+}
+
+function getStoredThemePreference() {
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (stored === "dark") {
+    return true;
+  }
+
+  if (stored === "light") {
+    return false;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
 function normalizeStoredPageTemplates(value: string | null): PageTemplate[] {

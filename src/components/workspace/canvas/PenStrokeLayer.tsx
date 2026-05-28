@@ -9,7 +9,7 @@ type PenStrokeLayerProps = {
   activeToolCursor: string | undefined;
   eraserPreviewObjectIds: string[];
   penObjects: CanvasObject[];
-  selectedObjectId: string | null;
+  selectedObjectIds: string[];
   onContinueObjectErase: (event: PointerEvent<Element>, object: CanvasObject) => void;
   onStartObjectErase: (event: PointerEvent<Element>, object: CanvasObject) => void;
   onStartPenMove: (event: PointerEvent<SVGPathElement>, object: CanvasObject) => void;
@@ -21,15 +21,17 @@ export function PenStrokeLayer({
   activeToolCursor,
   eraserPreviewObjectIds,
   penObjects,
-  selectedObjectId,
+  selectedObjectIds,
   onContinueObjectErase,
   onStartObjectErase,
   onStartPenMove,
 }: PenStrokeLayerProps) {
+  const selectedObjectIdSet = new Set(selectedObjectIds);
+
   return (
     <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
       {penObjects.map((object) => {
-        const isSelected = selectedObjectId === object.id;
+        const isSelected = selectedObjectIdSet.has(object.id);
         const isActivelyDrawing = activeDrawingPenId === object.id;
         const isEraserPreviewed = activeTool === "Eraser" && eraserPreviewObjectIds.includes(object.id);
 

@@ -12,6 +12,7 @@ import type {
   CanvasShapeType,
   CanvasTool,
   Page,
+  SidebarItemColor,
   WorkspaceData,
 } from "@/types/workspace";
 import { createId, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
@@ -42,8 +43,15 @@ import {
   removeObjectsAndConnectedLines,
   syncConnectedLines,
 } from "@/components/workspace/canvas/canvasGeometry";
+import {
+  defaultCanvasGroupColor,
+  getCanvasGroupColor,
+  getCanvasGroupLabel,
+  normalizeCanvasGroupMemberships,
+} from "@/components/workspace/canvas/canvasGroups";
 import { CanvasCreationToolbar } from "@/components/workspace/CanvasCreationToolbar";
 import {
+  CanvasMultiSelectionToolbar,
   CanvasObjectToolbar,
   CanvasToolDefaultsToolbar,
   PenToolToolbar,
@@ -67,10 +75,12 @@ type WorkspaceProps = {
   creationToolDefaults: CanvasCreationToolDefaults;
   data: WorkspaceData;
   imageImportRequestId: number;
+  isDarkMode: boolean;
   isGridVisible: boolean;
   isFlowchartConnectorArrowEnabled: boolean;
   isSnapToGridEnabled: boolean;
   selectedObjectId: string | null;
+  selectedObjectIds: string[];
   tagSuggestions: string[];
   onCreationToolDefaultsChange: (defaults: CanvasCreationToolDefaults) => void;
   onDeletePage: (pageId: string) => void;
@@ -78,11 +88,13 @@ type WorkspaceProps = {
   onImportBackup: () => void;
   onResetWorkspace: () => void;
   onPenSettingsChange: Dispatch<SetStateAction<CanvasPenSettings>>;
+  onMultiSelectionChange: (objectIds: string[]) => void;
   onRedoCanvas: () => void;
   onResetView: () => void;
   onSearchByTag: (tag: string) => void;
   onSelectionChange: (objectId: string | null) => void;
   onShapeTypeChange: (shapeType: CanvasShapeType) => void;
+  onToggleDarkMode: () => void;
   onToggleGrid: () => void;
   onToggleFlowchartConnectorArrow: () => void;
   onToggleSnapToGrid: () => void;
@@ -111,10 +123,12 @@ export function Workspace({
   creationToolDefaults,
   data,
   imageImportRequestId,
+  isDarkMode,
   isGridVisible,
   isFlowchartConnectorArrowEnabled,
   isSnapToGridEnabled,
   selectedObjectId,
+  selectedObjectIds,
   tagSuggestions,
   onCreationToolDefaultsChange,
   onDeletePage,
@@ -122,11 +136,13 @@ export function Workspace({
   onImportBackup,
   onResetWorkspace,
   onPenSettingsChange,
+  onMultiSelectionChange,
   onRedoCanvas,
   onResetView,
   onSearchByTag,
   onSelectionChange,
   onShapeTypeChange,
+  onToggleDarkMode,
   onToggleGrid,
   onToggleFlowchartConnectorArrow,
   onToggleSnapToGrid,
@@ -192,7 +208,20 @@ export function Workspace({
 
   const page = activePage;
   const breadcrumbPath = getBreadcrumbPath(data, page);
-  const selectedObject = page.canvasObjects.find((object) => object.id === selectedObjectId) ?? null;
+  const selectedObject = page.canvasObjects.find((object) => object.id === selectedObjectId && object.type !== "group") ?? null;
+  const selectedObjects = selectedObjectIds
+    .map((objectId) => page.canvasObjects.find((object) => object.id === objectId))
+    .filter((object): object is CanvasObject => Boolean(object && object.type !== "group"));
+  const selectedGroupIds = Array.from(
+    new Set(selectedObjects.map((object) => object.groupId).filter((groupId): groupId is string => Boolean(groupId))),
+  );
+  const selectedGroupId = selectedGroupIds.length === 1 ? selectedGroupIds[0] : null;
+  const selectedGroupColor = selectedGroupId ? getCanvasGroupColor(page.canvasObjects, selectedGroupId) : undefined;
+  const selectedGroupLabel = selectedGroupId ? getCanvasGroupLabel(page.canvasObjects, selectedGroupId) : undefined;
+  const hasObjectsOutsideSelectedGroup = Boolean(
+    selectedGroupId && selectedObjects.some((object) => object.groupId !== selectedGroupId),
+  );
+  const hasSelectedGroupedObjects = selectedObjects.some((object) => object.groupId);
   const selectedWhiteboardTextObject = selectedObject && isCanvasTextObject(selectedObject) ? selectedObject : null;
   const formattingTarget: FormattingTarget = selectedWhiteboardTextObject
     ? "whiteboardText"
@@ -204,7 +233,21 @@ export function Workspace({
   const activeCreationDefaultType = getCreationDefaultType(activeTool, activeShapeType);
   const isSelectedPenStroke = selectedObject?.type === "penStroke";
   const shouldShowActivePenDefaults = activeTool === "Pen" && (!selectedObject || isSelectedPenStroke);
-  const toolbarExtraContent = shouldShowActivePenDefaults ? (
+  const toolbarExtraContent = selectedObjects.length > 1 ? (
+    <CanvasMultiSelectionToolbar
+      count={selectedObjects.length}
+      groupColor={selectedGroupColor}
+      groupLabel={selectedGroupLabel}
+      showAddToGroup={hasObjectsOutsideSelectedGroup}
+      showGroup={!selectedGroupId}
+      showRemoveFromGroup={hasSelectedGroupedObjects}
+      onAddToGroup={addSelectedObjectsToGroup}
+      onGroup={groupSelectedObjects}
+      onGroupColorChange={selectedGroupId ? updateSelectedGroupColor : undefined}
+      onGroupLabelChange={selectedGroupId ? updateSelectedGroupLabel : undefined}
+      onRemoveFromGroup={removeSelectedObjectsFromGroups}
+    />
+  ) : shouldShowActivePenDefaults ? (
     <PenToolToolbar penSettings={penSettings} onChange={onPenSettingsChange} />
   ) : selectedObject ? (
     <CanvasObjectToolbar
@@ -213,6 +256,9 @@ export function Workspace({
       onCancelConnector={() => setPendingConnectorStart(null)}
       onDelete={deleteSelectedObject}
       onDuplicate={duplicateSelectedObject}
+      onGroupColorChange={selectedObject.groupId ? updateSelectedGroupColor : undefined}
+      onGroupLabelChange={selectedObject.groupId ? updateSelectedGroupLabel : undefined}
+      onRemoveFromGroup={selectedObject.groupId ? removeSelectedObjectsFromGroups : undefined}
       onStartConnector={startConnectorFromSelectedShape}
       onUpdate={updateSelectedObject}
     />
@@ -300,12 +346,125 @@ export function Workspace({
       y1: selectedObject.y1 === undefined ? undefined : selectedObject.y1 + offset,
       x2: selectedObject.x2 === undefined ? undefined : selectedObject.x2 + offset,
       y2: selectedObject.y2 === undefined ? undefined : selectedObject.y2 + offset,
+      groupId: undefined,
+      groupColor: undefined,
+      groupLabel: undefined,
       createdAt: now,
       updatedAt: now,
     };
 
     onUpdateCanvasObjects(page.id, [...page.canvasObjects, duplicatedObject]);
     onSelectionChange(duplicatedObject.id);
+  }
+
+  function groupSelectedObjects() {
+    const groupableObjects = selectedObjects.filter((object) => object.type !== "group");
+    if (groupableObjects.length < 2) {
+      return;
+    }
+
+    const now = timestamp();
+    const groupId = createId("group");
+    const groupableIds = new Set(groupableObjects.map((object) => object.id));
+    const nextObjects = page.canvasObjects.map((object) =>
+      groupableIds.has(object.id)
+        ? {
+            ...object,
+            groupColor: defaultCanvasGroupColor,
+            groupId,
+            groupLabel: "Group",
+            updatedAt: now,
+          }
+        : object,
+    );
+
+    onUpdateCanvasObjects(page.id, normalizeCanvasGroupMemberships(nextObjects));
+    onMultiSelectionChange(groupableObjects.map((object) => object.id));
+  }
+
+  function addSelectedObjectsToGroup() {
+    if (!selectedGroupId) {
+      return;
+    }
+
+    const selectedIds = new Set(selectedObjects.map((object) => object.id));
+    const groupColor = getCanvasGroupColor(page.canvasObjects, selectedGroupId);
+    const groupLabel = getCanvasGroupLabel(page.canvasObjects, selectedGroupId);
+    const now = timestamp();
+
+    const nextObjects = page.canvasObjects.map((object) =>
+      selectedIds.has(object.id)
+        ? {
+            ...object,
+            groupColor,
+            groupId: selectedGroupId,
+            groupLabel,
+            updatedAt: now,
+          }
+        : object,
+    );
+
+    onUpdateCanvasObjects(page.id, normalizeCanvasGroupMemberships(nextObjects));
+  }
+
+  function removeSelectedObjectsFromGroups() {
+    const selectedIds = new Set(selectedObjects.map((object) => object.id));
+    if (!selectedIds.size) {
+      return;
+    }
+
+    const now = timestamp();
+    const nextObjects = page.canvasObjects.map((object) => {
+      if (!selectedIds.has(object.id) || !object.groupId) {
+        return object;
+      }
+
+      const { groupColor, groupId, groupLabel, ...ungroupedObject } = object;
+      return {
+        ...ungroupedObject,
+        updatedAt: now,
+      };
+    });
+
+    onUpdateCanvasObjects(page.id, normalizeCanvasGroupMemberships(nextObjects));
+  }
+
+  function updateSelectedGroupLabel(groupLabel: string) {
+    if (!selectedGroupId) {
+      return;
+    }
+
+    const now = timestamp();
+    const nextObjects = page.canvasObjects.map((object) =>
+      object.groupId === selectedGroupId
+        ? {
+            ...object,
+            groupLabel,
+            updatedAt: now,
+          }
+        : object,
+    );
+
+    onUpdateCanvasObjects(page.id, nextObjects);
+  }
+
+  function updateSelectedGroupColor(groupColor: SidebarItemColor) {
+    if (!selectedGroupId) {
+      return;
+    }
+
+    const now = timestamp();
+    const nextObjects = page.canvasObjects.map((object) =>
+      object.groupId === selectedGroupId
+        ? {
+            ...object,
+            groupColor,
+            updatedAt: now,
+          }
+        : object,
+    );
+
+    onUpdateCanvasObjects(page.id, nextObjects);
   }
 
   function deleteSelectedObject() {
@@ -315,7 +474,7 @@ export function Workspace({
 
     onUpdateCanvasObjects(
       page.id,
-      removeObjectsAndConnectedLines(page.canvasObjects, new Set([selectedObject.id])),
+      normalizeCanvasGroupMemberships(removeObjectsAndConnectedLines(page.canvasObjects, new Set([selectedObject.id]))),
     );
     onSelectionChange(null);
   }
@@ -579,7 +738,7 @@ export function Workspace({
     <div
       ref={workspaceRef}
       className={[
-        "relative min-h-0 flex-1 overflow-hidden bg-white",
+        "relative min-h-0 flex-1 overflow-hidden bg-[var(--tl-canvas)]",
         isGridVisible ? "dotted-grid" : "",
         activeTool === "Pan" ? "cursor-grab" : "",
         isPanning ? "cursor-grabbing" : "",
@@ -623,8 +782,10 @@ export function Workspace({
           penSettings={penSettings}
           viewState={canvasViewState}
           selectedObjectId={selectedObjectId}
+          selectedObjectIds={selectedObjectIds}
           onChange={(canvasObjects, options) => onUpdateCanvasObjects(page.id, canvasObjects, options)}
           onConnectorStartChange={setPendingConnectorStart}
+          onMultiSelectionChange={onMultiSelectionChange}
           onViewStateChange={(viewState) => onUpdatePage(page.id, { canvasViewState: viewState })}
           onSelectionChange={onSelectionChange}
           onShapeTypeChange={onShapeTypeChange}
@@ -796,6 +957,7 @@ export function Workspace({
         isGridVisible={isGridVisible}
         isFlowchartConnectorArrowEnabled={isFlowchartConnectorArrowEnabled}
         isSnapToGridEnabled={isSnapToGridEnabled}
+        isDarkMode={isDarkMode}
         onImageUploadClick={() => canvasImageInputRef.current?.click()}
         onRedoCanvas={onRedoCanvas}
         onResetView={onResetView}
@@ -807,6 +969,7 @@ export function Workspace({
         onResetWorkspace={onResetWorkspace}
         onToolChange={onToolChange}
         onShapeTypeChange={onShapeTypeChange}
+        onToggleDarkMode={onToggleDarkMode}
         onUndoCanvas={onUndoCanvas}
         onZoomIn={onZoomIn}
         onZoomOut={onZoomOut}

@@ -1,4 +1,4 @@
-import type { CanvasConnectorAnchor, CanvasPoint, CanvasTool } from "@/types/workspace";
+import type { CanvasConnectorAnchor, CanvasObject, CanvasPoint, CanvasTool } from "@/types/workspace";
 
 export type ResizeHandle = "n" | "e" | "s" | "w" | "nw" | "ne" | "sw" | "se";
 
@@ -8,6 +8,17 @@ export type MoveInteraction = {
   id: string;
   offsetX: number;
   offsetY: number;
+};
+
+export type MoveSnapshot = Pick<CanvasObject, "x" | "x1" | "x2" | "y" | "y1" | "y2">;
+
+export type MultiMoveInteraction = {
+  historyKey: string;
+  ids: string[];
+  kind: "multiMove";
+  pointerX: number;
+  pointerY: number;
+  startObjects: Record<string, MoveSnapshot>;
 };
 
 export type ResizeInteraction = {
@@ -109,8 +120,18 @@ export type PanInteraction = {
   startPanY: number;
 };
 
+export type SelectionBoxInteraction = {
+  additive: boolean;
+  currentX: number;
+  currentY: number;
+  kind: "selectionBox";
+  startX: number;
+  startY: number;
+};
+
 export type Interaction =
   | MoveInteraction
+  | MultiMoveInteraction
   | ResizeInteraction
   | LineMoveInteraction
   | EndpointInteraction
@@ -120,7 +141,8 @@ export type Interaction =
   | PenDrawInteraction
   | LaserDrawInteraction
   | EraserInteraction
-  | PanInteraction;
+  | PanInteraction
+  | SelectionBoxInteraction;
 
 export type LaserStroke = {
   color: string;

@@ -63,7 +63,8 @@ export type CanvasObjectType =
   | "line"
   | "arrow"
   | "image"
-  | "penStroke";
+  | "penStroke"
+  | "group";
 export type CanvasShapeType = "rectangle" | "circle" | "diamond";
 export type CanvasTextAlign = "left" | "center" | "right";
 export type CanvasTextVerticalAlign = "top" | "middle" | "bottom";
@@ -122,6 +123,10 @@ export type CanvasObject = {
   penInkDensity?: CanvasPenInkDensity;
   penMode?: CanvasPenMode;
   penSmoothing?: CanvasPenSmoothing;
+  groupId?: string;
+  groupColor?: SidebarItemColor;
+  groupedObjectIds?: string[];
+  groupLabel?: string;
   text?: string;
   connectorLabel?: string;
   shapeLabel?: string;
