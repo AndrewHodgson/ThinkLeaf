@@ -12,6 +12,7 @@ import {
   minZoom,
   zoomStep,
 } from "@/lib/canvasStyle";
+import { useAuth } from "@/hooks/useAuth";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { exportWorkspaceBackup } from "@/lib/exportUtils";
 import { safeSetLocalStorage, storageWriteErrorEvent } from "@/lib/storage";
@@ -55,6 +56,9 @@ type CanvasPageHistory = {
 
 export function ThinkleafApp() {
   const workspace = useWorkspace();
+  const auth = useAuth();
+  // TODO(Phase 3C): when auth.user transitions from null → non-null, trigger first-sign-in
+  // migration: upload all local IDB records to Supabase and stamp syncedAt on each.
   const backupFileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isGridVisible, setIsGridVisible] = useState(true);
@@ -670,6 +674,12 @@ export function ThinkleafApp() {
         onSearchChange={setSearchQuery}
         onSelectProfile={workspace.selectProfile}
         onSelectPage={workspace.selectPage}
+        authLoading={auth.loading}
+        authUser={auth.user}
+        isAuthConfigured={auth.isConfigured}
+        onSignIn={auth.signIn}
+        onSignOut={auth.signOut}
+        onSignUp={auth.signUp}
       />
       <section className="flex min-w-0 flex-1 flex-col">
         <Workspace
