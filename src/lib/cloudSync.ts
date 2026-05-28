@@ -20,6 +20,36 @@ export type LocalDataSummary = {
   pages: number;
 };
 
+const EPOCH = "1970-01-01T00:00:00.000Z";
+
+type SyncRecord = { id: string; updatedAt: string; syncedAt: string | null };
+
+function maxIso(...values: Array<string | null | undefined>): string {
+  let maxValue = EPOCH;
+  let maxTime = Date.parse(EPOCH);
+  for (const value of values) {
+    if (!value) continue;
+    const time = Date.parse(value);
+    if (Number.isFinite(time) && time >= maxTime) {
+      maxTime = time;
+      maxValue = value;
+    }
+  }
+  return maxValue;
+}
+
+function withPulledSyncedAt<T extends SyncRecord>(records: T[], syncedAt: string): T[] {
+  return records.map((record) => ({
+    ...record,
+    syncedAt: maxIso(record.updatedAt, syncedAt),
+  }));
+}
+
+async function setWatermarkToMaxUpdatedAt(tableName: "profiles" | "projects" | "folders" | "pages" | "assets", records: Array<{ updatedAt: string }>) {
+  if (!records.length) return;
+  await setLastPulledAt(tableName, maxIso(...records.map((record) => record.updatedAt)));
+}
+
 // ---------------------------------------------------------------------------
 // Detection helpers
 // ---------------------------------------------------------------------------
@@ -147,22 +177,24 @@ export async function uploadWorkspaceToCloud(userId: string): Promise<UploadResu
 
   // Upload asset blobs to Storage + upsert metadata rows.
   let assetsUploaded = 0;
+  const uploadedAssets: AssetRecord[] = [];
   for (const asset of assets) {
     const { error } = await uploadAssetToCloud(userId, asset);
     if (error) {
       console.warn(`[ThinkLeaf] Asset ${asset.id} upload skipped:`, error);
     } else {
       assetsUploaded++;
+      uploadedAssets.push(asset);
     }
   }
 
   // Stamp syncedAt in IDB so getDirtyRecords won't re-queue these immediately.
   await Promise.all([
-    markRecordsSynced("profiles", profiles.map((r) => r.id), now),
-    markRecordsSynced("projects", projects.map((r) => r.id), now),
-    markRecordsSynced("folders", folders.map((r) => r.id), now),
-    markRecordsSynced("pages", pages.map((r) => r.id), now),
-    markRecordsSynced("assets", assets.map((r) => r.id), now),
+    markRecordsSynced("profiles", profiles.map((r) => ({ id: r.id, updatedAt: r.updatedAt })), now),
+    markRecordsSynced("projects", projects.map((r) => ({ id: r.id, updatedAt: r.updatedAt })), now),
+    markRecordsSynced("folders", folders.map((r) => ({ id: r.id, updatedAt: r.updatedAt })), now),
+    markRecordsSynced("pages", pages.map((r) => ({ id: r.id, updatedAt: r.updatedAt })), now),
+    markRecordsSynced("assets", uploadedAssets.map((r) => ({ id: r.id, updatedAt: r.updatedAt })), now),
   ]);
 
   return {
@@ -334,10 +366,11 @@ export async function downloadFullWorkspaceFromCloud(userId: string): Promise<Do
   const firstError = e1 ?? e2 ?? e3 ?? e4;
   if (firstError) return { records: empty, assets: [], error: firstError.message };
 
-  const profiles = (rawProfiles ?? []).map(fromCloudProfile);
-  const projects = (rawProjects ?? []).map(fromCloudProject);
-  const folders = (rawFolders ?? []).map(fromCloudFolder);
-  const pages = (rawPages ?? []).map(fromCloudPage);
+  const downloadedAt = new Date().toISOString();
+  const profiles = withPulledSyncedAt((rawProfiles ?? []).map(fromCloudProfile), downloadedAt);
+  const projects = withPulledSyncedAt((rawProjects ?? []).map(fromCloudProject), downloadedAt);
+  const folders = withPulledSyncedAt((rawFolders ?? []).map(fromCloudFolder), downloadedAt);
+  const pages = withPulledSyncedAt((rawPages ?? []).map(fromCloudPage), downloadedAt);
 
   // Write to IDB — cloud records win (bulkPut overwrites by primary key).
   await Promise.all([
@@ -347,19 +380,18 @@ export async function downloadFullWorkspaceFromCloud(userId: string): Promise<Do
     db.pages.bulkPut(pages),
   ]);
 
-  // Advance pull watermarks so incremental sync only fetches future changes.
-  const now = new Date().toISOString();
+  // Advance pull watermarks only to the newest updatedAt actually downloaded.
   await Promise.all([
-    setLastPulledAt("profiles", now),
-    setLastPulledAt("projects", now),
-    setLastPulledAt("folders", now),
-    setLastPulledAt("pages", now),
+    setWatermarkToMaxUpdatedAt("profiles", profiles),
+    setWatermarkToMaxUpdatedAt("projects", projects),
+    setWatermarkToMaxUpdatedAt("folders", folders),
+    setWatermarkToMaxUpdatedAt("pages", pages),
   ]);
 
   // Download asset blobs; skip any already cached in IDB.
   const { data: assetMeta, error: assetMetaError } = await supabase
     .from("assets")
-    .select("id, mime_type")
+    .select("id, mime_type, version, deleted_at, created_at, updated_at")
     .eq("user_id", userId);
 
   if (assetMetaError) {
@@ -369,7 +401,10 @@ export async function downloadFullWorkspaceFromCloud(userId: string): Promise<Do
   const assets: Array<{ id: string; data: string }> = [];
   for (const meta of (assetMeta ?? [])) {
     const cached = await db.assets.get(meta.id as string);
-    if (cached?.data) continue;
+    if (cached?.data) {
+      assets.push({ id: meta.id as string, data: cached.data });
+      continue;
+    }
 
     const { data: blob, error: blobError } = await supabase.storage
       .from("assets")
@@ -381,19 +416,23 @@ export async function downloadFullWorkspaceFromCloud(userId: string): Promise<Do
     }
 
     const dataUrl = await blobToDataUrl(blob);
-    const assetNow = new Date().toISOString();
     await db.assets.put({
       id: meta.id as string,
       mimeType: meta.mime_type as string,
       data: dataUrl,
-      version: 1,
-      deletedAt: null,
-      syncedAt: assetNow,
-      createdAt: assetNow,
-      updatedAt: assetNow,
+      version: (meta.version as number) ?? 1,
+      deletedAt: (meta.deleted_at as string | null) ?? null,
+      syncedAt: maxIso((meta.updated_at as string) ?? downloadedAt, downloadedAt),
+      createdAt: (meta.created_at as string) ?? downloadedAt,
+      updatedAt: (meta.updated_at as string) ?? downloadedAt,
     });
     assets.push({ id: meta.id as string, data: dataUrl });
   }
+
+  await setWatermarkToMaxUpdatedAt(
+    "assets",
+    (assetMeta ?? []).map((meta) => ({ updatedAt: (meta.updated_at as string) ?? downloadedAt })),
+  );
 
   return { records: { profiles, projects, folders, pages }, assets, error: null };
 }

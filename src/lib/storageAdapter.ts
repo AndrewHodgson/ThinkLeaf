@@ -22,6 +22,8 @@ type SyncableTables = {
   assets: AssetRecord;
 };
 
+type SyncedRecordRef = string | { id: string; updatedAt?: string };
+
 // Key prefix for per-table pull watermarks stored in IDB settings.
 const LAST_PULLED_AT_PREFIX = "sync.lastPulledAt.";
 
@@ -192,13 +194,26 @@ export async function getDirtyRecords<K extends keyof SyncableTables>(
  */
 export async function markRecordsSynced<K extends keyof SyncableTables>(
   tableName: K,
-  ids: string[],
+  records: SyncedRecordRef[],
   syncedAt: string,
 ): Promise<void> {
-  if (!ids.length) return;
+  if (!records.length) return;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const table = db[tableName] as Table<any>;
-  await table.where("id").anyOf(ids).modify({ syncedAt });
+  const refs = records.map((record) => (typeof record === "string" ? { id: record } : record));
+  const expectedUpdatedAtById = new Map(
+    refs
+      .filter((record): record is { id: string; updatedAt: string } => typeof record.updatedAt === "string")
+      .map((record) => [record.id, record.updatedAt]),
+  );
+
+  await table.where("id").anyOf(refs.map((record) => record.id)).modify((record) => {
+    const expectedUpdatedAt = expectedUpdatedAtById.get(record.id);
+    if (expectedUpdatedAt !== undefined && record.updatedAt !== expectedUpdatedAt) {
+      return;
+    }
+    record.syncedAt = syncedAt;
+  });
 }
 
 /**

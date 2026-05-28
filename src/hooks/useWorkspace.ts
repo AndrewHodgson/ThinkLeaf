@@ -633,7 +633,7 @@ export function useWorkspace() {
     setData((current) => ({
       ...current,
       profiles: current.profiles.map((profile) =>
-        profile.id === profileId ? { ...profile, name: cleanName, updatedAt: now, version: profile.version + 1 } : profile,
+        profile.id === profileId ? { ...profile, name: cleanName, updatedAt: now, version: profile.version + 1, syncedAt: null } : profile,
       ),
     }));
   }
@@ -828,7 +828,7 @@ export function useWorkspace() {
     setData((current) => ({
       ...current,
       projects: current.projects.map((project) =>
-        project.id === projectId ? { ...project, name: cleanName, updatedAt: now, version: project.version + 1 } : project,
+        project.id === projectId ? { ...project, name: cleanName, updatedAt: now, version: project.version + 1, syncedAt: null } : project,
       ),
     }));
   }
@@ -908,7 +908,7 @@ export function useWorkspace() {
         ...current,
         folders: [...current.folders, folder],
         projects: current.projects.map((item) =>
-          item.id === projectId ? { ...item, updatedAt: now } : item,
+          item.id === projectId ? { ...item, updatedAt: now, version: item.version + 1, syncedAt: null } : item,
         ),
       };
     });
@@ -1003,7 +1003,7 @@ export function useWorkspace() {
     setData((current) => ({
       ...current,
       folders: current.folders.map((folder) =>
-        folder.id === folderId ? { ...folder, name: cleanName, updatedAt: now, version: folder.version + 1 } : folder,
+        folder.id === folderId ? { ...folder, name: cleanName, updatedAt: now, version: folder.version + 1, syncedAt: null } : folder,
       ),
     }));
   }
@@ -1073,6 +1073,7 @@ export function useWorkspace() {
                 profileId: targetProfileId,
                 updatedAt: now,
                 version: p.version + 1,
+                syncedAt: null,
               }
             : p,
         ),
@@ -1123,7 +1124,7 @@ export function useWorkspace() {
           ...current,
           folders: current.folders.map((f) =>
             f.id === folderId
-              ? { ...f, parentFolderId: targetParentFolderId ?? undefined, updatedAt: now, version: f.version + 1 }
+              ? { ...f, parentFolderId: targetParentFolderId ?? undefined, updatedAt: now, version: f.version + 1, syncedAt: null }
               : f,
           ),
         };
@@ -1144,10 +1145,10 @@ export function useWorkspace() {
 
       const nextFolders = current.folders.map((f) => {
         if (f.id === folderId) {
-          return { ...f, projectId: resolvedProjectId, parentFolderId: targetParentFolderId ?? undefined, updatedAt: now, version: f.version + 1 };
+          return { ...f, projectId: resolvedProjectId, parentFolderId: targetParentFolderId ?? undefined, updatedAt: now, version: f.version + 1, syncedAt: null };
         }
         if (movedFolderIds.has(f.id)) {
-          return { ...f, projectId: resolvedProjectId, updatedAt: now, version: f.version + 1 };
+          return { ...f, projectId: resolvedProjectId, updatedAt: now, version: f.version + 1, syncedAt: null };
         }
         return f;
       });
@@ -1155,7 +1156,7 @@ export function useWorkspace() {
       // Cascade projectId to all pages contained in the moved folders
       const nextPages = current.pages.map((p) =>
         p.folderId !== undefined && movedFolderIds.has(p.folderId)
-          ? { ...p, projectId: resolvedProjectId, updatedAt: now, version: p.version + 1 }
+          ? { ...p, projectId: resolvedProjectId, updatedAt: now, version: p.version + 1, syncedAt: null }
           : p,
       );
 
@@ -1209,10 +1210,10 @@ export function useWorkspace() {
         ...current,
         pages: [...current.pages, page],
         folders: folderId
-          ? current.folders.map((item) => item.id === folderId ? { ...item, updatedAt: now } : item)
+          ? current.folders.map((item) => item.id === folderId ? { ...item, updatedAt: now, version: item.version + 1, syncedAt: null } : item)
           : current.folders,
         projects: current.projects.map((item) =>
-          item.id === projectId ? { ...item, updatedAt: now } : item,
+          item.id === projectId ? { ...item, updatedAt: now, version: item.version + 1, syncedAt: null } : item,
         ),
         recentPageIds: [page.id, ...current.recentPageIds.filter((id) => id !== page.id)].slice(0, 8),
       };
@@ -1286,7 +1287,7 @@ export function useWorkspace() {
         return {
           ...page,
           ...updates,
-          ...(hasContentChange ? { updatedAt: now, version: page.version + 1 } : {}),
+          ...(hasContentChange ? { updatedAt: now, version: page.version + 1, syncedAt: null } : {}),
         };
       }),
     }));
@@ -1303,7 +1304,7 @@ export function useWorkspace() {
     setData((current) => ({
       ...current,
       pages: current.pages.map((page) =>
-        page.id === pageId ? { ...page, title: cleanTitle, updatedAt: now, version: page.version + 1 } : page,
+        page.id === pageId ? { ...page, title: cleanTitle, updatedAt: now, version: page.version + 1, syncedAt: null } : page,
       ),
     }));
   }
@@ -1337,7 +1338,7 @@ export function useWorkspace() {
     setData((current) => ({
       ...current,
       projects: current.projects.map((project) =>
-        project.id === projectId ? { ...project, color, updatedAt: now, version: project.version + 1 } : project,
+        project.id === projectId ? { ...project, color, updatedAt: now, version: project.version + 1, syncedAt: null } : project,
       ),
     }));
   }
@@ -1347,7 +1348,7 @@ export function useWorkspace() {
     setData((current) => ({
       ...current,
       folders: current.folders.map((folder) =>
-        folder.id === folderId ? { ...folder, color, updatedAt: now, version: folder.version + 1 } : folder,
+        folder.id === folderId ? { ...folder, color, updatedAt: now, version: folder.version + 1, syncedAt: null } : folder,
       ),
     }));
   }

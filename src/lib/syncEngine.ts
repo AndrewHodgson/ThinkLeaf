@@ -34,6 +34,56 @@ export type PullResult = {
 };
 
 const EPOCH = "1970-01-01T00:00:00.000Z";
+type SyncTable = "profiles" | "projects" | "folders" | "pages" | "assets";
+type SyncRecord = { id: string; updatedAt: string; syncedAt: string | null };
+
+function logSync(message: string, context?: Record<string, unknown>) {
+  if (context) {
+    console.log(`[ThinkLeaf] ${message}`, context);
+  } else {
+    console.log(`[ThinkLeaf] ${message}`);
+  }
+}
+
+function withPulledSyncedAt<T extends SyncRecord>(records: T[], syncedAt: string): T[] {
+  return records.map((record) => ({
+    ...record,
+    syncedAt: maxIso(record.updatedAt, syncedAt),
+  }));
+}
+
+function maxIso(...values: Array<string | null | undefined>): string {
+  let maxValue = EPOCH;
+  let maxTime = Date.parse(EPOCH);
+  for (const value of values) {
+    if (!value) continue;
+    const time = Date.parse(value);
+    if (Number.isFinite(time) && time >= maxTime) {
+      maxTime = time;
+      maxValue = value;
+    }
+  }
+  return maxValue;
+}
+
+async function advanceWatermark(tableName: SyncTable, previous: string | null, records: Array<{ updatedAt: string }>) {
+  if (!records.length) return previous;
+  const next = maxIso(previous, ...records.map((record) => record.updatedAt));
+  if (next !== (previous ?? EPOCH)) {
+    await setLastPulledAt(tableName, next);
+  }
+  return next;
+}
+
+function collectPageAssetIds(pages: Page[]): Set<string> {
+  const ids = new Set<string>();
+  for (const page of pages) {
+    for (const object of page.canvasObjects) {
+      if (object.assetId) ids.add(object.assetId);
+    }
+  }
+  return ids;
+}
 
 // ---------------------------------------------------------------------------
 // Push
@@ -59,6 +109,16 @@ export async function pushDirtyRecords(userId: string): Promise<PushResult> {
     getDirtyRecords("assets"),
   ]);
 
+  logSync("Sync push started", {
+    dirty: {
+      profiles: profiles.length,
+      projects: projects.length,
+      folders: folders.length,
+      pages: pages.length,
+      assets: assets.length,
+    },
+  });
+
   // Log tombstones separately so delete propagation is auditable.
   const deletedCounts = {
     profiles: profiles.filter((r) => r.deletedAt).length,
@@ -78,19 +138,31 @@ export async function pushDirtyRecords(userId: string): Promise<PushResult> {
 
   if (profiles.length) {
     const { error } = await supabase.from("profiles").upsert(profiles.map((r) => toCloudProfile(r, userId)));
-    if (error) return { syncedRecords: empty, syncedAt: now, error: error.message };
+    if (error) {
+      console.warn("[ThinkLeaf] Sync push failed", { table: "profiles", error: error.message });
+      return { syncedRecords: empty, syncedAt: now, error: error.message };
+    }
   }
   if (projects.length) {
     const { error } = await supabase.from("projects").upsert(projects.map((r) => toCloudProject(r, userId)));
-    if (error) return { syncedRecords: empty, syncedAt: now, error: error.message };
+    if (error) {
+      console.warn("[ThinkLeaf] Sync push failed", { table: "projects", error: error.message });
+      return { syncedRecords: empty, syncedAt: now, error: error.message };
+    }
   }
   if (folders.length) {
     const { error } = await supabase.from("folders").upsert(folders.map((r) => toCloudFolder(r, userId)));
-    if (error) return { syncedRecords: empty, syncedAt: now, error: error.message };
+    if (error) {
+      console.warn("[ThinkLeaf] Sync push failed", { table: "folders", error: error.message });
+      return { syncedRecords: empty, syncedAt: now, error: error.message };
+    }
   }
   if (pages.length) {
     const { error } = await supabase.from("pages").upsert(pages.map((r) => toCloudPage(r, userId)));
-    if (error) return { syncedRecords: empty, syncedAt: now, error: error.message };
+    if (error) {
+      console.warn("[ThinkLeaf] Sync push failed", { table: "pages", error: error.message });
+      return { syncedRecords: empty, syncedAt: now, error: error.message };
+    }
   }
 
   // Push asset blobs; failures are logged but don't abort the overall push.
@@ -107,12 +179,22 @@ export async function pushDirtyRecords(userId: string): Promise<PushResult> {
   // Stamp IDB syncedAt directly (belt-and-suspenders; autosave will also carry
   // the updated syncedAt from React state after onRecordsSynced runs).
   await Promise.all([
-    markRecordsSynced("profiles", profiles.map((r) => r.id), now),
-    markRecordsSynced("projects", projects.map((r) => r.id), now),
-    markRecordsSynced("folders", folders.map((r) => r.id), now),
-    markRecordsSynced("pages", pages.map((r) => r.id), now),
-    markRecordsSynced("assets", syncedAssetIds, now),
+    markRecordsSynced("profiles", profiles.map((r) => ({ id: r.id, updatedAt: r.updatedAt })), now),
+    markRecordsSynced("projects", projects.map((r) => ({ id: r.id, updatedAt: r.updatedAt })), now),
+    markRecordsSynced("folders", folders.map((r) => ({ id: r.id, updatedAt: r.updatedAt })), now),
+    markRecordsSynced("pages", pages.map((r) => ({ id: r.id, updatedAt: r.updatedAt })), now),
+    markRecordsSynced("assets", assets.filter((r) => syncedAssetIds.includes(r.id)).map((r) => ({ id: r.id, updatedAt: r.updatedAt })), now),
   ]);
+
+  logSync("Sync push completed", {
+    pushed: {
+      profiles: profiles.length,
+      projects: projects.length,
+      folders: folders.length,
+      pages: pages.length,
+      assets: syncedAssetIds.length,
+    },
+  });
 
   return {
     syncedRecords: {
@@ -188,6 +270,16 @@ export async function pullRemoteChanges(userId: string): Promise<PullResult> {
     getLastPulledAt("assets"),
   ]);
 
+  logSync("Sync pull started", {
+    lastPulledAt: {
+      profiles: profilesWm,
+      projects: projectsWm,
+      folders: foldersWm,
+      pages: pagesWm,
+      assets: assetsWm,
+    },
+  });
+
   const [profilesRes, projectsRes, foldersRes, pagesRes, assetsMetaRes] = await Promise.all([
     supabase.from("profiles").select("*").eq("user_id", userId).gt("updated_at", profilesWm ?? EPOCH),
     supabase.from("projects").select("*").eq("user_id", userId).gt("updated_at", projectsWm ?? EPOCH),
@@ -198,17 +290,20 @@ export async function pullRemoteChanges(userId: string): Promise<PullResult> {
 
   const firstError =
     profilesRes.error ?? projectsRes.error ?? foldersRes.error ?? pagesRes.error ?? assetsMetaRes.error;
-  if (firstError) return { records: empty, assets: [], error: firstError.message };
+  if (firstError) {
+    console.warn("[ThinkLeaf] Sync pull failed", { error: firstError.message });
+    return { records: empty, assets: [], error: firstError.message };
+  }
 
   // Map cloud records to local types
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const profiles = ((profilesRes.data ?? []) as any[]).map(fromCloudProfile);
+  const profiles = withPulledSyncedAt(((profilesRes.data ?? []) as any[]).map(fromCloudProfile), pullStartedAt);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const projects = ((projectsRes.data ?? []) as any[]).map(fromCloudProject);
+  const projects = withPulledSyncedAt(((projectsRes.data ?? []) as any[]).map(fromCloudProject), pullStartedAt);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const folders = ((foldersRes.data ?? []) as any[]).map(fromCloudFolder);
+  const folders = withPulledSyncedAt(((foldersRes.data ?? []) as any[]).map(fromCloudFolder), pullStartedAt);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pages = ((pagesRes.data ?? []) as any[]).map(fromCloudPage);
+  const pages = withPulledSyncedAt(((pagesRes.data ?? []) as any[]).map(fromCloudPage), pullStartedAt);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const assetsMeta = (assetsMetaRes.data ?? []) as any[];
 
@@ -220,7 +315,10 @@ export async function pullRemoteChanges(userId: string): Promise<PullResult> {
 
     // Skip if already cached locally — asset content is immutable once uploaded.
     const existing = await db.assets.get(id);
-    if (existing) continue;
+    if (existing?.data) {
+      pulledAssets.push({ id, data: existing.data });
+      continue;
+    }
 
     const { data: blob, error: downloadError } = await supabase.storage
       .from("assets")
@@ -238,13 +336,23 @@ export async function pullRemoteChanges(userId: string): Promise<PullResult> {
       mimeType,
       data: dataUrl,
       version: (meta.version as number) ?? 1,
-      deletedAt: null,
-      syncedAt: pullStartedAt,
+      deletedAt: (meta.deleted_at as string | null) ?? null,
+      syncedAt: maxIso((meta.updated_at as string) ?? pullStartedAt, pullStartedAt),
       createdAt: (meta.created_at as string) ?? pullStartedAt,
       updatedAt: (meta.updated_at as string) ?? pullStartedAt,
     });
 
     pulledAssets.push({ id, data: dataUrl });
+  }
+
+  const returnedAssetIds = new Set(pulledAssets.map((asset) => asset.id));
+  for (const id of collectPageAssetIds(pages)) {
+    if (returnedAssetIds.has(id)) continue;
+    const cached = await db.assets.get(id);
+    if (cached?.data) {
+      pulledAssets.push({ id, data: cached.data });
+      returnedAssetIds.add(id);
+    }
   }
 
   // Log pulled tombstones so delete propagation is auditable.
@@ -266,14 +374,28 @@ export async function pullRemoteChanges(userId: string): Promise<PullResult> {
     );
   }
 
-  // Advance watermarks so the next pull only fetches newer records.
-  await Promise.all([
-    setLastPulledAt("profiles", pullStartedAt),
-    setLastPulledAt("projects", pullStartedAt),
-    setLastPulledAt("folders", pullStartedAt),
-    setLastPulledAt("pages", pullStartedAt),
-    setLastPulledAt("assets", pullStartedAt),
+  // Advance each table only to the newest updatedAt actually received from it.
+  const [nextProfilesWm, nextProjectsWm, nextFoldersWm, nextPagesWm, nextAssetsWm] = await Promise.all([
+    advanceWatermark("profiles", profilesWm, profiles),
+    advanceWatermark("projects", projectsWm, projects),
+    advanceWatermark("folders", foldersWm, folders),
+    advanceWatermark("pages", pagesWm, pages),
+    advanceWatermark("assets", assetsWm, assetsMeta.map((meta) => ({ updatedAt: (meta.updated_at as string) ?? pullStartedAt }))),
   ]);
+
+  logSync("Sync pull completed", {
+    pulled: {
+      profiles: profiles.length,
+      projects: projects.length,
+      folders: folders.length,
+      pages: pages.length,
+      assets: pulledAssets.length,
+    },
+    lastPulledAt: {
+      before: { profiles: profilesWm, projects: projectsWm, folders: foldersWm, pages: pagesWm, assets: assetsWm },
+      after: { profiles: nextProfilesWm, projects: nextProjectsWm, folders: nextFoldersWm, pages: nextPagesWm, assets: nextAssetsWm },
+    },
+  });
 
   return {
     records: { profiles, projects, folders, pages },

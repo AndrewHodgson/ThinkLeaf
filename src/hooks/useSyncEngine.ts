@@ -66,6 +66,7 @@ export function useSyncEngine(user: User | null, callbacks: SyncEngineCallbacks)
     lastSyncTimeRef.current = now;
     setStatus("syncing");
     setLastError(null);
+    console.log("[ThinkLeaf] Sync cycle started", { userId: user.id });
 
     try {
       // ── Push ──────────────────────────────────────────────────────────────
@@ -101,6 +102,7 @@ export function useSyncEngine(user: User | null, callbacks: SyncEngineCallbacks)
 
       setStatus("synced");
       setLastSyncedAt(new Date().toISOString());
+      console.log("[ThinkLeaf] Sync cycle completed");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Sync failed";
       console.warn("[ThinkLeaf] Sync error:", message);
