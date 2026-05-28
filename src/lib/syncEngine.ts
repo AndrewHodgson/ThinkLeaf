@@ -59,6 +59,23 @@ export async function pushDirtyRecords(userId: string): Promise<PushResult> {
     getDirtyRecords("assets"),
   ]);
 
+  // Log tombstones separately so delete propagation is auditable.
+  const deletedCounts = {
+    profiles: profiles.filter((r) => r.deletedAt).length,
+    projects: projects.filter((r) => r.deletedAt).length,
+    folders: folders.filter((r) => r.deletedAt).length,
+    pages: pages.filter((r) => r.deletedAt).length,
+  };
+  const totalDeleted = deletedCounts.profiles + deletedCounts.projects + deletedCounts.folders + deletedCounts.pages;
+  if (totalDeleted > 0) {
+    console.log(
+      "[ThinkLeaf] Push includes tombstones — profiles:", deletedCounts.profiles,
+      "projects:", deletedCounts.projects,
+      "folders:", deletedCounts.folders,
+      "pages:", deletedCounts.pages,
+    );
+  }
+
   if (profiles.length) {
     const { error } = await supabase.from("profiles").upsert(profiles.map((r) => toCloudProfile(r, userId)));
     if (error) return { syncedRecords: empty, syncedAt: now, error: error.message };
@@ -228,6 +245,25 @@ export async function pullRemoteChanges(userId: string): Promise<PullResult> {
     });
 
     pulledAssets.push({ id, data: dataUrl });
+  }
+
+  // Log pulled tombstones so delete propagation is auditable.
+  const pulledDeletedCounts = {
+    profiles: profiles.filter((r) => r.deletedAt).length,
+    projects: projects.filter((r) => r.deletedAt).length,
+    folders: folders.filter((r) => r.deletedAt).length,
+    pages: pages.filter((r) => r.deletedAt).length,
+  };
+  const totalPulledDeleted =
+    pulledDeletedCounts.profiles + pulledDeletedCounts.projects +
+    pulledDeletedCounts.folders + pulledDeletedCounts.pages;
+  if (totalPulledDeleted > 0) {
+    console.log(
+      "[ThinkLeaf] Pull includes tombstones — profiles:", pulledDeletedCounts.profiles,
+      "projects:", pulledDeletedCounts.projects,
+      "folders:", pulledDeletedCounts.folders,
+      "pages:", pulledDeletedCounts.pages,
+    );
   }
 
   // Advance watermarks so the next pull only fetches newer records.

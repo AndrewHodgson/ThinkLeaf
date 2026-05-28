@@ -17,6 +17,7 @@ import { useFirstSignIn } from "@/hooks/useFirstSignIn";
 import { useSyncEngine } from "@/hooks/useSyncEngine";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { MigrationPrompt } from "@/components/MigrationPrompt";
+import { softDeleteAllCloudRecords } from "@/lib/cloudSync";
 import { exportWorkspaceBackup } from "@/lib/exportUtils";
 import { safeSetLocalStorage, storageWriteErrorEvent } from "@/lib/storage";
 import { createId, searchPages, sortPagesByUpdatedAt, timestamp } from "@/lib/workspaceUtils";
@@ -499,8 +500,24 @@ export function ThinkleafApp() {
     });
   }
 
-  function resetBetaWorkspace() {
-    workspace.resetWorkspace();
+  async function resetBetaWorkspace() {
+    if (auth.user) {
+      // Soft-delete all non-deleted cloud records so other devices don't
+      // resurface the old workspace after the local reset.
+      console.log("[ThinkLeaf] Reset Beta Workspace — signed in, soft-deleting cloud records first");
+      try {
+        const result = await softDeleteAllCloudRecords(auth.user.id);
+        if (result.error) {
+          console.warn("[ThinkLeaf] Cloud soft-delete before reset failed:", result.error);
+          // Don't block the reset — local IDB is still cleared below.
+        }
+      } catch (err) {
+        console.warn("[ThinkLeaf] Cloud soft-delete before reset threw:", err);
+      }
+    } else {
+      console.log("[ThinkLeaf] Reset Beta Workspace — not signed in, local-only reset");
+    }
+    await workspace.resetWorkspace();
     setCanvasHistoryByPage({});
     recordedCanvasHistoryKeysRef.current = new Set();
     imageAssetsByPageRef.current = {};

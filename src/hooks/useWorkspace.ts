@@ -657,17 +657,25 @@ export function useWorkspace() {
       const nextData: WorkspaceData = {
         ...current,
         profiles: current.profiles.map((p) =>
-          p.id === profileId ? { ...p, deletedAt: now, updatedAt: now, version: p.version + 1 } : p,
+          p.id === profileId
+            ? { ...p, deletedAt: now, updatedAt: now, version: p.version + 1, syncedAt: null }
+            : p,
         ),
         activeProfileId: nextActiveProfileId,
         projects: current.projects.map((p) =>
-          p.profileId === profileId && !p.deletedAt ? { ...p, deletedAt: now, updatedAt: now, version: p.version + 1 } : p,
+          p.profileId === profileId && !p.deletedAt
+            ? { ...p, deletedAt: now, updatedAt: now, version: p.version + 1, syncedAt: null }
+            : p,
         ),
         folders: current.folders.map((f) =>
-          f.profileId === profileId && !f.deletedAt ? { ...f, deletedAt: now, updatedAt: now, version: f.version + 1 } : f,
+          f.profileId === profileId && !f.deletedAt
+            ? { ...f, deletedAt: now, updatedAt: now, version: f.version + 1, syncedAt: null }
+            : f,
         ),
         pages: current.pages.map((p) =>
-          p.profileId === profileId && !p.deletedAt ? { ...p, deletedAt: now, updatedAt: now, version: p.version + 1 } : p,
+          p.profileId === profileId && !p.deletedAt
+            ? { ...p, deletedAt: now, updatedAt: now, version: p.version + 1, syncedAt: null }
+            : p,
         ),
         recentPageIds: current.recentPageIds.filter((pageId) => !deletedPageIds.has(pageId)),
       };
@@ -834,7 +842,7 @@ export function useWorkspace() {
       const sourceProject = current.projects.find((project) => project.id === projectId);
       const nextPages = current.pages.map((page) =>
         page.projectId === projectId && !page.deletedAt
-          ? { ...page, deletedAt: now, updatedAt: now, version: page.version + 1 }
+          ? { ...page, deletedAt: now, updatedAt: now, version: page.version + 1, syncedAt: null }
           : page,
       );
       const nextActivePageId =
@@ -847,11 +855,13 @@ export function useWorkspace() {
       return {
         ...current,
         projects: current.projects.map((project) =>
-          project.id === projectId ? { ...project, deletedAt: now, updatedAt: now, version: project.version + 1 } : project,
+          project.id === projectId
+            ? { ...project, deletedAt: now, updatedAt: now, version: project.version + 1, syncedAt: null }
+            : project,
         ),
         folders: current.folders.map((folder) =>
           folder.projectId === projectId && !folder.deletedAt
-            ? { ...folder, deletedAt: now, updatedAt: now, version: folder.version + 1 }
+            ? { ...folder, deletedAt: now, updatedAt: now, version: folder.version + 1, syncedAt: null }
             : folder,
         ),
         pages: nextPages,
@@ -1010,7 +1020,7 @@ export function useWorkspace() {
       );
       const nextPages = current.pages.map((page) =>
         page.folderId !== undefined && deletedFolderIds.has(page.folderId) && !page.deletedAt
-          ? { ...page, deletedAt: now, updatedAt: now, version: page.version + 1 }
+          ? { ...page, deletedAt: now, updatedAt: now, version: page.version + 1, syncedAt: null }
           : page,
       );
       const nextActivePageId =
@@ -1024,7 +1034,7 @@ export function useWorkspace() {
         ...current,
         folders: current.folders.map((folder) =>
           deletedFolderIds.has(folder.id) && !folder.deletedAt
-            ? { ...folder, deletedAt: now, updatedAt: now, version: folder.version + 1 }
+            ? { ...folder, deletedAt: now, updatedAt: now, version: folder.version + 1, syncedAt: null }
             : folder,
         ),
         pages: nextPages,
@@ -1302,7 +1312,9 @@ export function useWorkspace() {
     setData((current) => {
       const now = timestamp();
       const nextPages = current.pages.map((page) =>
-        page.id === pageId && !page.deletedAt ? { ...page, deletedAt: now, updatedAt: now, version: page.version + 1 } : page,
+        page.id === pageId && !page.deletedAt
+          ? { ...page, deletedAt: now, updatedAt: now, version: page.version + 1, syncedAt: null }
+          : page,
       );
       const sourcePage = current.pages.find((page) => page.id === pageId);
       const nextActivePageId =

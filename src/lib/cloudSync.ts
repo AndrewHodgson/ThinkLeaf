@@ -24,13 +24,18 @@ export type LocalDataSummary = {
 // Detection helpers
 // ---------------------------------------------------------------------------
 
-/** True if the signed-in user already has any records in the cloud profiles table. */
+/**
+ * True if the signed-in user has any non-deleted records in the cloud profiles
+ * table.  Soft-deleted tombstones are excluded so a reset workspace doesn't
+ * look like it "has data" and trigger a spurious reconciliation prompt.
+ */
 export async function checkCloudHasData(userId: string): Promise<boolean> {
   if (!supabase) return false;
   const { data, error } = await supabase
     .from("profiles")
     .select("id")
     .eq("user_id", userId)
+    .is("deleted_at", null)
     .limit(1);
   if (error) throw new Error(error.message);
   return (data?.length ?? 0) > 0;
@@ -49,6 +54,46 @@ export async function checkLocalHasData(): Promise<LocalDataSummary> {
     projects: projectCount,
     pages: pageCount,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Reset helper — soft-delete all cloud records so new devices don't resurface them
+// ---------------------------------------------------------------------------
+
+/**
+ * Marks every non-deleted workspace record in Supabase as soft-deleted.
+ * Called before Reset Beta Workspace (when signed in) so that other devices
+ * pulling from cloud don't see the old workspace after the local reset.
+ *
+ * Uses UPDATE (not upsert) so only existing cloud rows are touched.
+ * Sets deleted_at = updated_at = synced_at = now so that any device that
+ * subsequently pulls the tombstones sees them as already-synced (not dirty).
+ */
+export async function softDeleteAllCloudRecords(userId: string): Promise<{ error: string | null }> {
+  if (!supabase) return { error: "Supabase not configured" };
+
+  const now = new Date().toISOString();
+  const tombstone = { deleted_at: now, updated_at: now, synced_at: now };
+
+  const [e1, e2, e3, e4] = await Promise.all([
+    supabase.from("profiles").update(tombstone).eq("user_id", userId).is("deleted_at", null)
+      .then((r) => r.error),
+    supabase.from("projects").update(tombstone).eq("user_id", userId).is("deleted_at", null)
+      .then((r) => r.error),
+    supabase.from("folders").update(tombstone).eq("user_id", userId).is("deleted_at", null)
+      .then((r) => r.error),
+    supabase.from("pages").update(tombstone).eq("user_id", userId).is("deleted_at", null)
+      .then((r) => r.error),
+  ]);
+
+  const firstError = e1 ?? e2 ?? e3 ?? e4;
+  if (firstError) {
+    console.warn("[ThinkLeaf] softDeleteAllCloudRecords failed:", firstError.message);
+    return { error: firstError.message };
+  }
+
+  console.log("[ThinkLeaf] Cloud workspace soft-deleted before reset (user:", userId, ")");
+  return { error: null };
 }
 
 // ---------------------------------------------------------------------------
