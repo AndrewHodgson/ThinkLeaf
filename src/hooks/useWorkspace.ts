@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createBetaResetWorkspace, sampleWorkspace } from "@/lib/sampleWorkspace";
 import { createDefaultCanvasViewState, defaultCanvasStyle, defaultPenSettings } from "@/lib/canvasStyle";
 import { safeSetLocalStorage } from "@/lib/storage";
+import { loadAllFromDB, saveAllToDB } from "@/lib/storageAdapter";
 import { createId, defaultProfileId, defaultProfileName, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
 import type {
   CanvasConnectorAnchor,
@@ -21,6 +22,7 @@ import type {
 
 const STORAGE_KEY = "thinkleaf.workspace.v1";
 const CORRUPTED_KEY_PREFIX = "thinkleaf.workspace.corrupted.";
+const MIGRATION_DONE_KEY = "thinkleaf.idb.v1.migrated";
 
 function normalizeCanvasObject(object: CanvasObject): CanvasObject {
   const width = Math.max(24, object.width ?? 120);
@@ -391,11 +393,7 @@ function preserveCorruptedWorkspace(raw: string): string {
   return key;
 }
 
-function loadWorkspace(): LoadResult {
-  if (typeof window === "undefined") {
-    return { data: sampleWorkspace, corruptedKey: null };
-  }
-
+function loadFromLocalStorage(): LoadResult {
   const stored = window.localStorage.getItem(STORAGE_KEY);
 
   if (!stored) {
@@ -407,16 +405,53 @@ function loadWorkspace(): LoadResult {
 
     if (!Array.isArray(parsed.projects) || !Array.isArray(parsed.folders) || !Array.isArray(parsed.pages)) {
       const corruptedKey = preserveCorruptedWorkspace(stored);
-      console.warn("[Thinkleaf] Workspace data failed validation; preserved under", corruptedKey);
+      console.warn("[ThinkLeaf] Workspace data failed validation; preserved under", corruptedKey);
       return { data: sampleWorkspace, corruptedKey };
     }
 
     return { data: normalizeWorkspace(parsed), corruptedKey: null };
   } catch (error) {
     const corruptedKey = preserveCorruptedWorkspace(stored);
-    console.warn("[Thinkleaf] Workspace JSON could not be parsed; preserved under", corruptedKey, error);
+    console.warn("[ThinkLeaf] Workspace JSON could not be parsed; preserved under", corruptedKey, error);
     return { data: sampleWorkspace, corruptedKey };
   }
+}
+
+async function loadWorkspace(): Promise<LoadResult> {
+  if (typeof window === "undefined") {
+    return { data: sampleWorkspace, corruptedKey: null };
+  }
+
+  // Already migrated: load from IndexedDB.
+  if (window.localStorage.getItem(MIGRATION_DONE_KEY) === "true") {
+    try {
+      const idbData = await loadAllFromDB();
+      if (idbData) {
+        return { data: normalizeWorkspace(idbData), corruptedKey: null };
+      }
+      // IndexedDB exists but is empty (e.g. cleared externally) — fall through to localStorage.
+    } catch (err) {
+      console.warn("[ThinkLeaf] IndexedDB read failed, falling back to localStorage", err);
+    }
+  }
+
+  // First load or IDB unavailable: read from localStorage and migrate.
+  const result = loadFromLocalStorage();
+
+  if (result.corruptedKey === null) {
+    try {
+      await saveAllToDB(result.data);
+      window.localStorage.setItem(MIGRATION_DONE_KEY, "true");
+    } catch (err) {
+      // Migration write failed; will retry on next load.
+      console.warn("[ThinkLeaf] IndexedDB migration write failed, will retry on next load", err);
+    }
+  } else {
+    // Corrupted localStorage data — still mark as migrated so we don't loop.
+    window.localStorage.setItem(MIGRATION_DONE_KEY, "true");
+  }
+
+  return result;
 }
 
 export function useWorkspace() {
@@ -424,23 +459,38 @@ export function useWorkspace() {
   const [activePageId, setActivePageId] = useState(sampleWorkspace.pages[0]?.id ?? "");
   const [hasHydrated, setHasHydrated] = useState(false);
   const [corruptedStorageKey, setCorruptedStorageKey] = useState<string | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const { data: loaded, corruptedKey } = loadWorkspace();
-    setData(loaded);
-    setActivePageId(pickFallbackPageIdForProfile(loaded, loaded.activeProfileId));
-    setCorruptedStorageKey(corruptedKey);
-    setHasHydrated(true);
+    loadWorkspace().then(({ data: loaded, corruptedKey }) => {
+      setData(loaded);
+      setActivePageId(pickFallbackPageIdForProfile(loaded, loaded.activeProfileId));
+      setCorruptedStorageKey(corruptedKey);
+      setHasHydrated(true);
+    });
   }, []);
 
   // Gate autosave while corruption is unresolved so sample data never silently
-  // overwrites the user's workspace key before they can recover their data.
+  // overwrites the user's workspace before they can recover their data.
+  // Debounced 500 ms to coalesce rapid changes (e.g. typing) into a single write.
   useEffect(() => {
     if (!hasHydrated || corruptedStorageKey !== null) {
       return;
     }
 
-    safeSetLocalStorage(STORAGE_KEY, JSON.stringify(data));
+    const snapshot = data;
+
+    if (saveTimerRef.current !== null) {
+      clearTimeout(saveTimerRef.current);
+    }
+
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      saveAllToDB(snapshot).catch((err) => {
+        console.warn("[ThinkLeaf] IndexedDB write failed, falling back to localStorage", err);
+        safeSetLocalStorage(STORAGE_KEY, JSON.stringify(snapshot));
+      });
+    }, 500);
   }, [data, hasHydrated, corruptedStorageKey]);
 
   const activeProfile = useMemo(
@@ -1168,8 +1218,6 @@ export function useWorkspace() {
     } catch {
       // ignore — stashed copy may not exist if storage was full
     }
-    // Write the fresh sample workspace explicitly so the next page load is clean.
-    safeSetLocalStorage(STORAGE_KEY, JSON.stringify(sampleWorkspace));
     setData(sampleWorkspace);
     setActivePageId(pickFallbackPageIdForProfile(sampleWorkspace, sampleWorkspace.activeProfileId));
     setCorruptedStorageKey(null);
@@ -1177,7 +1225,6 @@ export function useWorkspace() {
 
   function resetWorkspace() {
     const next = createBetaResetWorkspace();
-    safeSetLocalStorage(STORAGE_KEY, JSON.stringify(next));
     setData(next);
     setActivePageId(next.pages[0]?.id ?? "");
   }
