@@ -100,7 +100,7 @@ export function MigrationPrompt({ status, onUpload, onUseCloud, onSkip, onDismis
                   , and your account already has notes from another device.
                 </p>
                 <p className="mt-2 text-xs text-slate-400">
-                  Neither workspace will be deleted regardless of your choice.
+                  "Use cloud workspace" replaces this device's local workspace with the cloud copy.
                 </p>
               </div>
             </div>

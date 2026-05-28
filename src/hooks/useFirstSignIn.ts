@@ -41,6 +41,8 @@ export type MigrationStage =
 
 export type FirstSignInState = {
   status: MigrationStage;
+  /** True only after the local workspace is known to belong to this account. */
+  isLinked: boolean;
   /** Upload local workspace to cloud (used by "prompt" and "reconcile → keep local"). */
   upload: () => Promise<void>;
   /** Download full cloud workspace to local (used by "reconcile → use cloud"). */
@@ -70,13 +72,14 @@ export type FirstSignInState = {
  */
 export function useFirstSignIn(user: User | null): FirstSignInState {
   const [status, setStatus] = useState<MigrationStage>({ stage: "idle" });
+  const [isLinked, setIsLinked] = useState(false);
   const prevUserIdRef = useRef<string | null>(null);
 
   const performHydration = useCallback(async (userId: string, mode: "merge" | "replace") => {
     setStatus({ stage: "hydrating" });
     try {
       // "replace" clears local IDB tables first so old records can't survive or
-      // sync back up; "merge" is safe for the local-empty case.
+      // sync back up. "merge" is retained for future explicit merge flows.
       const result = mode === "replace"
         ? await replaceLocalWithCloudWorkspace(userId)
         : await downloadFullWorkspaceFromCloud(userId);
@@ -86,6 +89,7 @@ export function useFirstSignIn(user: User | null): FirstSignInState {
         return;
       }
       await setLinkedUserId(userId);
+      setIsLinked(true);
       console.log(
         `[ThinkLeaf] Hydration complete (${mode}) —`,
         result.records.profiles.length, "profiles,",
@@ -106,16 +110,24 @@ export function useFirstSignIn(user: User | null): FirstSignInState {
     const currId = user?.id ?? null;
     prevUserIdRef.current = currId;
 
-    // Only act on null → non-null (first sign-in, or auth resolving on page load).
-    if (prevId !== null || currId === null) return;
+    if (currId === null) {
+      setIsLinked(false);
+      setStatus({ stage: "idle" });
+      return;
+    }
 
+    // Only act on null → non-null (first sign-in, or auth resolving on page load).
+    if (prevId !== null) return;
+
+    setIsLinked(false);
     setStatus({ stage: "checking" });
 
     Promise.all([checkLocalHasData(), checkCloudHasData(currId), getLinkedUserId()])
-      .then(([localSummary, cloudHasData, linkedUserId]) => {
+      .then(async ([localSummary, cloudHasData, linkedUserId]) => {
         if (linkedUserId === currId) {
           // Workspace already belongs to this account — incremental sync handles everything.
           console.log("[ThinkLeaf] Reconciliation skipped: workspace already linked to this account");
+          setIsLinked(true);
           setStatus({ stage: "idle" });
           return;
         }
@@ -125,13 +137,15 @@ export function useFirstSignIn(user: User | null): FirstSignInState {
         if (!localHasData && !cloudHasData) {
           // Both empty — link account so future sign-ins skip this check.
           console.log("[ThinkLeaf] Both local and cloud empty — linking account");
-          void setLinkedUserId(currId);
+          await setLinkedUserId(currId);
+          setIsLinked(true);
           setStatus({ stage: "idle" });
         } else if (!localHasData && cloudHasData) {
           // Cloud has data, local is empty — pull silently, no prompt needed.
-          // Merge is safe here since local is empty.
-          console.log("[ThinkLeaf] Local empty, cloud has data — starting auto-hydration");
-          void performHydration(currId, "merge");
+          // Replace is intentionally used so orphaned local projects/folders
+          // from older builds cannot survive a cloud-authoritative sign-in.
+          console.log("[ThinkLeaf] Local empty, cloud has data — starting auto-replacement");
+          void performHydration(currId, "replace");
         } else if (localHasData && !cloudHasData) {
           // Local has data, cloud empty — offer to upload.
           console.log("[ThinkLeaf] Local has data, cloud empty — showing upload prompt");
@@ -157,6 +171,7 @@ export function useFirstSignIn(user: User | null): FirstSignInState {
         setStatus({ stage: "error", message: result.error });
       } else {
         await setLinkedUserId(user.id);
+        setIsLinked(true);
         console.log("[ThinkLeaf] Upload complete —", result.uploaded, "records,", result.assetsUploaded, "assets");
         setStatus({ stage: "done", uploaded: result.uploaded, assetsUploaded: result.assetsUploaded });
       }
@@ -177,5 +192,5 @@ export function useFirstSignIn(user: User | null): FirstSignInState {
   const skip = useCallback(() => setStatus({ stage: "skipped" }), []);
   const dismiss = useCallback(() => setStatus({ stage: "idle" }), []);
 
-  return { status, upload, useCloud, skip, dismiss };
+  return { status, isLinked, upload, useCloud, skip, dismiss };
 }

@@ -81,6 +81,8 @@ type SidebarProps = {
   // Sync status (optional — only shown when signed in)
   syncStatus?: SyncStatus;
   lastSyncedAt?: string | null;
+  lastSyncError?: string | null;
+  onSyncNow?: () => void;
 };
 
 type SidebarState = {
@@ -168,6 +170,8 @@ export function Sidebar({
   onSignUp,
   syncStatus,
   lastSyncedAt = null,
+  lastSyncError = null,
+  onSyncNow,
 }: SidebarProps) {
   const [isHydrated, setIsHydrated] = useState(false);
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([]);
@@ -1426,7 +1430,12 @@ export function Sidebar({
               <UserCircle aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" />
               <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{authUser.email}</span>
               {syncStatus !== undefined && (
-                <SyncStatusBadge lastSyncedAt={lastSyncedAt} status={syncStatus} />
+                <SyncStatusBadge
+                  lastError={lastSyncError}
+                  lastSyncedAt={lastSyncedAt}
+                  status={syncStatus}
+                  onSyncNow={onSyncNow}
+                />
               )}
               <button
                 className="shrink-0 text-slate-400 hover:text-slate-600"

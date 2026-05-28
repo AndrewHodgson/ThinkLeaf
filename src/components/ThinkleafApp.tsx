@@ -79,7 +79,7 @@ export function ThinkleafApp() {
   // workspace callbacks are stable within a render cycle; status drives the trigger.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstSignIn.status]);
-  const syncEngine = useSyncEngine(auth.user, {
+  const syncEngine = useSyncEngine(firstSignIn.isLinked ? auth.user : null, {
     onRecordsSynced: workspace.markSynced,
     onRemoteRecords: workspace.applyRemoteRecords,
     onRemoteAssets: workspace.applyRemoteAssets,
@@ -728,8 +728,10 @@ export function ThinkleafApp() {
         onSignIn={auth.signIn}
         onSignOut={auth.signOut}
         onSignUp={auth.signUp}
-        syncStatus={syncEngine.status}
-        lastSyncedAt={syncEngine.lastSyncedAt}
+        syncStatus={firstSignIn.isLinked ? syncEngine.status : undefined}
+        lastSyncedAt={firstSignIn.isLinked ? syncEngine.lastSyncedAt : null}
+        lastSyncError={firstSignIn.isLinked ? syncEngine.lastError : null}
+        onSyncNow={firstSignIn.isLinked ? syncEngine.syncNow : undefined}
       />
       <section className="flex min-w-0 flex-1 flex-col">
         <Workspace

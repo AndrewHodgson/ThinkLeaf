@@ -17,6 +17,7 @@ export type LocalDataSummary = {
   hasData: boolean;
   profiles: number;
   projects: number;
+  folders: number;
   pages: number;
 };
 
@@ -73,15 +74,17 @@ export async function checkCloudHasData(userId: string): Promise<boolean> {
 
 /** Counts non-deleted local records to decide whether a migration prompt is useful. */
 export async function checkLocalHasData(): Promise<LocalDataSummary> {
-  const [profileCount, projectCount, pageCount] = await Promise.all([
+  const [profileCount, projectCount, folderCount, pageCount] = await Promise.all([
     db.profiles.filter((r) => !r.deletedAt).count(),
     db.projects.filter((r) => !r.deletedAt).count(),
+    db.folders.filter((r) => !r.deletedAt).count(),
     db.pages.filter((r) => !r.deletedAt).count(),
   ]);
   return {
-    hasData: pageCount > 0,
+    hasData: profileCount > 0 || projectCount > 0 || folderCount > 0 || pageCount > 0,
     profiles: profileCount,
     projects: projectCount,
+    folders: folderCount,
     pages: pageCount,
   };
 }

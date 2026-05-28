@@ -55,12 +55,16 @@ export function useSyncEngine(user: User | null, callbacks: SyncEngineCallbacks)
   const callbacksRef = useRef(callbacks);
   callbacksRef.current = callbacks;
 
-  const runSync = useCallback(async () => {
+  const runSync = useCallback(async (options?: { force?: boolean }) => {
     if (!user || !isSupabaseConfigured) return;
     if (isSyncingRef.current) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setStatus("offline");
+      return;
+    }
 
     const now = Date.now();
-    if (now - lastSyncTimeRef.current < MIN_SYNC_INTERVAL_MS) return;
+    if (!options?.force && now - lastSyncTimeRef.current < MIN_SYNC_INTERVAL_MS) return;
 
     isSyncingRef.current = true;
     lastSyncTimeRef.current = now;
@@ -170,7 +174,7 @@ export function useSyncEngine(user: User | null, callbacks: SyncEngineCallbacks)
     };
   }, [user, runSync, status]);
 
-  const syncNow = useCallback(() => { void runSync(); }, [runSync]);
+  const syncNow = useCallback(() => { void runSync({ force: true }); }, [runSync]);
 
   return { status, lastSyncedAt, lastError, syncNow };
 }
