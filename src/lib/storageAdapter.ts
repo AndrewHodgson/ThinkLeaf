@@ -86,6 +86,9 @@ export async function saveAllToDB(data: WorkspaceData): Promise<Record<string, s
           id: assetId,
           mimeType: "image/jpeg",
           data: obj.imageDataUrl,
+          version: 1,
+          deletedAt: null,
+          syncedAt: null,
           createdAt: now,
           updatedAt: now,
         });

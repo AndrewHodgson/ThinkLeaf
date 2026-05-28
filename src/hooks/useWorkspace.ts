@@ -168,6 +168,9 @@ function createDefaultProfile(now = timestamp()): Profile {
   return {
     id: defaultProfileId,
     name: defaultProfileName,
+    version: 1,
+    deletedAt: null,
+    syncedAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -183,6 +186,9 @@ function createStarterProfileContent(profileId: string, now = timestamp()) {
       id: projectId,
       profileId,
       name: "New Project",
+      version: 1,
+      deletedAt: null,
+      syncedAt: null,
       createdAt: now,
       updatedAt: now,
     },
@@ -191,6 +197,9 @@ function createStarterProfileContent(profileId: string, now = timestamp()) {
       profileId,
       projectId,
       name: "Notes",
+      version: 1,
+      deletedAt: null,
+      syncedAt: null,
       createdAt: now,
       updatedAt: now,
     },
@@ -206,17 +215,23 @@ function createStarterProfileContent(profileId: string, now = timestamp()) {
       canvasObjects: [],
       tags: [],
       isFavorite: false,
+      version: 1,
+      deletedAt: null,
+      syncedAt: null,
       createdAt: now,
       updatedAt: now,
     },
   } satisfies { project: Project; folder: Folder; page: Page };
 }
 
+const SYNC_DEFAULTS = { version: 1 as number, deletedAt: null as string | null, syncedAt: null as string | null };
+
 function normalizeWorkspace(data: Partial<WorkspaceData>): WorkspaceData {
   const now = timestamp();
   const profiles =
     Array.isArray(data.profiles) && data.profiles.length
       ? data.profiles.map((profile) => ({
+          ...SYNC_DEFAULTS,
           ...profile,
           name: profile.name?.trim() || defaultProfileName,
           createdAt: profile.createdAt ?? now,
@@ -224,10 +239,14 @@ function normalizeWorkspace(data: Partial<WorkspaceData>): WorkspaceData {
         }))
       : [createDefaultProfile(now)];
   const profileIds = new Set(profiles.map((profile) => profile.id));
+  // Validate activeProfileId against non-deleted profiles only.
   const activeProfileId =
-    data.activeProfileId && profileIds.has(data.activeProfileId) ? data.activeProfileId : profiles[0].id;
+    data.activeProfileId && profileIds.has(data.activeProfileId) && !profiles.find((p) => p.id === data.activeProfileId)?.deletedAt
+      ? data.activeProfileId
+      : (profiles.find((p) => !p.deletedAt)?.id ?? profiles[0].id);
   const rawProjects = Array.isArray(data.projects) ? data.projects : [];
   const projects = rawProjects.map((project) => ({
+    ...SYNC_DEFAULTS,
     ...project,
     profileId: project.profileId && profileIds.has(project.profileId) ? project.profileId : activeProfileId,
   }));
@@ -240,6 +259,7 @@ function normalizeWorkspace(data: Partial<WorkspaceData>): WorkspaceData {
         : projectProfileIds.get(folder.projectId) ?? activeProfileId;
 
     return {
+      ...SYNC_DEFAULTS,
       ...folder,
       profileId,
     };
@@ -265,6 +285,7 @@ function normalizeWorkspace(data: Partial<WorkspaceData>): WorkspaceData {
         : [];
 
       return {
+        ...SYNC_DEFAULTS,
         ...page,
         profileId:
           page.profileId && profileIds.has(page.profileId)
@@ -288,7 +309,7 @@ function pickFallbackPageId(pages: Page[], preferredPageId: string) {
 }
 
 function getProfilePages(data: WorkspaceData, profileId: string) {
-  return data.pages.filter((page) => page.profileId === profileId);
+  return data.pages.filter((page) => page.profileId === profileId && !page.deletedAt);
 }
 
 function pickFallbackPageIdForProfile(data: WorkspaceData, profileId: string, preferredPageId?: string) {
@@ -515,7 +536,10 @@ export function useWorkspace() {
   }, [data, hasHydrated, corruptedStorageKey]);
 
   const activeProfile = useMemo(
-    () => data.profiles.find((profile) => profile.id === data.activeProfileId) ?? data.profiles[0],
+    () =>
+      data.profiles.find((profile) => profile.id === data.activeProfileId && !profile.deletedAt) ??
+      data.profiles.find((profile) => !profile.deletedAt) ??
+      data.profiles[0],
     [data.activeProfileId, data.profiles],
   );
   const activeProfileId = activeProfile?.id ?? "";
@@ -523,11 +547,11 @@ export function useWorkspace() {
     () => ({
       ...data,
       activeProfileId,
-      projects: data.projects.filter((project) => project.profileId === activeProfileId),
-      folders: data.folders.filter((folder) => folder.profileId === activeProfileId),
-      pages: data.pages.filter((page) => page.profileId === activeProfileId),
+      projects: data.projects.filter((project) => project.profileId === activeProfileId && !project.deletedAt),
+      folders: data.folders.filter((folder) => folder.profileId === activeProfileId && !folder.deletedAt),
+      pages: data.pages.filter((page) => page.profileId === activeProfileId && !page.deletedAt),
       recentPageIds: data.recentPageIds.filter((pageId) =>
-        data.pages.some((page) => page.id === pageId && page.profileId === activeProfileId),
+        data.pages.some((page) => page.id === pageId && page.profileId === activeProfileId && !page.deletedAt),
       ),
     }),
     [activeProfileId, data],
@@ -561,6 +585,9 @@ export function useWorkspace() {
     const profile: Profile = {
       id: createId("profile"),
       name: cleanName,
+      version: 1,
+      deletedAt: null,
+      syncedAt: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -589,30 +616,42 @@ export function useWorkspace() {
     setData((current) => ({
       ...current,
       profiles: current.profiles.map((profile) =>
-        profile.id === profileId ? { ...profile, name: cleanName, updatedAt: now } : profile,
+        profile.id === profileId ? { ...profile, name: cleanName, updatedAt: now, version: profile.version + 1 } : profile,
       ),
     }));
   }
 
   function deleteProfile(profileId: string) {
     setData((current) => {
-      if (current.profiles.length <= 1 || !current.profiles.some((profile) => profile.id === profileId)) {
+      const nonDeleted = current.profiles.filter((p) => !p.deletedAt);
+      if (nonDeleted.length <= 1 || !nonDeleted.some((p) => p.id === profileId)) {
         return current;
       }
 
-      const nextProfiles = current.profiles.filter((profile) => profile.id !== profileId);
-      const nextActiveProfileId =
-        current.activeProfileId === profileId ? nextProfiles[0]?.id ?? "" : current.activeProfileId;
+      const now = timestamp();
       const deletedPageIds = new Set(
-        current.pages.filter((page) => page.profileId === profileId).map((page) => page.id),
+        current.pages.filter((page) => page.profileId === profileId && !page.deletedAt).map((page) => page.id),
       );
+      const nextActiveProfileId =
+        current.activeProfileId === profileId
+          ? (nonDeleted.find((p) => p.id !== profileId)?.id ?? "")
+          : current.activeProfileId;
+
       const nextData: WorkspaceData = {
         ...current,
-        profiles: nextProfiles,
+        profiles: current.profiles.map((p) =>
+          p.id === profileId ? { ...p, deletedAt: now, updatedAt: now, version: p.version + 1 } : p,
+        ),
         activeProfileId: nextActiveProfileId,
-        projects: current.projects.filter((project) => project.profileId !== profileId),
-        folders: current.folders.filter((folder) => folder.profileId !== profileId),
-        pages: current.pages.filter((page) => page.profileId !== profileId),
+        projects: current.projects.map((p) =>
+          p.profileId === profileId && !p.deletedAt ? { ...p, deletedAt: now, updatedAt: now, version: p.version + 1 } : p,
+        ),
+        folders: current.folders.map((f) =>
+          f.profileId === profileId && !f.deletedAt ? { ...f, deletedAt: now, updatedAt: now, version: f.version + 1 } : f,
+        ),
+        pages: current.pages.map((p) =>
+          p.profileId === profileId && !p.deletedAt ? { ...p, deletedAt: now, updatedAt: now, version: p.version + 1 } : p,
+        ),
         recentPageIds: current.recentPageIds.filter((pageId) => !deletedPageIds.has(pageId)),
       };
 
@@ -643,6 +682,9 @@ export function useWorkspace() {
       id: createId("project"),
       profileId: activeProfileId,
       name: cleanName,
+      version: 1,
+      deletedAt: null,
+      syncedAt: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -666,7 +708,7 @@ export function useWorkspace() {
       const pageIdMap = new Map<string, string>();
 
       const copiedFolders = current.folders
-        .filter((folder) => folder.projectId === projectId)
+        .filter((folder) => folder.projectId === projectId && !folder.deletedAt)
         .map((folder) => {
           const nextFolderId = createId("folder");
           folderIdMap.set(folder.id, nextFolderId);
@@ -676,13 +718,16 @@ export function useWorkspace() {
             projectId: projectCopyId,
             profileId: sourceProject.profileId,
             name: `${folder.name} Copy`,
+            version: 1,
+            deletedAt: null as string | null,
+            syncedAt: null as string | null,
             createdAt: now,
             updatedAt: now,
           };
         });
 
       const copiedPages = current.pages
-        .filter((page) => page.projectId === projectId)
+        .filter((page) => page.projectId === projectId && !page.deletedAt)
         .map((page) => {
           const nextPageId = createId("page");
           pageIdMap.set(page.id, nextPageId);
@@ -700,6 +745,9 @@ export function useWorkspace() {
             canvasObjects: cloneCanvasObjectsWithNewIds(page.canvasObjects),
             tags: [...page.tags],
             isFavorite: false,
+            version: 1,
+            deletedAt: null as string | null,
+            syncedAt: null as string | null,
             createdAt: now,
             updatedAt: now,
           };
@@ -710,6 +758,9 @@ export function useWorkspace() {
         id: projectCopyId,
         profileId: sourceProject.profileId,
         name: `${sourceProject.name} Copy`,
+        version: 1,
+        deletedAt: null,
+        syncedAt: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -752,16 +803,23 @@ export function useWorkspace() {
     setData((current) => ({
       ...current,
       projects: current.projects.map((project) =>
-        project.id === projectId ? { ...project, name: cleanName, updatedAt: now } : project,
+        project.id === projectId ? { ...project, name: cleanName, updatedAt: now, version: project.version + 1 } : project,
       ),
     }));
   }
 
   function deleteProject(projectId: string) {
     setData((current) => {
-      const deletedPageIds = new Set(current.pages.filter((page) => page.projectId === projectId).map((page) => page.id));
-      const nextPages = current.pages.filter((page) => page.projectId !== projectId);
+      const now = timestamp();
+      const deletedPageIds = new Set(
+        current.pages.filter((page) => page.projectId === projectId && !page.deletedAt).map((page) => page.id),
+      );
       const sourceProject = current.projects.find((project) => project.id === projectId);
+      const nextPages = current.pages.map((page) =>
+        page.projectId === projectId && !page.deletedAt
+          ? { ...page, deletedAt: now, updatedAt: now, version: page.version + 1 }
+          : page,
+      );
       const nextActivePageId =
         sourceProject?.profileId === current.activeProfileId
           ? pickFallbackPageId(getProfilePages({ ...current, pages: nextPages }, current.activeProfileId), activePageId)
@@ -771,8 +829,14 @@ export function useWorkspace() {
 
       return {
         ...current,
-        projects: current.projects.filter((project) => project.id !== projectId),
-        folders: current.folders.filter((folder) => folder.projectId !== projectId),
+        projects: current.projects.map((project) =>
+          project.id === projectId ? { ...project, deletedAt: now, updatedAt: now, version: project.version + 1 } : project,
+        ),
+        folders: current.folders.map((folder) =>
+          folder.projectId === projectId && !folder.deletedAt
+            ? { ...folder, deletedAt: now, updatedAt: now, version: folder.version + 1 }
+            : folder,
+        ),
         pages: nextPages,
         recentPageIds: current.recentPageIds.filter((pageId) => !deletedPageIds.has(pageId)),
       };
@@ -806,6 +870,9 @@ export function useWorkspace() {
         projectId,
         parentFolderId: parentFolder?.id,
         name: cleanName,
+        version: 1,
+        deletedAt: null,
+        syncedAt: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -835,7 +902,7 @@ export function useWorkspace() {
       }
       const nextRootFolderId = folderIdMap.get(folderId) ?? createId("folder");
       const copiedFolders = current.folders
-        .filter((folder) => folderIdsToCopy.has(folder.id))
+        .filter((folder) => folderIdsToCopy.has(folder.id) && !folder.deletedAt)
         .map((folder) => ({
           ...folder,
           id: folderIdMap.get(folder.id) ?? createId("folder"),
@@ -847,11 +914,14 @@ export function useWorkspace() {
                 ? folderIdMap.get(folder.parentFolderId)
                 : undefined,
           name: folder.id === folderId ? `${folder.name} Copy` : folder.name,
+          version: 1,
+          deletedAt: null as string | null,
+          syncedAt: null as string | null,
           createdAt: now,
           updatedAt: now,
         }));
       const copiedPages = current.pages
-        .filter((page) => page.folderId !== undefined && folderIdsToCopy.has(page.folderId))
+        .filter((page) => page.folderId !== undefined && folderIdsToCopy.has(page.folderId) && !page.deletedAt)
         .map((page) => {
           const nextPageId = createId("page");
           return {
@@ -867,6 +937,9 @@ export function useWorkspace() {
             canvasObjects: cloneCanvasObjectsWithNewIds(page.canvasObjects),
             tags: [...page.tags],
             isFavorite: false,
+            version: 1,
+            deletedAt: null as string | null,
+            syncedAt: null as string | null,
             createdAt: now,
             updatedAt: now,
           };
@@ -903,19 +976,26 @@ export function useWorkspace() {
     setData((current) => ({
       ...current,
       folders: current.folders.map((folder) =>
-        folder.id === folderId ? { ...folder, name: cleanName, updatedAt: now } : folder,
+        folder.id === folderId ? { ...folder, name: cleanName, updatedAt: now, version: folder.version + 1 } : folder,
       ),
     }));
   }
 
   function deleteFolder(folderId: string) {
     setData((current) => {
+      const now = timestamp();
       const sourceFolder = current.folders.find((folder) => folder.id === folderId);
       const deletedFolderIds = getDescendantFolderIds(current.folders, folderId);
       const deletedPageIds = new Set(
-        current.pages.filter((page) => page.folderId !== undefined && deletedFolderIds.has(page.folderId)).map((page) => page.id),
+        current.pages
+          .filter((page) => page.folderId !== undefined && deletedFolderIds.has(page.folderId) && !page.deletedAt)
+          .map((page) => page.id),
       );
-      const nextPages = current.pages.filter((page) => page.folderId === undefined || !deletedFolderIds.has(page.folderId));
+      const nextPages = current.pages.map((page) =>
+        page.folderId !== undefined && deletedFolderIds.has(page.folderId) && !page.deletedAt
+          ? { ...page, deletedAt: now, updatedAt: now, version: page.version + 1 }
+          : page,
+      );
       const nextActivePageId =
         sourceFolder?.profileId === current.activeProfileId
           ? pickFallbackPageId(getProfilePages({ ...current, pages: nextPages }, current.activeProfileId), activePageId)
@@ -925,7 +1005,11 @@ export function useWorkspace() {
 
       return {
         ...current,
-        folders: current.folders.filter((folder) => !deletedFolderIds.has(folder.id)),
+        folders: current.folders.map((folder) =>
+          deletedFolderIds.has(folder.id) && !folder.deletedAt
+            ? { ...folder, deletedAt: now, updatedAt: now, version: folder.version + 1 }
+            : folder,
+        ),
         pages: nextPages,
         recentPageIds: current.recentPageIds.filter((pageId) => !deletedPageIds.has(pageId)),
       };
@@ -961,6 +1045,7 @@ export function useWorkspace() {
                 folderId: targetFolderId,
                 profileId: targetProfileId,
                 updatedAt: now,
+                version: p.version + 1,
               }
             : p,
         ),
@@ -1011,7 +1096,7 @@ export function useWorkspace() {
           ...current,
           folders: current.folders.map((f) =>
             f.id === folderId
-              ? { ...f, parentFolderId: targetParentFolderId ?? undefined, updatedAt: now }
+              ? { ...f, parentFolderId: targetParentFolderId ?? undefined, updatedAt: now, version: f.version + 1 }
               : f,
           ),
         };
@@ -1032,10 +1117,10 @@ export function useWorkspace() {
 
       const nextFolders = current.folders.map((f) => {
         if (f.id === folderId) {
-          return { ...f, projectId: resolvedProjectId, parentFolderId: targetParentFolderId ?? undefined, updatedAt: now };
+          return { ...f, projectId: resolvedProjectId, parentFolderId: targetParentFolderId ?? undefined, updatedAt: now, version: f.version + 1 };
         }
         if (movedFolderIds.has(f.id)) {
-          return { ...f, projectId: resolvedProjectId, updatedAt: now };
+          return { ...f, projectId: resolvedProjectId, updatedAt: now, version: f.version + 1 };
         }
         return f;
       });
@@ -1043,7 +1128,7 @@ export function useWorkspace() {
       // Cascade projectId to all pages contained in the moved folders
       const nextPages = current.pages.map((p) =>
         p.folderId !== undefined && movedFolderIds.has(p.folderId)
-          ? { ...p, projectId: resolvedProjectId, updatedAt: now }
+          ? { ...p, projectId: resolvedProjectId, updatedAt: now, version: p.version + 1 }
           : p,
       );
 
@@ -1086,6 +1171,9 @@ export function useWorkspace() {
         canvasObjects: template ? cloneCanvasObjectsWithNewIds(template.canvasObjects) : [],
         tags: template ? [...template.tags] : [],
         isFavorite: false,
+        version: 1,
+        deletedAt: null,
+        syncedAt: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -1123,6 +1211,9 @@ export function useWorkspace() {
       canvasObjects: cloneCanvasObjectsWithNewIds(sourcePage.canvasObjects),
       tags: [...sourcePage.tags],
       isFavorite: false,
+      version: 1,
+      deletedAt: null,
+      syncedAt: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -1147,19 +1238,30 @@ export function useWorkspace() {
       Pick<Page, "title" | "body" | "noteDate" | "canvasViewState" | "canvasObjects" | "tags" | "isFavorite">
     >,
   ) {
+    // Empty updates — nothing to do (e.g. manuallySavePage).
+    if (Object.keys(updates).length === 0) return;
+
+    // Content fields that warrant bumping updatedAt and version when changed.
+    // canvasViewState (pan/zoom) is excluded — it's a view-only preference.
+    const contentFields = new Set<string>(["title", "body", "noteDate", "canvasObjects", "tags", "isFavorite"]);
     const now = timestamp();
 
     setData((current) => ({
       ...current,
-      pages: current.pages.map((page) =>
-        page.id === pageId
-          ? {
-              ...page,
-              ...updates,
-              updatedAt: now,
-            }
-          : page,
-      ),
+      pages: current.pages.map((page) => {
+        if (page.id !== pageId) return page;
+
+        // Determine whether any content field actually changed value.
+        const hasContentChange = Object.keys(updates).some(
+          (key) => contentFields.has(key) && (updates as Record<string, unknown>)[key] !== (page as Record<string, unknown>)[key],
+        );
+
+        return {
+          ...page,
+          ...updates,
+          ...(hasContentChange ? { updatedAt: now, version: page.version + 1 } : {}),
+        };
+      }),
     }));
   }
 
@@ -1174,14 +1276,17 @@ export function useWorkspace() {
     setData((current) => ({
       ...current,
       pages: current.pages.map((page) =>
-        page.id === pageId ? { ...page, title: cleanTitle, updatedAt: now } : page,
+        page.id === pageId ? { ...page, title: cleanTitle, updatedAt: now, version: page.version + 1 } : page,
       ),
     }));
   }
 
   function deletePage(pageId: string) {
     setData((current) => {
-      const nextPages = current.pages.filter((page) => page.id !== pageId);
+      const now = timestamp();
+      const nextPages = current.pages.map((page) =>
+        page.id === pageId && !page.deletedAt ? { ...page, deletedAt: now, updatedAt: now, version: page.version + 1 } : page,
+      );
       const sourcePage = current.pages.find((page) => page.id === pageId);
       const nextActivePageId =
         sourcePage?.profileId === current.activeProfileId
@@ -1203,7 +1308,7 @@ export function useWorkspace() {
     setData((current) => ({
       ...current,
       projects: current.projects.map((project) =>
-        project.id === projectId ? { ...project, color, updatedAt: now } : project,
+        project.id === projectId ? { ...project, color, updatedAt: now, version: project.version + 1 } : project,
       ),
     }));
   }
@@ -1213,7 +1318,7 @@ export function useWorkspace() {
     setData((current) => ({
       ...current,
       folders: current.folders.map((folder) =>
-        folder.id === folderId ? { ...folder, color, updatedAt: now } : folder,
+        folder.id === folderId ? { ...folder, color, updatedAt: now, version: folder.version + 1 } : folder,
       ),
     }));
   }

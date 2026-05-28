@@ -3,6 +3,9 @@ export type SidebarItemColor = "green" | "blue" | "purple" | "orange" | "red" | 
 export type Profile = {
   id: string;
   name: string;
+  version: number;
+  deletedAt: string | null;
+  syncedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -12,6 +15,9 @@ export type Project = {
   profileId: string;
   name: string;
   color?: SidebarItemColor;
+  version: number;
+  deletedAt: string | null;
+  syncedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -23,6 +29,9 @@ export type Folder = {
   parentFolderId?: string;
   name: string;
   color?: SidebarItemColor;
+  version: number;
+  deletedAt: string | null;
+  syncedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -39,6 +48,9 @@ export type Page = {
   canvasObjects: CanvasObject[];
   tags: string[];
   isFavorite: boolean;
+  version: number;
+  deletedAt: string | null;
+  syncedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };

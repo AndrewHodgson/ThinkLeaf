@@ -9,6 +9,9 @@ export const sampleWorkspace: WorkspaceData = {
     {
       id: defaultProfileId,
       name: defaultProfileName,
+      version: 1,
+      deletedAt: null,
+      syncedAt: null,
       createdAt: now,
       updatedAt: now,
     },
@@ -19,6 +22,9 @@ export const sampleWorkspace: WorkspaceData = {
       id: "project-shows",
       profileId: defaultProfileId,
       name: "Shows",
+      version: 1,
+      deletedAt: null,
+      syncedAt: null,
       createdAt: now,
       updatedAt: now,
     },
@@ -29,6 +35,9 @@ export const sampleWorkspace: WorkspaceData = {
       profileId: defaultProfileId,
       projectId: "project-shows",
       name: "PCMA Convening Leaders 2027",
+      version: 1,
+      deletedAt: null,
+      syncedAt: null,
       createdAt: now,
       updatedAt: now,
     },
@@ -45,6 +54,9 @@ export const sampleWorkspace: WorkspaceData = {
       canvasObjects: [],
       tags: ["Show", "Meeting Notes", "Custom Booth"],
       isFavorite: true,
+      version: 1,
+      deletedAt: null,
+      syncedAt: null,
       createdAt: now,
       updatedAt: now,
       body:
@@ -61,10 +73,10 @@ export function createBetaResetWorkspace(): WorkspaceData {
   const pageId = createId("page");
 
   return {
-    profiles: [{ id: defaultProfileId, name: defaultProfileName, createdAt: now, updatedAt: now }],
+    profiles: [{ id: defaultProfileId, name: defaultProfileName, version: 1, deletedAt: null, syncedAt: null, createdAt: now, updatedAt: now }],
     activeProfileId: defaultProfileId,
-    projects: [{ id: projectId, profileId: defaultProfileId, name: "Test Project", createdAt: now, updatedAt: now }],
-    folders: [{ id: folderId, profileId: defaultProfileId, projectId, name: "Test Folder", createdAt: now, updatedAt: now }],
+    projects: [{ id: projectId, profileId: defaultProfileId, name: "Test Project", version: 1, deletedAt: null, syncedAt: null, createdAt: now, updatedAt: now }],
+    folders: [{ id: folderId, profileId: defaultProfileId, projectId, name: "Test Folder", version: 1, deletedAt: null, syncedAt: null, createdAt: now, updatedAt: now }],
     pages: [
       {
         id: pageId,
@@ -78,6 +90,9 @@ export function createBetaResetWorkspace(): WorkspaceData {
         canvasObjects: [],
         tags: [],
         isFavorite: false,
+        version: 1,
+        deletedAt: null,
+        syncedAt: null,
         createdAt: now,
         updatedAt: now,
       },

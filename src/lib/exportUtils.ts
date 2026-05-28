@@ -21,7 +21,15 @@ import {
 
 export function exportWorkspaceBackup(data: WorkspaceData) {
   const date = new Date().toISOString().slice(0, 10);
-  downloadTextFile(`thinkleaf-backup-${date}.json`, JSON.stringify(data, null, 2), "application/json");
+  // Exclude soft-deleted records — the export represents the user's visible workspace.
+  const exportData: WorkspaceData = {
+    ...data,
+    profiles: data.profiles.filter((r) => !r.deletedAt),
+    projects: data.projects.filter((r) => !r.deletedAt),
+    folders: data.folders.filter((r) => !r.deletedAt),
+    pages: data.pages.filter((r) => !r.deletedAt),
+  };
+  downloadTextFile(`thinkleaf-backup-${date}.json`, JSON.stringify(exportData, null, 2), "application/json");
 }
 
 export function exportPageAsPdf(page: Page, breadcrumbPath: string[]) {

@@ -544,7 +544,7 @@ export function Workspace({
         const image = await processImageFile(file);
         const assetId = createId("asset");
         const now = timestamp();
-        await saveAsset({ id: assetId, mimeType: "image/jpeg", data: image.dataUrl, createdAt: now, updatedAt: now });
+        await saveAsset({ id: assetId, mimeType: "image/jpeg", data: image.dataUrl, version: 1, deletedAt: null, syncedAt: null, createdAt: now, updatedAt: now });
         importedObjects.push(createCanvasImageObject(image, assetId));
       }
 

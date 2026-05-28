@@ -10,6 +10,9 @@ export type AssetRecord = {
   id: string;
   mimeType: string;
   data: string;
+  version: number;
+  deletedAt: string | null;
+  syncedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -39,6 +42,29 @@ class ThinkLeafDB extends Dexie {
       settings: "key",
       assets: "id",
     });
+    this.version(3)
+      .stores({
+        profiles: "id",
+        projects: "id, profileId",
+        folders: "id, profileId, projectId",
+        pages: "id, profileId, projectId, folderId",
+        settings: "key",
+        assets: "id",
+      })
+      .upgrade(async (tx) => {
+        const defaults = { version: 1, deletedAt: null, syncedAt: null };
+        const tables = ["profiles", "projects", "folders", "pages", "assets"] as const;
+        for (const table of tables) {
+          await tx
+            .table(table)
+            .toCollection()
+            .modify((record) => {
+              if (record.version === undefined) {
+                Object.assign(record, defaults);
+              }
+            });
+        }
+      });
   }
 }
 
