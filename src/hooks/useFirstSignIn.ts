@@ -124,15 +124,20 @@ export function useFirstSignIn(user: User | null): FirstSignInState {
 
     Promise.all([checkLocalHasData(), checkCloudHasData(currId), getLinkedUserId()])
       .then(async ([localSummary, cloudHasData, linkedUserId]) => {
+        const localHasData = localSummary.hasData;
+
         if (linkedUserId === currId) {
           // Workspace already belongs to this account — incremental sync handles everything.
+          if (!localHasData && cloudHasData) {
+            console.log("[ThinkLeaf] Linked workspace is empty locally; hydrating from cloud");
+            void performHydration(currId, "replace");
+            return;
+          }
           console.log("[ThinkLeaf] Reconciliation skipped: workspace already linked to this account");
           setIsLinked(true);
           setStatus({ stage: "idle" });
           return;
         }
-
-        const localHasData = localSummary.hasData;
 
         if (!localHasData && !cloudHasData) {
           // Both empty — link account so future sign-ins skip this check.

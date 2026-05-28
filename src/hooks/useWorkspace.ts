@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createBetaResetWorkspace, sampleWorkspace } from "@/lib/sampleWorkspace";
+import { createBetaResetWorkspace, createOfflineDefaultWorkspace, sampleWorkspace } from "@/lib/sampleWorkspace";
 import { createDefaultCanvasViewState, defaultCanvasStyle, defaultPenSettings } from "@/lib/canvasStyle";
 import { safeSetLocalStorage } from "@/lib/storage";
 import { db, type AssetRecord } from "@/lib/db";
@@ -402,6 +402,7 @@ function cloneCanvasObjectsWithNewIds(objects: CanvasObject[]) {
 type LoadResult = {
   data: WorkspaceData;
   corruptedKey: string | null;
+  isFirstRun: boolean;
 };
 
 /**
@@ -448,7 +449,7 @@ function loadFromLocalStorage(): LoadResult {
   const stored = window.localStorage.getItem(STORAGE_KEY);
 
   if (!stored) {
-    return { data: sampleWorkspace, corruptedKey: null };
+    return { data: sampleWorkspace, corruptedKey: null, isFirstRun: true };
   }
 
   try {
@@ -457,20 +458,20 @@ function loadFromLocalStorage(): LoadResult {
     if (!Array.isArray(parsed.projects) || !Array.isArray(parsed.folders) || !Array.isArray(parsed.pages)) {
       const corruptedKey = preserveCorruptedWorkspace(stored);
       console.warn("[ThinkLeaf] Workspace data failed validation; preserved under", corruptedKey);
-      return { data: sampleWorkspace, corruptedKey };
+      return { data: sampleWorkspace, corruptedKey, isFirstRun: false };
     }
 
-    return { data: normalizeWorkspace(parsed), corruptedKey: null };
+    return { data: normalizeWorkspace(parsed), corruptedKey: null, isFirstRun: false };
   } catch (error) {
     const corruptedKey = preserveCorruptedWorkspace(stored);
     console.warn("[ThinkLeaf] Workspace JSON could not be parsed; preserved under", corruptedKey, error);
-    return { data: sampleWorkspace, corruptedKey };
+    return { data: sampleWorkspace, corruptedKey, isFirstRun: false };
   }
 }
 
 async function loadWorkspace(): Promise<LoadResult> {
   if (typeof window === "undefined") {
-    return { data: sampleWorkspace, corruptedKey: null };
+    return { data: sampleWorkspace, corruptedKey: null, isFirstRun: false };
   }
 
   // Already migrated: load from IndexedDB.
@@ -478,7 +479,7 @@ async function loadWorkspace(): Promise<LoadResult> {
     try {
       const idbData = await loadAllFromDB();
       if (idbData) {
-        return { data: normalizeWorkspace(idbData), corruptedKey: null };
+        return { data: normalizeWorkspace(idbData), corruptedKey: null, isFirstRun: false };
       }
       // IndexedDB exists but is empty (e.g. cleared externally) — fall through to localStorage.
     } catch (err) {
@@ -488,6 +489,10 @@ async function loadWorkspace(): Promise<LoadResult> {
 
   // First load or IDB unavailable: read from localStorage and migrate.
   let result = loadFromLocalStorage();
+
+  if (result.isFirstRun) {
+    return result;
+  }
 
   if (result.corruptedKey === null) {
     try {
@@ -512,14 +517,16 @@ export function useWorkspace() {
   const [data, setData] = useState<WorkspaceData>(sampleWorkspace);
   const [activePageId, setActivePageId] = useState(sampleWorkspace.pages[0]?.id ?? "");
   const [hasHydrated, setHasHydrated] = useState(false);
+  const [isFirstRun, setIsFirstRun] = useState(false);
   const [corruptedStorageKey, setCorruptedStorageKey] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    loadWorkspace().then(({ data: loaded, corruptedKey }) => {
+    loadWorkspace().then(({ data: loaded, corruptedKey, isFirstRun: loadedIsFirstRun }) => {
       setData(loaded);
       setActivePageId(pickFallbackPageIdForProfile(loaded, loaded.activeProfileId));
       setCorruptedStorageKey(corruptedKey);
+      setIsFirstRun(loadedIsFirstRun);
       setHasHydrated(true);
     });
   }, []);
@@ -528,7 +535,7 @@ export function useWorkspace() {
   // overwrites the user's workspace before they can recover their data.
   // Debounced 500 ms to coalesce rapid changes (e.g. typing) into a single write.
   useEffect(() => {
-    if (!hasHydrated || corruptedStorageKey !== null) {
+    if (!hasHydrated || isFirstRun || corruptedStorageKey !== null) {
       return;
     }
 
@@ -550,7 +557,7 @@ export function useWorkspace() {
           safeSetLocalStorage(STORAGE_KEY, JSON.stringify(snapshot));
         });
     }, 500);
-  }, [data, hasHydrated, corruptedStorageKey]);
+  }, [data, hasHydrated, isFirstRun, corruptedStorageKey]);
 
   const activeProfile = useMemo(
     () =>
@@ -1394,6 +1401,7 @@ export function useWorkspace() {
     const nextData = normalizeWorkspace(parsed);
     setData(nextData);
     setActivePageId(pickFallbackPageIdForProfile(nextData, nextData.activeProfileId));
+    setIsFirstRun(false);
     return true;
   }
 
@@ -1412,8 +1420,10 @@ export function useWorkspace() {
     } catch (err) {
       console.warn("[ThinkLeaf] IDB clear failed during corruption recovery", err);
     }
-    setData(sampleWorkspace);
-    setActivePageId(pickFallbackPageIdForProfile(sampleWorkspace, sampleWorkspace.activeProfileId));
+    const next = createOfflineDefaultWorkspace();
+    setData(next);
+    setActivePageId(pickFallbackPageIdForProfile(next, next.activeProfileId));
+    setIsFirstRun(false);
     setCorruptedStorageKey(null);
   }
 
@@ -1427,6 +1437,23 @@ export function useWorkspace() {
     }
     setData(next);
     setActivePageId(next.pages[0]?.id ?? "");
+    setIsFirstRun(false);
+  }
+
+  async function createDefaultWorkspace() {
+    const next = createOfflineDefaultWorkspace();
+    try {
+      await clearAllFromDB();
+      await saveAllToDB(next);
+      window.localStorage.setItem(MIGRATION_DONE_KEY, "true");
+    } catch (err) {
+      console.warn("[ThinkLeaf] IDB write failed while starting offline workspace", err);
+      safeSetLocalStorage(STORAGE_KEY, JSON.stringify(next));
+    }
+    setData(next);
+    setActivePageId(next.pages[0]?.id ?? "");
+    setCorruptedStorageKey(null);
+    setIsFirstRun(false);
   }
 
   // -------------------------------------------------------------------------
@@ -1471,6 +1498,9 @@ export function useWorkspace() {
     folders: Folder[];
     pages: Page[];
   }): void {
+    if (incoming.profiles.length || incoming.projects.length || incoming.folders.length || incoming.pages.length) {
+      setIsFirstRun(false);
+    }
     setData((current) => ({
       ...current,
       profiles: mergeByNewerUpdatedAt(current.profiles, incoming.profiles),
@@ -1513,6 +1543,7 @@ export function useWorkspace() {
 
     setData(nextData);
     setActivePageId(pickFallbackPageIdForProfile(nextData, nextData.activeProfileId));
+    setIsFirstRun(false);
   }
 
   /**
@@ -1544,7 +1575,10 @@ export function useWorkspace() {
     activeProfileId,
     activePage,
     activePageId,
+    hasHydrated,
+    isFirstRun,
     corruptedStorageKey,
+    createDefaultWorkspace,
     selectProfile,
     createProfile,
     renameProfile,

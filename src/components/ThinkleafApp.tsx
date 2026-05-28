@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Workspace } from "@/components/workspace/Workspace";
+import { AuthModal } from "@/components/AuthModal";
+import { FirstRunWelcome } from "@/components/FirstRunWelcome";
 import {
   createDefaultCanvasViewState,
   defaultCanvasCreationToolDefaults,
@@ -104,8 +106,16 @@ export function ThinkleafApp() {
   const [canvasHistoryByPage, setCanvasHistoryByPage] = useState<Record<string, CanvasPageHistory>>({});
   const [pageTemplates, setPageTemplates] = useState<PageTemplate[]>([]);
   const [hasStorageWriteError, setHasStorageWriteError] = useState(false);
+  const [isWelcomeAuthOpen, setIsWelcomeAuthOpen] = useState(false);
+  const [isStartingOffline, setIsStartingOffline] = useState(false);
   const recordedCanvasHistoryKeysRef = useRef<Set<string>>(new Set());
   const imageAssetsByPageRef = useRef<Record<string, Record<string, string>>>({});
+
+  useEffect(() => {
+    if (!auth.user || !firstSignIn.isLinked || !workspace.hasHydrated || !workspace.isFirstRun) return;
+    if (firstSignIn.status.stage !== "idle") return;
+    void workspace.createDefaultWorkspace();
+  }, [auth.user, firstSignIn.isLinked, firstSignIn.status, workspace]);
 
   useEffect(() => {
     try {
@@ -632,6 +642,41 @@ export function ThinkleafApp() {
           Details have been logged to the browser console (F12 → Console).
         </p>
       </main>
+    );
+  }
+
+  if (!workspace.hasHydrated || auth.loading) {
+    return (
+      <main className="flex h-screen items-center justify-center bg-slate-50 text-sm text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+        Loading...
+      </main>
+    );
+  }
+
+  if (!auth.user && workspace.isFirstRun) {
+    return (
+      <>
+        <FirstRunWelcome
+          authLoading={auth.loading}
+          canAuthenticate={auth.isConfigured}
+          isStartingOffline={isStartingOffline}
+          isDarkMode={isDarkMode}
+          onLogIn={() => setIsWelcomeAuthOpen(true)}
+          onToggleDarkMode={() => setIsDarkMode((current) => !current)}
+          onUseOffline={() => {
+            if (isStartingOffline) return;
+            setIsStartingOffline(true);
+            void workspace.createDefaultWorkspace().finally(() => setIsStartingOffline(false));
+          }}
+        />
+        {isWelcomeAuthOpen ? (
+          <AuthModal
+            onClose={() => setIsWelcomeAuthOpen(false)}
+            onSignIn={auth.signIn}
+            onSignUp={auth.signUp}
+          />
+        ) : null}
+      </>
     );
   }
 

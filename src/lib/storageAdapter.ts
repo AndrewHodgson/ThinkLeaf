@@ -48,7 +48,7 @@ export async function loadAllFromDB(): Promise<WorkspaceData | null> {
       db.settings.get("recentPageIds"),
     ]);
 
-  if (!profiles.length && !projects.length && !rawPages.length) {
+  if (!profiles.length && !projects.length && !folders.length && !rawPages.length) {
     return null;
   }
 
