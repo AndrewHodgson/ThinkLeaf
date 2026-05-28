@@ -1,6 +1,7 @@
 import type { CanvasConnectorArrowDirection, CanvasObject, Page, WorkspaceData } from "@/types/workspace";
 import { normalizeEditorContent } from "@/lib/editorContent";
 import { defaultCanvasStyle } from "@/lib/canvasStyle";
+import { db } from "@/lib/db";
 import {
   getArrowDirection,
   getConnectorLineMode,
@@ -19,17 +20,33 @@ import {
   isConnectedLine,
 } from "@/components/workspace/canvas/canvasGeometry";
 
-export function exportWorkspaceBackup(data: WorkspaceData) {
+export async function exportWorkspaceBackup(data: WorkspaceData): Promise<void> {
   const date = new Date().toISOString().slice(0, 10);
   // Exclude soft-deleted records — the export represents the user's visible workspace.
-  const exportData: WorkspaceData = {
+  const workspace: WorkspaceData = {
     ...data,
     profiles: data.profiles.filter((r) => !r.deletedAt),
     projects: data.projects.filter((r) => !r.deletedAt),
     folders: data.folders.filter((r) => !r.deletedAt),
     pages: data.pages.filter((r) => !r.deletedAt),
   };
-  downloadTextFile(`thinkleaf-backup-${date}.json`, JSON.stringify(exportData, null, 2), "application/json");
+
+  let assets: unknown[] = [];
+  try {
+    assets = await db.assets.filter((a) => a.deletedAt === null).toArray();
+  } catch {
+    // IDB unavailable — export without the assets table; images are still
+    // embedded inline as imageDataUrl on canvas objects so the file is usable.
+  }
+
+  const payload = {
+    exportVersion: 2,
+    exportedAt: new Date().toISOString(),
+    workspace,
+    assets,
+  };
+
+  downloadTextFile(`thinkleaf-backup-${date}.json`, JSON.stringify(payload, null, 2), "application/json");
 }
 
 export function exportPageAsPdf(page: Page, breadcrumbPath: string[]) {

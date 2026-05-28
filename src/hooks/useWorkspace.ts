@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createBetaResetWorkspace, sampleWorkspace } from "@/lib/sampleWorkspace";
 import { createDefaultCanvasViewState, defaultCanvasStyle, defaultPenSettings } from "@/lib/canvasStyle";
 import { safeSetLocalStorage } from "@/lib/storage";
+import { db, type AssetRecord } from "@/lib/db";
 import { loadAllFromDB, saveAllToDB } from "@/lib/storageAdapter";
 import { createId, defaultProfileId, defaultProfileName, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
 import type {
@@ -1323,11 +1324,42 @@ export function useWorkspace() {
     }));
   }
 
-  function importWorkspaceData(value: unknown) {
-    const parsed = value as Partial<WorkspaceData>;
+  async function importWorkspaceData(value: unknown): Promise<boolean> {
+    if (!value || typeof value !== "object") {
+      return false;
+    }
 
+    const record = value as Record<string, unknown>;
+
+    // v2 export: { exportVersion: 2, exportedAt, workspace, assets }
+    // v1 export: the WorkspaceData object directly
+    const isV2 = record.exportVersion === 2;
+    const workspaceRaw = isV2 ? record.workspace : value;
+    const assetsRaw = isV2 && Array.isArray(record.assets) ? record.assets : [];
+
+    const parsed = workspaceRaw as Partial<WorkspaceData>;
     if (!parsed || !Array.isArray(parsed.projects) || !Array.isArray(parsed.folders) || !Array.isArray(parsed.pages)) {
       return false;
+    }
+
+    // For v2 exports, restore asset records to IDB so future saves preserve the
+    // asset-table separation.  Canvas objects already carry imageDataUrl inline
+    // (from React state at export time), so images render even if this write fails.
+    if (assetsRaw.length > 0) {
+      try {
+        const validAssets = assetsRaw.filter(
+          (a): a is AssetRecord =>
+            a !== null &&
+            typeof a === "object" &&
+            typeof (a as AssetRecord).id === "string" &&
+            typeof (a as AssetRecord).data === "string",
+        );
+        if (validAssets.length > 0) {
+          await db.assets.bulkPut(validAssets);
+        }
+      } catch (err) {
+        console.warn("[ThinkLeaf] Failed to write imported assets to IDB", err);
+      }
     }
 
     const nextData = normalizeWorkspace(parsed);

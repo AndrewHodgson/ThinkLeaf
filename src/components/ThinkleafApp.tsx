@@ -465,7 +465,10 @@ export function ThinkleafApp() {
   }
 
   function exportBackupFile() {
-    exportWorkspaceBackup(workspace.data);
+    exportWorkspaceBackup(workspace.data).catch((err) => {
+      console.error("[ThinkLeaf] Export failed", err);
+      window.alert("Export failed. Please try again.");
+    });
   }
 
   function resetBetaWorkspace() {
@@ -518,16 +521,23 @@ export function ThinkleafApp() {
 
     const reader = new FileReader();
     reader.onload = () => {
+      let parsed: unknown;
       try {
-        const parsed = JSON.parse(String(reader.result ?? ""));
-        if (!workspace.importWorkspaceData(parsed)) {
-          window.alert("That backup file does not look like a Thinkleaf workspace backup.");
+        parsed = JSON.parse(String(reader.result ?? ""));
+      } catch {
+        window.alert("Could not import that backup file — the file is not valid JSON.");
+        return;
+      }
+
+      workspace.importWorkspaceData(parsed).then((ok) => {
+        if (!ok) {
+          window.alert("That file does not look like a Thinkleaf workspace backup.");
           return;
         }
-        window.alert("Backup imported.");
-      } catch {
+        window.alert("Backup imported successfully.");
+      }).catch(() => {
         window.alert("Could not import that backup file.");
-      }
+      });
     };
     reader.onerror = () => {
       window.alert("Could not read that backup file.");
