@@ -7,6 +7,7 @@ type Props = {
   canAuthenticate: boolean;
   isStartingOffline: boolean;
   isDarkMode: boolean;
+  title?: string;
   onLogIn: () => void;
   onToggleDarkMode: () => void;
   onUseOffline: () => void;
@@ -17,6 +18,7 @@ export function FirstRunWelcome({
   canAuthenticate,
   isStartingOffline,
   isDarkMode,
+  title = "Welcome to ThinkLeaf",
   onLogIn,
   onToggleDarkMode,
   onUseOffline,
@@ -38,7 +40,7 @@ export function FirstRunWelcome({
         <section className="flex flex-1 flex-col justify-center py-12">
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-soft dark:border-slate-800 dark:bg-slate-900">
             <h1 className="text-xl font-semibold tracking-normal text-slate-900 dark:text-slate-50">
-              Welcome to ThinkLeaf
+              {title}
             </h1>
             <div className="mt-6 grid gap-2">
               <button

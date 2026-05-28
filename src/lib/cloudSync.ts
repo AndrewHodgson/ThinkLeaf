@@ -1,5 +1,11 @@
 import { db, type AssetRecord } from "@/lib/db";
-import { clearAllFromDB, markRecordsSynced, setLastPulledAt } from "@/lib/storageAdapter";
+import {
+  clearAllFromDB,
+  getLocalLinkedUserId,
+  markRecordsSynced,
+  setLastPulledAt,
+  setLocalLinkedUserId,
+} from "@/lib/storageAdapter";
 import { supabase } from "@/lib/supabase";
 import type { Folder, Page, Profile, Project } from "@/types/workspace";
 
@@ -324,12 +330,11 @@ function toCloudPage(r: Page, userId: string) {
 // ---------------------------------------------------------------------------
 
 export async function getLinkedUserId(): Promise<string | null> {
-  const row = await db.settings.get("sync.linkedUserId");
-  return typeof row?.value === "string" ? row.value : null;
+  return getLocalLinkedUserId();
 }
 
 export async function setLinkedUserId(userId: string): Promise<void> {
-  await db.settings.put({ key: "sync.linkedUserId", value: userId });
+  await setLocalLinkedUserId(userId);
 }
 
 // ---------------------------------------------------------------------------

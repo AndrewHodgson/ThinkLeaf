@@ -130,6 +130,39 @@ export function MigrationPrompt({ status, onUpload, onUseCloud, onSkip, onDismis
           </>
         )}
 
+        {status.stage === "accountMismatch" && (
+          <>
+            <div className="mb-5 flex items-start gap-3">
+              <CloudDownload aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+              <div>
+                <h2 className="text-base font-semibold text-slate-800">Synced workspace belongs to another account</h2>
+                <p className="mt-1.5 text-sm text-slate-600">
+                  This device has local data linked to a different signed-in account. Replace it with this account's cloud workspace to continue.
+                </p>
+                <p className="mt-2 text-xs text-slate-400">
+                  Nothing is deleted unless you choose to replace this device's local workspace.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                className="w-full rounded-md bg-leaf-600 px-4 py-2 text-sm font-medium text-white hover:bg-leaf-700"
+                type="button"
+                onClick={onUseCloud}
+              >
+                Use this account's cloud workspace
+              </button>
+              <button
+                className="w-full rounded-md px-4 py-2 text-sm font-medium text-slate-400 hover:text-slate-600"
+                type="button"
+                onClick={onSkip}
+              >
+                Decide later
+              </button>
+            </div>
+          </>
+        )}
+
         {status.stage === "uploading" && (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
             <Loader2 aria-hidden="true" className="h-8 w-8 animate-spin text-leaf-600" />

@@ -26,6 +26,7 @@ type SyncedRecordRef = string | { id: string; updatedAt?: string };
 
 // Key prefix for per-table pull watermarks stored in IDB settings.
 const LAST_PULLED_AT_PREFIX = "sync.lastPulledAt.";
+const LINKED_USER_ID_KEY = "sync.linkedUserId";
 
 // ---------------------------------------------------------------------------
 // Core read/write
@@ -168,6 +169,25 @@ export async function clearAllFromDB(): Promise<void> {
   });
   // Reset the session cache so assets get re-written after the clear.
   savedAssetIds.clear();
+}
+
+export async function getLocalLinkedUserId(): Promise<string | null> {
+  const row = await db.settings.get(LINKED_USER_ID_KEY);
+  return typeof row?.value === "string" ? row.value : null;
+}
+
+export async function setLocalLinkedUserId(userId: string): Promise<void> {
+  await db.settings.put({ key: LINKED_USER_ID_KEY, value: userId });
+}
+
+export async function clearLocalSyncSettings(): Promise<void> {
+  const rows = await db.settings.toArray();
+  const keys = rows
+    .map((row) => row.key)
+    .filter((key) => key === LINKED_USER_ID_KEY || key.startsWith(LAST_PULLED_AT_PREFIX));
+  if (keys.length) {
+    await db.settings.bulkDelete(keys);
+  }
 }
 
 // ---------------------------------------------------------------------------

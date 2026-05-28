@@ -71,11 +71,24 @@ export function ThinkleafApp() {
   useEffect(() => {
     if (firstSignIn.status.stage !== "hydrated") return;
     const { mode, records, assets } = firstSignIn.status;
+    const cloudIsEmpty =
+      records.profiles.length === 0 &&
+      records.projects.length === 0 &&
+      records.folders.length === 0 &&
+      records.pages.length === 0;
+    if (auth.user && cloudIsEmpty) {
+      void workspace.createDefaultWorkspace({ linkedUserId: auth.user.id });
+      firstSignIn.dismiss();
+      return;
+    }
     if (mode === "replace") {
       workspace.replaceWithCloudData(records, assets);
     } else {
       workspace.applyRemoteRecords(records);
       workspace.applyRemoteAssets(assets);
+    }
+    if (auth.user) {
+      workspace.markLinkedUser(auth.user.id);
     }
     firstSignIn.dismiss();
   // workspace callbacks are stable within a render cycle; status drives the trigger.
@@ -108,13 +121,26 @@ export function ThinkleafApp() {
   const [hasStorageWriteError, setHasStorageWriteError] = useState(false);
   const [isWelcomeAuthOpen, setIsWelcomeAuthOpen] = useState(false);
   const [isStartingOffline, setIsStartingOffline] = useState(false);
+  const isCreatingLinkedDefaultRef = useRef(false);
   const recordedCanvasHistoryKeysRef = useRef<Set<string>>(new Set());
   const imageAssetsByPageRef = useRef<Record<string, Record<string, string>>>({});
 
   useEffect(() => {
+    if (!auth.user || !firstSignIn.isLinked || !workspace.hasHydrated) return;
+    if (workspace.linkedUserId === auth.user.id) return;
+    workspace.markLinkedUser(auth.user.id);
+  // workspace methods are stable enough for this ownership marker; primitive fields drive the trigger.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.user?.id, firstSignIn.isLinked, workspace.hasHydrated, workspace.linkedUserId]);
+
+  useEffect(() => {
     if (!auth.user || !firstSignIn.isLinked || !workspace.hasHydrated || !workspace.isFirstRun) return;
     if (firstSignIn.status.stage !== "idle") return;
-    void workspace.createDefaultWorkspace();
+    if (isCreatingLinkedDefaultRef.current) return;
+    isCreatingLinkedDefaultRef.current = true;
+    void workspace.createDefaultWorkspace({ linkedUserId: auth.user.id }).finally(() => {
+      isCreatingLinkedDefaultRef.current = false;
+    });
   }, [auth.user, firstSignIn.isLinked, firstSignIn.status, workspace]);
 
   useEffect(() => {
@@ -600,6 +626,14 @@ export function ThinkleafApp() {
     reader.readAsText(file);
   }
 
+  if (!workspace.hasHydrated || auth.loading) {
+    return (
+      <main className="flex h-screen items-center justify-center bg-slate-50 text-sm text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+        Loading...
+      </main>
+    );
+  }
+
   if (workspace.corruptedStorageKey) {
     return (
       <main className="flex h-screen flex-col items-center justify-center gap-6 bg-slate-50 px-6 text-center text-slate-900">
@@ -645,15 +679,7 @@ export function ThinkleafApp() {
     );
   }
 
-  if (!workspace.hasHydrated || auth.loading) {
-    return (
-      <main className="flex h-screen items-center justify-center bg-slate-50 text-sm text-slate-500 dark:bg-slate-950 dark:text-slate-400">
-        Loading...
-      </main>
-    );
-  }
-
-  if (!auth.user && workspace.isFirstRun) {
+  if (!auth.user && (workspace.isFirstRun || workspace.linkedUserId)) {
     return (
       <>
         <FirstRunWelcome
@@ -661,6 +687,7 @@ export function ThinkleafApp() {
           canAuthenticate={auth.isConfigured}
           isStartingOffline={isStartingOffline}
           isDarkMode={isDarkMode}
+          title={workspace.linkedUserId ? "Sign in to access this synced workspace" : undefined}
           onLogIn={() => setIsWelcomeAuthOpen(true)}
           onToggleDarkMode={() => setIsDarkMode((current) => !current)}
           onUseOffline={() => {
@@ -677,6 +704,28 @@ export function ThinkleafApp() {
           />
         ) : null}
       </>
+    );
+  }
+
+  if (auth.user && workspace.linkedUserId && workspace.linkedUserId !== auth.user.id) {
+    return (
+      <main className="flex h-screen items-center justify-center bg-slate-50 px-6 text-center text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+        <MigrationPrompt
+          status={firstSignIn.status}
+          onUpload={firstSignIn.upload}
+          onUseCloud={firstSignIn.useCloud}
+          onSkip={firstSignIn.skip}
+          onDismiss={firstSignIn.dismiss}
+        />
+        <div className="max-w-md">
+          <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-100">
+            This workspace is linked to another account
+          </h1>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+            Replace this device's local workspace with the signed-in account's cloud workspace to continue.
+          </p>
+        </div>
+      </main>
     );
   }
 

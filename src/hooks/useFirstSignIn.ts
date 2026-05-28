@@ -36,6 +36,7 @@ export type MigrationStage =
   | { stage: "done"; uploaded: number; assetsUploaded: number }
   /** Both local and cloud have data — user must choose. */
   | { stage: "reconcile"; localSummary: LocalDataSummary }
+  | { stage: "accountMismatch"; cloudHasData: boolean }
   | { stage: "skipped" }
   | { stage: "error"; message: string };
 
@@ -125,6 +126,12 @@ export function useFirstSignIn(user: User | null): FirstSignInState {
     Promise.all([checkLocalHasData(), checkCloudHasData(currId), getLinkedUserId()])
       .then(async ([localSummary, cloudHasData, linkedUserId]) => {
         const localHasData = localSummary.hasData;
+
+        if (linkedUserId && linkedUserId !== currId) {
+          console.log("[ThinkLeaf] Local workspace is linked to a different account — replacement required");
+          setStatus({ stage: "accountMismatch", cloudHasData });
+          return;
+        }
 
         if (linkedUserId === currId) {
           // Workspace already belongs to this account — incremental sync handles everything.
