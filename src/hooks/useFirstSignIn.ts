@@ -6,6 +6,7 @@ import {
   checkCloudHasData,
   checkLocalHasData,
   downloadFullWorkspaceFromCloud,
+  replaceLocalWithCloudWorkspace,
   getLinkedUserId,
   setLinkedUserId,
   uploadWorkspaceToCloud,
@@ -22,8 +23,13 @@ export type MigrationStage =
   | { stage: "checking" }
   /** Downloading all cloud records + assets into local IDB. */
   | { stage: "hydrating" }
-  /** Download complete — caller should apply records to React state then dismiss. */
-  | { stage: "hydrated"; records: { profiles: Profile[]; projects: Project[]; folders: Folder[]; pages: Page[] }; assets: Array<{ id: string; data: string }> }
+  /**
+   * Download complete — caller should update React state then dismiss.
+   * mode "merge": local was empty; safe to merge into existing state.
+   * mode "replace": user chose "Use cloud"; caller must replace state, not merge,
+   *                 so local-only records don't survive.
+   */
+  | { stage: "hydrated"; mode: "merge" | "replace"; records: { profiles: Profile[]; projects: Project[]; folders: Folder[]; pages: Page[] }; assets: Array<{ id: string; data: string }> }
   /** Local has data, cloud is empty — offer upload. */
   | { stage: "prompt"; summary: LocalDataSummary }
   | { stage: "uploading" }
@@ -66,10 +72,14 @@ export function useFirstSignIn(user: User | null): FirstSignInState {
   const [status, setStatus] = useState<MigrationStage>({ stage: "idle" });
   const prevUserIdRef = useRef<string | null>(null);
 
-  const performHydration = useCallback(async (userId: string) => {
+  const performHydration = useCallback(async (userId: string, mode: "merge" | "replace") => {
     setStatus({ stage: "hydrating" });
     try {
-      const result = await downloadFullWorkspaceFromCloud(userId);
+      // "replace" clears local IDB tables first so old records can't survive or
+      // sync back up; "merge" is safe for the local-empty case.
+      const result = mode === "replace"
+        ? await replaceLocalWithCloudWorkspace(userId)
+        : await downloadFullWorkspaceFromCloud(userId);
       if (result.error) {
         console.warn("[ThinkLeaf] Hydration failed:", result.error);
         setStatus({ stage: "error", message: result.error });
@@ -77,13 +87,13 @@ export function useFirstSignIn(user: User | null): FirstSignInState {
       }
       await setLinkedUserId(userId);
       console.log(
-        "[ThinkLeaf] Hydration complete —",
+        `[ThinkLeaf] Hydration complete (${mode}) —`,
         result.records.profiles.length, "profiles,",
         result.records.projects.length, "projects,",
         result.records.pages.length, "pages,",
         result.assets.length, "assets",
       );
-      setStatus({ stage: "hydrated", records: result.records, assets: result.assets });
+      setStatus({ stage: "hydrated", mode, records: result.records, assets: result.assets });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Download failed";
       console.warn("[ThinkLeaf] Hydration error:", message);
@@ -119,8 +129,9 @@ export function useFirstSignIn(user: User | null): FirstSignInState {
           setStatus({ stage: "idle" });
         } else if (!localHasData && cloudHasData) {
           // Cloud has data, local is empty — pull silently, no prompt needed.
+          // Merge is safe here since local is empty.
           console.log("[ThinkLeaf] Local empty, cloud has data — starting auto-hydration");
-          void performHydration(currId);
+          void performHydration(currId, "merge");
         } else if (localHasData && !cloudHasData) {
           // Local has data, cloud empty — offer to upload.
           console.log("[ThinkLeaf] Local has data, cloud empty — showing upload prompt");
@@ -159,7 +170,8 @@ export function useFirstSignIn(user: User | null): FirstSignInState {
 
   const useCloud = useCallback(async () => {
     if (!user) return;
-    void performHydration(user.id);
+    // "replace" clears local tables first so old records don't leak through.
+    void performHydration(user.id, "replace");
   }, [user, performHydration]);
 
   const skip = useCallback(() => setStatus({ stage: "skipped" }), []);

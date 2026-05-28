@@ -1468,6 +1468,41 @@ export function useWorkspace() {
   }
 
   /**
+   * Replaces the entire local workspace with cloud records.  Used after the user
+   * explicitly chooses "Use cloud workspace" in the reconciliation prompt — IDB
+   * was already cleared and rewritten by replaceLocalWithCloudWorkspace before
+   * this is called, so this function only needs to update React state.
+   *
+   * Contrast with applyRemoteRecords which merges (LWW) — this fully replaces.
+   */
+  function replaceWithCloudData(
+    records: { profiles: Profile[]; projects: Project[]; folders: Folder[]; pages: Page[] },
+    assets: Array<{ id: string; data: string }>,
+  ): void {
+    const assetDataById = new Map(assets.map((a) => [a.id, a.data]));
+
+    // normalizeWorkspace handles validation, defaults, and profile/project ID fixups.
+    const nextData = normalizeWorkspace(records);
+
+    // Inject imageDataUrl into canvas objects that reference a downloaded asset.
+    if (assetDataById.size > 0) {
+      nextData.pages = nextData.pages.map((page) => ({
+        ...page,
+        canvasObjects: page.canvasObjects.map((obj) => {
+          if (obj.assetId && !obj.imageDataUrl) {
+            const data = assetDataById.get(obj.assetId);
+            if (data) return { ...obj, imageDataUrl: data };
+          }
+          return obj;
+        }),
+      }));
+    }
+
+    setData(nextData);
+    setActivePageId(pickFallbackPageIdForProfile(nextData, nextData.activeProfileId));
+  }
+
+  /**
    * Injects imageDataUrl into canvas objects whose assetId matches a newly
    * downloaded asset blob.  Called after pullRemoteChanges downloads new assets.
    */
@@ -1525,5 +1560,6 @@ export function useWorkspace() {
     markSynced,
     applyRemoteRecords,
     applyRemoteAssets,
+    replaceWithCloudData,
   };
 }

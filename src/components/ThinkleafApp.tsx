@@ -61,11 +61,19 @@ export function ThinkleafApp() {
   const workspace = useWorkspace();
   const auth = useAuth();
   const firstSignIn = useFirstSignIn(auth.user);
-  // When auto-hydration or "use cloud" completes, apply downloaded records to React state.
+  // When cloud hydration completes, update React state then dismiss.
+  // "merge" (auto-hydrate, local was empty): merge cloud records into state.
+  // "replace" (user chose "Use cloud"): replace state wholesale so local-only
+  //   records don't survive — IDB was already cleared before download.
   useEffect(() => {
     if (firstSignIn.status.stage !== "hydrated") return;
-    workspace.applyRemoteRecords(firstSignIn.status.records);
-    workspace.applyRemoteAssets(firstSignIn.status.assets);
+    const { mode, records, assets } = firstSignIn.status;
+    if (mode === "replace") {
+      workspace.replaceWithCloudData(records, assets);
+    } else {
+      workspace.applyRemoteRecords(records);
+      workspace.applyRemoteAssets(assets);
+    }
     firstSignIn.dismiss();
   // workspace callbacks are stable within a render cycle; status drives the trigger.
   // eslint-disable-next-line react-hooks/exhaustive-deps

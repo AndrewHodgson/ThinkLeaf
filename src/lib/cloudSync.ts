@@ -1,5 +1,5 @@
 import { db, type AssetRecord } from "@/lib/db";
-import { markRecordsSynced, setLastPulledAt } from "@/lib/storageAdapter";
+import { clearAllFromDB, markRecordsSynced, setLastPulledAt } from "@/lib/storageAdapter";
 import { supabase } from "@/lib/supabase";
 import type { Folder, Page, Profile, Project } from "@/types/workspace";
 
@@ -351,6 +351,23 @@ export async function downloadFullWorkspaceFromCloud(userId: string): Promise<Do
   }
 
   return { records: { profiles, projects, folders, pages }, assets, error: null };
+}
+
+/**
+ * Clears all local workspace records and asset blobs from IDB (safe — settings
+ * table is untouched, so linkedUserId / pull watermarks survive), then downloads
+ * the full cloud workspace for userId.
+ *
+ * Use this instead of downloadFullWorkspaceFromCloud when the device already has
+ * local data and the user explicitly chose "Use cloud workspace."  Clearing first
+ * ensures local-only records cannot survive the replacement or sync back up later.
+ */
+export async function replaceLocalWithCloudWorkspace(userId: string): Promise<DownloadResult> {
+  // clearAllFromDB wipes workspace tables + resets the savedAssetIds session cache.
+  // Settings table is NOT included, so pull watermarks and linkedUserId are preserved.
+  await clearAllFromDB();
+  console.log("[ThinkLeaf] Local workspace cleared in preparation for cloud replacement");
+  return downloadFullWorkspaceFromCloud(userId);
 }
 
 // ---------------------------------------------------------------------------
