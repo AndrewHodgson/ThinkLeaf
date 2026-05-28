@@ -65,6 +65,15 @@ class ThinkLeafDB extends Dexie {
             });
         }
       });
+    // v4: add updatedAt index to every syncable table for efficient dirty-record queries.
+    this.version(4).stores({
+      profiles: "id, updatedAt",
+      projects: "id, profileId, updatedAt",
+      folders: "id, profileId, projectId, updatedAt",
+      pages: "id, profileId, projectId, folderId, updatedAt",
+      settings: "key",
+      assets: "id, updatedAt",
+    });
   }
 }
 

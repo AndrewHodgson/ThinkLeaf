@@ -5,7 +5,7 @@ import { createBetaResetWorkspace, sampleWorkspace } from "@/lib/sampleWorkspace
 import { createDefaultCanvasViewState, defaultCanvasStyle, defaultPenSettings } from "@/lib/canvasStyle";
 import { safeSetLocalStorage } from "@/lib/storage";
 import { db, type AssetRecord } from "@/lib/db";
-import { loadAllFromDB, saveAllToDB } from "@/lib/storageAdapter";
+import { clearAllFromDB, loadAllFromDB, saveAllToDB } from "@/lib/storageAdapter";
 import { createId, defaultProfileId, defaultProfileName, timestamp, toDateInputValue } from "@/lib/workspaceUtils";
 import type {
   CanvasConnectorAnchor,
@@ -1368,7 +1368,7 @@ export function useWorkspace() {
     return true;
   }
 
-  function clearCorruptedData() {
+  async function clearCorruptedData() {
     try {
       if (corruptedStorageKey) {
         window.localStorage.removeItem(corruptedStorageKey);
@@ -1376,13 +1376,26 @@ export function useWorkspace() {
     } catch {
       // ignore — stashed copy may not exist if storage was full
     }
+    // Clear IDB before updating React state so the subsequent autosave (bulkPut)
+    // writes into an empty database rather than merging with the corrupted records.
+    try {
+      await clearAllFromDB();
+    } catch (err) {
+      console.warn("[ThinkLeaf] IDB clear failed during corruption recovery", err);
+    }
     setData(sampleWorkspace);
     setActivePageId(pickFallbackPageIdForProfile(sampleWorkspace, sampleWorkspace.activeProfileId));
     setCorruptedStorageKey(null);
   }
 
-  function resetWorkspace() {
+  async function resetWorkspace() {
     const next = createBetaResetWorkspace();
+    // Clear IDB before updating React state so stale records don't persist.
+    try {
+      await clearAllFromDB();
+    } catch (err) {
+      console.warn("[ThinkLeaf] IDB clear failed during workspace reset", err);
+    }
     setData(next);
     setActivePageId(next.pages[0]?.id ?? "");
   }
