@@ -14,6 +14,7 @@ import {
 } from "@/lib/canvasStyle";
 import { useAuth } from "@/hooks/useAuth";
 import { useFirstSignIn } from "@/hooks/useFirstSignIn";
+import { useSyncEngine } from "@/hooks/useSyncEngine";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { MigrationPrompt } from "@/components/MigrationPrompt";
 import { exportWorkspaceBackup } from "@/lib/exportUtils";
@@ -60,6 +61,11 @@ export function ThinkleafApp() {
   const workspace = useWorkspace();
   const auth = useAuth();
   const firstSignIn = useFirstSignIn(auth.user);
+  const syncEngine = useSyncEngine(auth.user, {
+    onRecordsSynced: workspace.markSynced,
+    onRemoteRecords: workspace.applyRemoteRecords,
+    onRemoteAssets: workspace.applyRemoteAssets,
+  });
   const backupFileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isGridVisible, setIsGridVisible] = useState(true);
@@ -687,6 +693,8 @@ export function ThinkleafApp() {
         onSignIn={auth.signIn}
         onSignOut={auth.signOut}
         onSignUp={auth.signUp}
+        syncStatus={syncEngine.status}
+        lastSyncedAt={syncEngine.lastSyncedAt}
       />
       <section className="flex min-w-0 flex-1 flex-col">
         <Workspace

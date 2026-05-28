@@ -404,6 +404,22 @@ type LoadResult = {
   corruptedKey: string | null;
 };
 
+/**
+ * Last-write-wins merge: for each incoming record, keep whichever side has the
+ * greater updatedAt.  New remote records (not in local) are always added.
+ */
+function mergeByNewerUpdatedAt<T extends { id: string; updatedAt: string }>(local: T[], incoming: T[]): T[] {
+  if (!incoming.length) return local;
+  const result = new Map(local.map((r) => [r.id, r]));
+  for (const remote of incoming) {
+    const existing = result.get(remote.id);
+    if (!existing || remote.updatedAt > existing.updatedAt) {
+      result.set(remote.id, remote);
+    }
+  }
+  return Array.from(result.values());
+}
+
 function applyAssetMappings(data: WorkspaceData, assetMappings: Record<string, string>): WorkspaceData {
   return {
     ...data,
@@ -1400,6 +1416,79 @@ export function useWorkspace() {
     setActivePageId(next.pages[0]?.id ?? "");
   }
 
+  // -------------------------------------------------------------------------
+  // Sync callbacks (called by useSyncEngine — no network logic here)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Stamps syncedAt in React state for records that were successfully pushed.
+   * Only updates records whose updatedAt still matches the pushed value — if the
+   * user edited a record during the push, its syncedAt stays null so it remains
+   * dirty and gets re-pushed next cycle.
+   */
+  function markSynced(
+    table: "profiles" | "projects" | "folders" | "pages",
+    pushedRecords: Array<{ id: string; updatedAt: string }>,
+    syncedAt: string,
+  ): void {
+    if (!pushedRecords.length) return;
+    const pushedMap = new Map(pushedRecords.map((r) => [r.id, r.updatedAt]));
+    setData((current) => ({
+      ...current,
+      [table]: (
+        current[table] as Array<{ id: string; syncedAt: string | null; updatedAt: string }>
+      ).map((r) => {
+        const pushedUpdatedAt = pushedMap.get(r.id);
+        if (pushedUpdatedAt !== undefined && r.updatedAt === pushedUpdatedAt) {
+          return { ...r, syncedAt };
+        }
+        return r;
+      }),
+    }));
+  }
+
+  /**
+   * Merges records pulled from the cloud into React state using last-write-wins
+   * on updatedAt.  Remote records whose updatedAt is older than local are ignored.
+   * The autosave debounce then persists the merged state to IDB.
+   */
+  function applyRemoteRecords(incoming: {
+    profiles: Profile[];
+    projects: Project[];
+    folders: Folder[];
+    pages: Page[];
+  }): void {
+    setData((current) => ({
+      ...current,
+      profiles: mergeByNewerUpdatedAt(current.profiles, incoming.profiles),
+      projects: mergeByNewerUpdatedAt(current.projects, incoming.projects),
+      folders: mergeByNewerUpdatedAt(current.folders, incoming.folders),
+      pages: mergeByNewerUpdatedAt(current.pages, incoming.pages),
+    }));
+  }
+
+  /**
+   * Injects imageDataUrl into canvas objects whose assetId matches a newly
+   * downloaded asset blob.  Called after pullRemoteChanges downloads new assets.
+   */
+  function applyRemoteAssets(assets: Array<{ id: string; data: string }>): void {
+    if (!assets.length) return;
+    const dataById = new Map(assets.map((a) => [a.id, a.data]));
+    setData((current) => ({
+      ...current,
+      pages: current.pages.map((page) => ({
+        ...page,
+        canvasObjects: page.canvasObjects.map((obj) => {
+          if (obj.assetId && !obj.imageDataUrl) {
+            const data = dataById.get(obj.assetId);
+            if (data) return { ...obj, imageDataUrl: data };
+          }
+          return obj;
+        }),
+      })),
+    }));
+  }
+
   return {
     data,
     activeProfile,
@@ -1433,5 +1522,8 @@ export function useWorkspace() {
     importWorkspaceData,
     clearCorruptedData,
     resetWorkspace,
+    markSynced,
+    applyRemoteRecords,
+    applyRemoteAssets,
   };
 }

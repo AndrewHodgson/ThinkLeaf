@@ -34,6 +34,8 @@ import {
   X,
 } from "lucide-react";
 import { safeSetLocalStorage } from "@/lib/storage";
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
+import type { SyncStatus } from "@/hooks/useSyncEngine";
 
 type SidebarProps = {
   activePageId: string;
@@ -76,6 +78,9 @@ type SidebarProps = {
   onSignIn?: (email: string, password: string) => Promise<{ error: string | null }>;
   onSignOut?: () => Promise<void>;
   onSignUp?: (email: string, password: string) => Promise<{ error: string | null }>;
+  // Sync status (optional — only shown when signed in)
+  syncStatus?: SyncStatus;
+  lastSyncedAt?: string | null;
 };
 
 type SidebarState = {
@@ -161,6 +166,8 @@ export function Sidebar({
   onSignIn,
   onSignOut,
   onSignUp,
+  syncStatus,
+  lastSyncedAt = null,
 }: SidebarProps) {
   const [isHydrated, setIsHydrated] = useState(false);
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([]);
@@ -1418,6 +1425,9 @@ export function Sidebar({
             <div className="flex items-center gap-2">
               <UserCircle aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" />
               <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{authUser.email}</span>
+              {syncStatus !== undefined && (
+                <SyncStatusBadge lastSyncedAt={lastSyncedAt} status={syncStatus} />
+              )}
               <button
                 className="shrink-0 text-slate-400 hover:text-slate-600"
                 title="Sign out"
