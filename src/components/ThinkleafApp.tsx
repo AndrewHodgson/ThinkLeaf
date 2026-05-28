@@ -13,7 +13,9 @@ import {
   zoomStep,
 } from "@/lib/canvasStyle";
 import { useAuth } from "@/hooks/useAuth";
+import { useFirstSignIn } from "@/hooks/useFirstSignIn";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import { MigrationPrompt } from "@/components/MigrationPrompt";
 import { exportWorkspaceBackup } from "@/lib/exportUtils";
 import { safeSetLocalStorage, storageWriteErrorEvent } from "@/lib/storage";
 import { createId, searchPages, sortPagesByUpdatedAt, timestamp } from "@/lib/workspaceUtils";
@@ -57,8 +59,7 @@ type CanvasPageHistory = {
 export function ThinkleafApp() {
   const workspace = useWorkspace();
   const auth = useAuth();
-  // TODO(Phase 3C): when auth.user transitions from null → non-null, trigger first-sign-in
-  // migration: upload all local IDB records to Supabase and stamp syncedAt on each.
+  const firstSignIn = useFirstSignIn(auth.user);
   const backupFileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isGridVisible, setIsGridVisible] = useState(true);
@@ -636,6 +637,12 @@ export function ThinkleafApp() {
           </div>
         </div>
       ) : null}
+      <MigrationPrompt
+        status={firstSignIn.status}
+        onUpload={firstSignIn.upload}
+        onSkip={firstSignIn.skip}
+        onDismiss={firstSignIn.dismiss}
+      />
       <Sidebar
         activePageId={workspace.activePageId}
         activeProfileId={workspace.activeProfileId}

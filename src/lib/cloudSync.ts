@@ -1,0 +1,240 @@
+import { db, type AssetRecord } from "@/lib/db";
+import { markRecordsSynced } from "@/lib/storageAdapter";
+import { supabase } from "@/lib/supabase";
+import type { Folder, Page, Profile, Project } from "@/types/workspace";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type UploadResult = {
+  uploaded: number;
+  assetsUploaded: number;
+  error: string | null;
+};
+
+export type LocalDataSummary = {
+  hasData: boolean;
+  profiles: number;
+  projects: number;
+  pages: number;
+};
+
+// ---------------------------------------------------------------------------
+// Detection helpers
+// ---------------------------------------------------------------------------
+
+/** True if the signed-in user already has any records in the cloud profiles table. */
+export async function checkCloudHasData(userId: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("user_id", userId)
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return (data?.length ?? 0) > 0;
+}
+
+/** Counts non-deleted local records to decide whether a migration prompt is useful. */
+export async function checkLocalHasData(): Promise<LocalDataSummary> {
+  const [profileCount, projectCount, pageCount] = await Promise.all([
+    db.profiles.filter((r) => !r.deletedAt).count(),
+    db.projects.filter((r) => !r.deletedAt).count(),
+    db.pages.filter((r) => !r.deletedAt).count(),
+  ]);
+  return {
+    hasData: pageCount > 0,
+    profiles: profileCount,
+    projects: projectCount,
+    pages: pageCount,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Upload
+// ---------------------------------------------------------------------------
+
+/**
+ * Bulk-uploads all non-deleted local workspace records and asset blobs to Supabase,
+ * then stamps syncedAt in IDB.
+ *
+ * Reads directly from IDB (last autosaved state) — canvasObjects are already
+ * stripped of imageDataUrl by saveAllToDB, so canvas data is safe to send as JSON.
+ *
+ * Individual asset failures are logged but do not abort the overall upload; the
+ * rest of the workspace still lands in the cloud.
+ *
+ * Note: markRecordsSynced only updates IDB. The next autosave will overwrite
+ * syncedAt back to null (from React state) until Phase 3D syncs it properly.
+ * checkCloudHasData is the authoritative signal that migration already happened.
+ */
+export async function uploadWorkspaceToCloud(userId: string): Promise<UploadResult> {
+  if (!supabase) return { uploaded: 0, assetsUploaded: 0, error: "Supabase not configured" };
+
+  const now = new Date().toISOString();
+
+  const [profiles, projects, folders, pages, assets] = await Promise.all([
+    db.profiles.filter((r) => !r.deletedAt).toArray(),
+    db.projects.filter((r) => !r.deletedAt).toArray(),
+    db.folders.filter((r) => !r.deletedAt).toArray(),
+    db.pages.filter((r) => !r.deletedAt).toArray(),
+    db.assets.filter((r) => !r.deletedAt).toArray(),
+  ]);
+
+  // Upload tables in dependency order (profiles first, pages last).
+  if (profiles.length) {
+    const { error } = await supabase.from("profiles").upsert(profiles.map((r) => toCloudProfile(r, userId)));
+    if (error) return { uploaded: 0, assetsUploaded: 0, error: error.message };
+  }
+  if (projects.length) {
+    const { error } = await supabase.from("projects").upsert(projects.map((r) => toCloudProject(r, userId)));
+    if (error) return { uploaded: 0, assetsUploaded: 0, error: error.message };
+  }
+  if (folders.length) {
+    const { error } = await supabase.from("folders").upsert(folders.map((r) => toCloudFolder(r, userId)));
+    if (error) return { uploaded: 0, assetsUploaded: 0, error: error.message };
+  }
+  if (pages.length) {
+    const { error } = await supabase.from("pages").upsert(pages.map((r) => toCloudPage(r, userId)));
+    if (error) return { uploaded: 0, assetsUploaded: 0, error: error.message };
+  }
+
+  // Upload asset blobs to Storage + upsert metadata rows.
+  let assetsUploaded = 0;
+  for (const asset of assets) {
+    const { error } = await uploadAssetToCloud(userId, asset);
+    if (error) {
+      console.warn(`[ThinkLeaf] Asset ${asset.id} upload skipped:`, error);
+    } else {
+      assetsUploaded++;
+    }
+  }
+
+  // Stamp syncedAt in IDB so getDirtyRecords won't re-queue these immediately.
+  await Promise.all([
+    markRecordsSynced("profiles", profiles.map((r) => r.id), now),
+    markRecordsSynced("projects", projects.map((r) => r.id), now),
+    markRecordsSynced("folders", folders.map((r) => r.id), now),
+    markRecordsSynced("pages", pages.map((r) => r.id), now),
+    markRecordsSynced("assets", assets.map((r) => r.id), now),
+  ]);
+
+  return {
+    uploaded: profiles.length + projects.length + folders.length + pages.length,
+    assetsUploaded,
+    error: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Asset blob upload
+// ---------------------------------------------------------------------------
+
+async function uploadAssetToCloud(userId: string, asset: AssetRecord): Promise<{ error: string | null }> {
+  if (!supabase) return { error: "not configured" };
+
+  const comma = asset.data.indexOf(",");
+  if (comma === -1) return { error: "invalid data URL" };
+
+  let bytes: Uint8Array;
+  try {
+    const binary = atob(asset.data.slice(comma + 1));
+    bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  } catch {
+    return { error: "failed to decode asset" };
+  }
+
+  const blob = new Blob([bytes], { type: asset.mimeType });
+
+  const { error: storageError } = await supabase.storage
+    .from("assets")
+    .upload(`${userId}/${asset.id}`, blob, { upsert: true, contentType: asset.mimeType });
+
+  if (storageError) return { error: storageError.message };
+
+  const { error: metaError } = await supabase.from("assets").upsert({
+    id: asset.id,
+    user_id: userId,
+    mime_type: asset.mimeType,
+    version: asset.version,
+    deleted_at: asset.deletedAt,
+    synced_at: asset.syncedAt,
+    created_at: asset.createdAt,
+    updated_at: asset.updatedAt,
+  });
+
+  return { error: metaError?.message ?? null };
+}
+
+// ---------------------------------------------------------------------------
+// Record mappers (local camelCase → cloud snake_case)
+// ---------------------------------------------------------------------------
+
+function toCloudProfile(r: Profile, userId: string) {
+  return {
+    id: r.id,
+    user_id: userId,
+    name: r.name,
+    version: r.version,
+    deleted_at: r.deletedAt,
+    synced_at: r.syncedAt,
+    created_at: r.createdAt,
+    updated_at: r.updatedAt,
+  };
+}
+
+function toCloudProject(r: Project, userId: string) {
+  return {
+    id: r.id,
+    user_id: userId,
+    profile_id: r.profileId,
+    name: r.name,
+    color: r.color ?? null,
+    version: r.version,
+    deleted_at: r.deletedAt,
+    synced_at: r.syncedAt,
+    created_at: r.createdAt,
+    updated_at: r.updatedAt,
+  };
+}
+
+function toCloudFolder(r: Folder, userId: string) {
+  return {
+    id: r.id,
+    user_id: userId,
+    profile_id: r.profileId,
+    project_id: r.projectId,
+    parent_folder_id: r.parentFolderId ?? null,
+    name: r.name,
+    color: r.color ?? null,
+    version: r.version,
+    deleted_at: r.deletedAt,
+    synced_at: r.syncedAt,
+    created_at: r.createdAt,
+    updated_at: r.updatedAt,
+  };
+}
+
+function toCloudPage(r: Page, userId: string) {
+  return {
+    id: r.id,
+    user_id: userId,
+    profile_id: r.profileId,
+    project_id: r.projectId,
+    folder_id: r.folderId ?? null,
+    title: r.title,
+    body: r.body,
+    note_date: r.noteDate,
+    canvas_view_state: r.canvasViewState,
+    canvas_objects: r.canvasObjects,
+    tags: r.tags,
+    is_favorite: r.isFavorite,
+    version: r.version,
+    deleted_at: r.deletedAt,
+    synced_at: r.syncedAt,
+    created_at: r.createdAt,
+    updated_at: r.updatedAt,
+  };
+}
